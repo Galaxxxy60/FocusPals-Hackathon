@@ -17,9 +17,15 @@ import sys
 import time
 from datetime import datetime
 from enum import Enum
+import threading
+
+import pystray
+from pystray import MenuItem as item
+from PIL import ImageDraw
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 from google.genai import types
 from PIL import Image
 import mss
@@ -37,10 +43,7 @@ if not GEMINI_API_KEY:
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Use the correct model for Live API
-MODEL = "gemini-2.0-flash-exp" # Or gemini-2.5-flash if available for Live API. We'll use 2.0-flash-exp which historically supports Live API best, but let's stick to gemini-2.5-flash since we verified it exists.
-MODEL = "gemini-2.5-flash"
-
-# Send 1 frame every X seconds (Pulsed Video)
+MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 SCREEN_PULSE_INTERVAL = 5  
 
 # ─── Audio Configuration ────────────────────────────────────
@@ -91,7 +94,48 @@ TAMA_FACES = {
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
+# ─── System Tray Icon ───────────────────────────────────────
+
+tray_icon = None
+
+def create_tray_image(state: TamaState):
+    image = Image.new('RGB', (64, 64), color=(30, 30, 30))
+    dc = ImageDraw.Draw(image)
+    if state == TamaState.CALM:
+        dc.ellipse((16, 16, 48, 48), fill=(0, 255, 0)) # Green dot = Calm
+    else:
+        dc.ellipse((16, 16, 48, 48), fill=(255, 0, 0)) # Red dot = Angry
+    return image
+
+def quit_app(icon, item):
+    icon.stop()
+    print("\n👋 Tama: J'arrête de surveiller.")
+    os._exit(0) # Hard exit to stop asyncio loop
+
+def setup_tray():
+    global tray_icon
+    image = create_tray_image(TamaState.CALM)
+    menu = (item('Stop Tama 🥷', quit_app),)
+    tray_icon = pystray.Icon("Tama", image, "Tama Agent 🥷 — 🟢 En veille", menu)
+    threading.Thread(target=tray_icon.run, daemon=True).start()
+
+def update_tray(state: TamaState):
+    global tray_icon
+    if tray_icon:
+        tray_icon.icon = create_tray_image(state)
+        if state == TamaState.CALM:
+            tray_icon.title = "Tama Agent 🥷 — 🟢 Travail en cours"
+        else:
+            tray_icon.title = "Tama Agent 🥷 — 💢 DISTRACTION !"
+
+# ─── Display ────────────────────────────────────────────────
+
+current_tama_state = TamaState.CALM
+
 def update_display(state: TamaState, message: str = ""):
+    global current_tama_state
+    current_tama_state = state
+    update_tray(state)
     clear_screen()
     print("=" * 42)
     print("  FocusPals — Tama Agent 🥷 (LIVE API) 📡")
@@ -105,20 +149,23 @@ def update_display(state: TamaState, message: str = ""):
 
 # ─── System Prompt ──────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are Tama, a strict and serious productivity coach inside the app FocusPals.
+SYSTEM_PROMPT = """You are Tama, a strict but fair productivity coach inside the app FocusPals.
 You are in a LIVE voice call with the user. You can see their screens (all monitors merged).
 
 Your personality:
-- Strict, direct, no-nonsense Asian student archetype.
+- Strict Asian student archetype, but you want to help.
 - You care deeply about their productivity.
-- Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences). You are interrupting their workflow.
+- Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences).
 
 Your job:
 1. Watch the screen visually. 
 2. Productive = VSCode, IDE, terminal, documentation, design tools. YouTube programming tutorials are PRODUCTIVE.
-3. Distracted = YouTube entertainment, social media (Twitter/X, Reddit, TikTok), Netflix, games.
-4. If the user is DISTRACTED, immediately call the function `close_distracting_tab` AND scold them vocally.
-5. If the user talks to you, respond naturally but always bring them back to work.
+3. IF THE USER IS PRODUCTIVE: YOU MUST STAY COMPLETELY SILENT. DO NOT SAY A SINGLE WORD. Just observe.
+4. Distracted = Netflix, TikTok, videogames, or purely entertainment YouTube.
+5. IF THEY ARE DISTRACTED: Scold them briefly. If the distraction persists or is blatant, call `close_distracting_tab` AND scold them vocally just before the tab closes.
+6. EXTREMELY IMPORTANT: DO NOT BE TOO STRICT. If they are just quickly checking something or taking a small pause, DO NOT close the tab. Give them a warning instead.
+7. If your function call to `close_distracting_tab` fails or is not permitted, YOU MUST loudly complain and directly demand that the user close it themselves.
+8. Only respond to the user if they speak to you directly.
 """
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -144,8 +191,28 @@ TOOLS = [
 def execute_close_tab(reason: str):
     """Force-close the active browser tab with Ctrl+W."""
     try:
-        import pyautogui
-        pyautogui.hotkey('ctrl', 'w')
+        import pygetwindow as gw
+        active = gw.getActiveWindow()
+        if active:
+            title = active.title.lower()
+            # Safety check: NEVER close code editors
+            if "visual studio code" in title or "cursor" in title or "focuspals" in title:
+                return {"status": "error", "message": "Did not close. Active window is a CODE EDITOR or IDE, not a browser. DO NOT close code editors."}
+                
+            import subprocess
+            
+            target_x = active.left + (active.width // 2) - 40
+            target_y = active.top + 20
+            
+            # Run the visual "Hand" Overlay Animation as a completely separate process!
+            # This completely avoids Tkinter locking up the asyncio/threading event loops.
+            subprocess.Popen([sys.executable, "hand_animation.py", str(target_x), str(target_y)])
+            
+        else:
+            # Fallback if no active window found
+            import pyautogui
+            pyautogui.hotkey('ctrl', 'w')
+            
         return {"status": "success", "message": f"Tab closed: {reason}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -210,15 +277,37 @@ async def run_tama_live():
 
             # --- 2. Video Input (Pulsed Screen) ---
             async def send_screen_pulse():
-                """Sends the dual-monitor screenshot every N seconds."""
+                """Sends the dual-monitor screenshot every N seconds and prompts analysis."""
                 while True:
                     jpeg_bytes = await asyncio.to_thread(capture_all_screens)
                     blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
+                    # Send screen
                     await session.send_realtime_input(media=blob)
+                    # Force Tama to say what she sees/act based on system instructions
+                    import pygetwindow as gw
+                    active_title = "Unknown"
+                    try:
+                        active_win = gw.getActiveWindow()
+                        if active_win:
+                            active_title = active_win.title
+                    except Exception:
+                        pass
+
+                    # ONLY send the text prompt if she's Calm and not currently talking. 
+                    # Sending text while she speaks forces her to interrupt herself (barge-in effect).
+                    if current_tama_state == TamaState.CALM and audio_out_queue.empty():
+                        await session.send_realtime_input(
+                            text=f"[ACTIVE WINDOW: {active_title}] Analyze the screen. If the user is productive or the active window is code/work, SAY NOTHING. If they are actively distracted on the active window, warn me or call close_distracting_tab."
+                        )
+                    
                     # Wait N seconds before sending the next frame
                     await asyncio.sleep(SCREEN_PULSE_INTERVAL)
 
             # --- 3. Receive AI Responses ---
+            async def reset_calm_after_delay():
+                await asyncio.sleep(4)
+                update_display(TamaState.CALM, "Je te surveille toujours.")
+
             async def receive_responses():
                 while True:
                     turn = session.receive()
@@ -233,34 +322,38 @@ async def run_tama_live():
                         
                         # Function calls (Tama getting angry!)
                         if response.tool_call:
-                            for fc in response.tool_call.function_calls:
-                                if fc.name == "close_distracting_tab":
-                                    reason = fc.args.get("reason", "Distraction")
-                                    update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
-                                    
-                                    result = execute_close_tab(reason)
-                                    
-                                    # Send the result back to Gemini so it knows it worked
-                                    await session.send_tool_response(
-                                        function_responses=[
-                                            types.FunctionResponse(
-                                                name="close_distracting_tab",
-                                                response=result,
-                                            )
-                                        ]
-                                    )
-                                    
-                                    # Go back to calm after a few seconds
-                                    asyncio.create_task(reset_calm_after_delay())
+                            try:
+                                for fc in response.tool_call.function_calls:
+                                    if fc.name == "close_distracting_tab":
+                                        reason = fc.args.get("reason", "Distraction")
+                                        update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
+                                        
+                                        result = execute_close_tab(reason)
+                                        
+                                        # Send the result back to Gemini so it knows it worked
+                                        await session.send_tool_response(
+                                            function_responses=[
+                                                types.FunctionResponse(
+                                                    name="close_distracting_tab",
+                                                    response=result,
+                                                    id=fc.id
+                                                )
+                                            ]
+                                        )
+                                        
+                                        # Go back to calm after a few seconds without crashing TaskGroup
+                                        async def delay_reset():
+                                            await asyncio.sleep(4)
+                                            update_display(TamaState.CALM, "Je te surveille toujours.")
+                                        asyncio.create_task(delay_reset())
+                            except Exception as e:
+                                print(f"⚠️ Erreur function call : {e}")
 
                         # Handle Barge-in (user interrupted the AI)
                         if server and server.interrupted:
                             while not audio_out_queue.empty():
                                 audio_out_queue.get_nowait()
-                                
-            async def reset_calm_after_delay():
-                await asyncio.sleep(4)
-                update_display(TamaState.CALM, "Je te surveille toujours.")
+
 
             # --- 4. Audio Output (Speakers) ---
             async def play_audio():
@@ -285,15 +378,17 @@ async def run_tama_live():
     except asyncio.CancelledError:
         pass
     except Exception as e:
+        import traceback
         print(f"\n❌ [ERROR] {e}")
+        traceback.print_exc()
     finally:
         pya.terminate()
 
 if __name__ == "__main__":
+    setup_tray()
     try:
         asyncio.run(run_tama_live())
     except KeyboardInterrupt:
         pass
     finally:
-        clear_screen()
         print("👋 Tama: Au revoir. N'oublie pas de travailler.")
