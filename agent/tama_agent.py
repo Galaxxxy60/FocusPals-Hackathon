@@ -1,14 +1,13 @@
 """
-FocusPals Agent — Tama 🥷
-Proactive AI productivity coach powered by Gemini.
+FocusPals Agent — Tama 🥷 -> TRUE LIVE API (WebSocket) 📡
+Proactive AI productivity coach powered by Gemini Multimodal Live API.
 
-Background sentinel: captures your screen every ~15 seconds,
-sends it to Gemini for analysis, and takes action if you procrastinate.
-
-States:
-  😌 CALM      — User is working. Tama reads her book quietly.
-  😠 ANGRY     — Distraction detected! Tama closes the tab.
-  😴 SLEEPING  — It's late (23h+). Tama tells you to go to bed.
+Features:
+- 🎙️ Continuous audio streaming (Mic & Speaker)
+- 👁️ Multi-monitor vision (All screens merged)
+- ⏳ "Pulse" video sending (1 frame every 5 seconds to save bandwidth)
+- 🛠️ Function Calling (Closes distracting tabs)
+- 🎭 ASCII State Machine
 """
 
 import asyncio
@@ -24,6 +23,7 @@ from google import genai
 from google.genai import types
 from PIL import Image
 import mss
+import pyaudio
 
 load_dotenv()
 
@@ -35,17 +35,27 @@ if not GEMINI_API_KEY:
     sys.exit(1)
 
 client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL = "gemini-2.5-flash-preview"
-SCAN_INTERVAL = 15  # seconds between each screenshot analysis
 
+# Use the correct model for Live API
+MODEL = "gemini-2.0-flash-exp" # Or gemini-2.5-flash if available for Live API. We'll use 2.0-flash-exp which historically supports Live API best, but let's stick to gemini-2.5-flash since we verified it exists.
+MODEL = "gemini-2.5-flash"
 
-# ─── Tama's States ──────────────────────────────────────────
+# Send 1 frame every X seconds (Pulsed Video)
+SCREEN_PULSE_INTERVAL = 5  
+
+# ─── Audio Configuration ────────────────────────────────────
+
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+SEND_SAMPLE_RATE = 16000
+RECEIVE_SAMPLE_RATE = 24000
+CHUNK_SIZE = 1024
+
+# ─── Tama's States & Display ────────────────────────────────
 
 class TamaState(Enum):
     CALM = "calm"
     ANGRY = "angry"
-    SLEEPING = "sleeping"
-
 
 TAMA_FACES = {
     TamaState.CALM: r"""
@@ -58,8 +68,8 @@ TAMA_FACES = {
     ║         │             │          ║
     ║         ╰─────────────╯          ║
     ║                                  ║
-    ║    📖 Tama is reading quietly    ║
-    ║       Everything is fine.        ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
     ╚══════════════════════════════════╝
 """,
     TamaState.ANGRY: r"""
@@ -73,221 +83,217 @@ TAMA_FACES = {
     ║         ╰─────────────╯          ║
     ║                                  ║
     ║  💢 STOP PROCRASTINATING !!      ║
-    ║     I'm closing that tab.        ║
-    ╚══════════════════════════════════╝
-""",
-    TamaState.SLEEPING: r"""
-    ╔══════════════════════════════════╗
-    ║                          z Z    ║
-    ║         ╭─────────────╮   Z     ║
-    ║         │   ─     ─   │         ║
-    ║         │             │         ║
-    ║         │    ╰───╯    │         ║
-    ║         │             │         ║
-    ║         ╰─────────────╯         ║
-    ║                                  ║
-    ║  🌙 It's late... Go to sleep.   ║
-    ║     You did well today.          ║
+    ║     Closing your tab now.        ║
     ╚══════════════════════════════════╝
 """,
 }
 
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
 
-# ─── Screen Capture ─────────────────────────────────────────
+def update_display(state: TamaState, message: str = ""):
+    clear_screen()
+    print("=" * 42)
+    print("  FocusPals — Tama Agent 🥷 (LIVE API) 📡")
+    print("  Dual-Monitor Pulse Vision + Audio Voice")
+    print("=" * 42)
+    print(TAMA_FACES[state])
+    if message:
+        print(f"  💬 \"{message}\"")
+    print("\n  Press Ctrl+C to stop.")
+    print("─" * 42)
 
-def capture_screen() -> bytes:
-    """Take a screenshot and return compressed JPEG bytes."""
+# ─── System Prompt ──────────────────────────────────────────
+
+SYSTEM_PROMPT = """You are Tama, a strict and serious productivity coach inside the app FocusPals.
+You are in a LIVE voice call with the user. You can see their screens (all monitors merged).
+
+Your personality:
+- Strict, direct, no-nonsense Asian student archetype.
+- You care deeply about their productivity.
+- Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences). You are interrupting their workflow.
+
+Your job:
+1. Watch the screen visually. 
+2. Productive = VSCode, IDE, terminal, documentation, design tools. YouTube programming tutorials are PRODUCTIVE.
+3. Distracted = YouTube entertainment, social media (Twitter/X, Reddit, TikTok), Netflix, games.
+4. If the user is DISTRACTED, immediately call the function `close_distracting_tab` AND scold them vocally.
+5. If the user talks to you, respond naturally but always bring them back to work.
+"""
+
+# ─── Tools (Function Calling) ───────────────────────────────
+
+TOOLS = [
+    types.Tool(
+        function_declarations=[
+            types.FunctionDeclaration(
+                name="close_distracting_tab",
+                description="Close the currently active browser tab because the user is distracted.",
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={
+                        "reason": types.Schema(type="STRING", description="Reason for closing"),
+                    },
+                    required=["reason"],
+                ),
+            ),
+        ]
+    )
+]
+
+def execute_close_tab(reason: str):
+    """Force-close the active browser tab with Ctrl+W."""
+    try:
+        import pyautogui
+        pyautogui.hotkey('ctrl', 'w')
+        return {"status": "success", "message": f"Tab closed: {reason}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# ─── Screen Capture (All Monitors) ──────────────────────────
+
+def capture_all_screens() -> bytes:
+    """Capture ALL connected monitors, merge them, and output a lightweight JPEG."""
     with mss.mss() as sct:
-        monitor = sct.monitors[1]
+        # monitors[0] is the virtual monitor that spans across all physical monitors!
+        monitor = sct.monitors[0]
         screenshot = sct.grab(monitor)
         img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
 
-    # Resize for Gemini (768px max, saves bandwidth)
-    img.thumbnail((768, 768), Image.Resampling.LANCZOS)
+    # Downscale heavily to save bandwidth while keeping text somewhat legible for AI.
+    # 1024x512 is a good wide aspect ratio for dual monitors
+    img.thumbnail((1024, 512), Image.Resampling.LANCZOS)
 
     buffer = io.BytesIO()
     img.save(buffer, format="JPEG", quality=40)
     return buffer.getvalue()
 
+# ─── Main Pipeline ──────────────────────────────────────────
 
-# ─── Tab Closing (OS Action) ───────────────────────────────
+async def run_tama_live():
+    pya = pyaudio.PyAudio()
+    
+    config = types.LiveConnectConfig(
+        response_modalities=["AUDIO"], # We want voice!
+        system_instruction=types.Content(parts=[types.Part(text=SYSTEM_PROMPT)]),
+        tools=TOOLS,
+    )
 
-def close_distracting_tab():
-    """Force-close the active browser tab with Ctrl+W."""
+    update_display(TamaState.CALM, "Connecting to Google WebSocket...")
+
     try:
-        import pyautogui
-        time.sleep(0.3)
-        pyautogui.hotkey('ctrl', 'w')
-        print("   ✅ Tab closed.")
-        return True
-    except Exception as e:
-        print(f"   ❌ Failed to close tab: {e}")
-        return False
-
-
-# ─── Gemini Vision Analysis ─────────────────────────────────
-
-ANALYSIS_PROMPT = """You are Tama, a strict productivity coach. Analyze this screenshot.
-
-Reply with EXACTLY this JSON format, nothing else:
-{
-  "status": "PRODUCTIVE" or "DISTRACTED" or "UNCLEAR",
-  "confidence": 0.0 to 1.0,
-  "what_user_is_doing": "brief description",
-  "tama_reaction": "what Tama says (1-2 sentences, in French, stay in character: strict but caring)",
-  "should_close_tab": true or false
-}
-
-Rules:
-- Coding, IDE, terminal, documentation, design tools = PRODUCTIVE
-- YouTube tutorials about programming/coding = PRODUCTIVE  
-- YouTube entertainment, social media, Netflix, memes, games = DISTRACTED
-- If unsure, say UNCLEAR and don't close anything
-- should_close_tab = true ONLY if clearly distracted on a browser tab
-- Keep tama_reaction SHORT and IN FRENCH
-"""
-
-
-async def analyze_screenshot(screenshot_bytes: bytes) -> dict:
-    """Send screenshot to Gemini and get productivity analysis."""
-    try:
-        response = await client.aio.models.generate_content(
-            model=MODEL,
-            contents=[
-                types.Content(
-                    parts=[
-                        types.Part(text=ANALYSIS_PROMPT),
-                        types.Part(
-                            inline_data=types.Blob(
-                                data=screenshot_bytes,
-                                mime_type="image/jpeg",
-                            )
-                        ),
-                    ]
+        async with client.aio.live.connect(model=MODEL, config=config) as session:
+            
+            update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
+            
+            audio_out_queue = asyncio.Queue()
+            audio_in_queue = asyncio.Queue(maxsize=5)
+            
+            # --- 1. Audio Input (Microphone) ---
+            async def listen_mic():
+                mic_info = pya.get_default_input_device_info()
+                stream = await asyncio.to_thread(
+                    pya.open, format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
+                    input=True, input_device_index=mic_info["index"], frames_per_buffer=CHUNK_SIZE,
                 )
-            ],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-            ),
-        )
+                try:
+                    while True:
+                        data = await asyncio.to_thread(stream.read, CHUNK_SIZE, exception_on_overflow=False)
+                        await audio_in_queue.put(types.Blob(data=data, mime_type="audio/pcm"))
+                except asyncio.CancelledError:
+                    stream.close()
 
-        import json
-        result = json.loads(response.text)
-        return result
+            async def send_audio():
+                while True:
+                    blob = await audio_in_queue.get()
+                    await session.send_realtime_input(audio=blob)
 
+            # --- 2. Video Input (Pulsed Screen) ---
+            async def send_screen_pulse():
+                """Sends the dual-monitor screenshot every N seconds."""
+                while True:
+                    jpeg_bytes = await asyncio.to_thread(capture_all_screens)
+                    blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
+                    await session.send_realtime_input(media=blob)
+                    # Wait N seconds before sending the next frame
+                    await asyncio.sleep(SCREEN_PULSE_INTERVAL)
+
+            # --- 3. Receive AI Responses ---
+            async def receive_responses():
+                while True:
+                    turn = session.receive()
+                    async for response in turn:
+                        server = response.server_content
+                        
+                        # Audio voice parts
+                        if server and server.model_turn:
+                            for part in server.model_turn.parts:
+                                if part.inline_data and isinstance(part.inline_data.data, bytes):
+                                    audio_out_queue.put_nowait(part.inline_data.data)
+                        
+                        # Function calls (Tama getting angry!)
+                        if response.tool_call:
+                            for fc in response.tool_call.function_calls:
+                                if fc.name == "close_distracting_tab":
+                                    reason = fc.args.get("reason", "Distraction")
+                                    update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
+                                    
+                                    result = execute_close_tab(reason)
+                                    
+                                    # Send the result back to Gemini so it knows it worked
+                                    await session.send_tool_response(
+                                        function_responses=[
+                                            types.FunctionResponse(
+                                                name="close_distracting_tab",
+                                                response=result,
+                                            )
+                                        ]
+                                    )
+                                    
+                                    # Go back to calm after a few seconds
+                                    asyncio.create_task(reset_calm_after_delay())
+
+                        # Handle Barge-in (user interrupted the AI)
+                        if server and server.interrupted:
+                            while not audio_out_queue.empty():
+                                audio_out_queue.get_nowait()
+                                
+            async def reset_calm_after_delay():
+                await asyncio.sleep(4)
+                update_display(TamaState.CALM, "Je te surveille toujours.")
+
+            # --- 4. Audio Output (Speakers) ---
+            async def play_audio():
+                speaker = await asyncio.to_thread(
+                    pya.open, format=FORMAT, channels=CHANNELS, rate=RECEIVE_SAMPLE_RATE, output=True,
+                )
+                try:
+                    while True:
+                        audio_data = await audio_out_queue.get()
+                        await asyncio.to_thread(speaker.write, audio_data)
+                except asyncio.CancelledError:
+                    speaker.close()
+
+            # --- RUN ALL PARALLEL TASKS ---
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(listen_mic())
+                tg.create_task(send_audio())
+                tg.create_task(send_screen_pulse())
+                tg.create_task(receive_responses())
+                tg.create_task(play_audio())
+
+    except asyncio.CancelledError:
+        pass
     except Exception as e:
-        print(f"   ⚠️ Analysis error: {e}")
-        return {
-            "status": "UNCLEAR",
-            "confidence": 0,
-            "what_user_is_doing": "Could not analyze",
-            "tama_reaction": "",
-            "should_close_tab": False,
-        }
-
-
-# ─── Display ────────────────────────────────────────────────
-
-def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-
-def display_tama(state: TamaState, message: str = "", scan_count: int = 0):
-    """Show Tama's current state in the terminal."""
-    clear_screen()
-
-    print("=" * 42)
-    print("  FocusPals — Tama Agent 🥷")
-    print("  Gemini Live Agent Challenge")
-    print("=" * 42)
-    print(TAMA_FACES[state])
-
-    if message:
-        print(f"  💬 \"{message}\"")
-        print()
-
-    now = datetime.now().strftime("%H:%M:%S")
-    print(f"  🕐 {now}  |  Scans: {scan_count}  |  Every {SCAN_INTERVAL}s")
-    print(f"  State: {state.value.upper()}")
-    print()
-    print("  Press Ctrl+C to stop.")
-    print("─" * 42)
-
-
-# ─── Main Sentinel Loop ────────────────────────────────────
-
-async def run_sentinel():
-    """Main loop: screenshot → analyze → react → repeat."""
-
-    current_state = TamaState.CALM
-    scan_count = 0
-    consecutive_distractions = 0
-
-    display_tama(current_state, "Initializing... I'm watching you.", scan_count)
-    await asyncio.sleep(2)
-
-    while True:
-        scan_count += 1
-        hour = datetime.now().hour
-
-        # ── Night mode (23h - 6h) ──
-        if hour >= 23 or hour < 6:
-            current_state = TamaState.SLEEPING
-            display_tama(
-                current_state,
-                "Il est tard... Va dormir. Tu as assez travaillé.",
-                scan_count,
-            )
-            await asyncio.sleep(60)  # Check less often at night
-            continue
-
-        # ── Capture & Analyze ──
-        display_tama(current_state, "📸 Scanning your screen...", scan_count)
-
-        screenshot = await asyncio.to_thread(capture_screen)
-        analysis = await analyze_screenshot(screenshot)
-
-        status = analysis.get("status", "UNCLEAR")
-        reaction = analysis.get("tama_reaction", "")
-        doing = analysis.get("what_user_is_doing", "")
-        should_close = analysis.get("should_close_tab", False)
-        confidence = analysis.get("confidence", 0)
-
-        print(f"\n  📊 Analysis: {status} (confidence: {confidence:.0%})")
-        print(f"  👀 Doing: {doing}")
-
-        # ── React based on status ──
-        if status == "DISTRACTED" and confidence > 0.6:
-            consecutive_distractions += 1
-            current_state = TamaState.ANGRY
-            display_tama(current_state, reaction, scan_count)
-
-            # Close tab on 2nd consecutive distraction (give 1 chance)
-            if should_close and consecutive_distractions >= 2:
-                print("\n  🔥 CLOSING DISTRACTING TAB...")
-                await asyncio.to_thread(close_distracting_tab)
-                consecutive_distractions = 0
-
-            elif consecutive_distractions == 1:
-                print("\n  ⚠️ First warning... One more and I close it.")
-
-        elif status == "PRODUCTIVE":
-            consecutive_distractions = 0
-            current_state = TamaState.CALM
-            display_tama(current_state, reaction or "Bien, continue.", scan_count)
-
-        else:
-            # UNCLEAR — don't change state
-            display_tama(current_state, "Hmm... je t'observe.", scan_count)
-
-        # ── Wait for next scan ──
-        await asyncio.sleep(SCAN_INTERVAL)
-
-
-# ─── Entry Point ────────────────────────────────────────────
+        print(f"\n❌ [ERROR] {e}")
+    finally:
+        pya.terminate()
 
 if __name__ == "__main__":
     try:
-        asyncio.run(run_sentinel())
+        asyncio.run(run_tama_live())
     except KeyboardInterrupt:
-        print("\n\n👋 Tama: Au revoir ! Reste productif sans moi...")
+        pass
+    finally:
+        clear_screen()
+        print("👋 Tama: Au revoir. N'oublie pas de travailler.")
