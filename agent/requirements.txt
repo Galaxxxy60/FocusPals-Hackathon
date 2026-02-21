@@ -1,0 +1,6 @@
+google-genai
+mss
+Pillow
+pyautogui
+pyaudio
+python-dotenv
