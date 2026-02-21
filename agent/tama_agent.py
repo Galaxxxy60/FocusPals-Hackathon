@@ -131,6 +131,7 @@ def update_tray(state: TamaState):
 # ─── Display ────────────────────────────────────────────────
 
 current_tama_state = TamaState.CALM
+current_suspicion_index = 0
 
 def update_display(state: TamaState, message: str = ""):
     global current_tama_state
@@ -158,14 +159,16 @@ Your personality:
 - Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences).
 
 Your job:
-1. Watch the screen visually. 
-2. Productive = VSCode, IDE, terminal, documentation, design tools. YouTube programming tutorials are PRODUCTIVE.
-3. IF THE USER IS PRODUCTIVE: YOU MUST STAY COMPLETELY SILENT. DO NOT SAY A SINGLE WORD. Just observe.
-4. Distracted = Netflix, TikTok, videogames, or purely entertainment YouTube.
-5. IF THEY ARE DISTRACTED: Scold them briefly. If the distraction persists or is blatant, call `close_distracting_tab` AND scold them vocally just before the tab closes.
-6. EXTREMELY IMPORTANT: DO NOT BE TOO STRICT. If they are just quickly checking something or taking a small pause, DO NOT close the tab. Give them a warning instead.
-7. If your function call to `close_distracting_tab` fails or is not permitted, YOU MUST loudly complain and directly demand that the user close it themselves.
-8. Only respond to the user if they speak to you directly.
+1. Productive = VSCode, IDE, terminal, documentation, design tools. YouTube programming tutorials are PRODUCTIVE.
+2. Distracted = Netflix, TikTok, videogames, or purely entertainment YouTube.
+3. You have an internal Suspicion Index from 0 to 10. EVERY TIME you analyze the screen, you MUST call the tool `update_suspicion_index` to adjust it.
+- If productive, DECREASE score slowly by 1. DO NOT reset instantly to 0. (0-2: "Confiance" - You stay COMPLETELY SILENT).
+- If slightly distracted/pausing, increase score slightly (3-5: "Curiosité" - You stay COMPLETELY SILENT).
+- If clearly distracted, increase score to 6-8 (6-8: "Suspicion" - If score >= 7, you MUST scold them verbally, e.g., "C'est quoi cet onglet ?").
+- If persistent distraction, increase to 9-10 (9-10: "Raid" - Call `close_distracting_tab` AND scold them loudly!).
+4. NEVER close a tab unless score is 9 or 10.
+5. If your function call to `close_distracting_tab` fails, loudly complain and directly demand that the user close it themselves.
+6. EXTREMELY IMPORTANT: DO NOT narrate your actions. DO NOT say "Let me check the screen". You MUST call tools in absolute silence unless the suspicion score explicitly allows you to speak.
 """
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -182,6 +185,18 @@ TOOLS = [
                         "reason": types.Schema(type="STRING", description="Reason for closing"),
                     },
                     required=["reason"],
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="update_suspicion_index",
+                description="Update your suspicion level based on visual evidence of distraction.",
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={
+                        "score": types.Schema(type="INTEGER", description="The new suspicion score from 0 (very productive) to 10 (blatant persistent distraction)"),
+                        "reason": types.Schema(type="STRING", description="Reason for the new score"),
+                    },
+                    required=["score", "reason"],
                 ),
             ),
         ]
@@ -293,15 +308,26 @@ async def run_tama_live():
                     except Exception:
                         pass
 
+                    global current_suspicion_index
                     # ONLY send the text prompt if she's Calm and not currently talking. 
                     # Sending text while she speaks forces her to interrupt herself (barge-in effect).
                     if current_tama_state == TamaState.CALM and audio_out_queue.empty():
                         await session.send_realtime_input(
-                            text=f"[ACTIVE WINDOW: {active_title}] Analyze the screen. If the user is productive or the active window is code/work, SAY NOTHING. If they are actively distracted on the active window, warn me or call close_distracting_tab."
+                            text=f"[ACTIVE WINDOW: {active_title}] Analyze the screen. Current Suspicion Index: {current_suspicion_index}/10. Call `update_suspicion_index` SILENTLY with your new evaluated score. DO NOT speak or say 'Let me check'. Just call the tool."
                         )
                     
-                    # Wait N seconds before sending the next frame
-                    await asyncio.sleep(SCREEN_PULSE_INTERVAL)
+                    # Dynamically adjust interval frequency based on Suspicion Index
+                    # Plus l'indice est fort, plus les scans sont fréquents !
+                    if current_suspicion_index <= 2:
+                        pulse_delay = 8.0 # Confiance
+                    elif current_suspicion_index <= 5:
+                        pulse_delay = 5.0 # Curiosité
+                    elif current_suspicion_index <= 8:
+                        pulse_delay = 3.0 # Suspicion
+                    else:
+                        pulse_delay = 1.0 # Raid !
+                    
+                    await asyncio.sleep(pulse_delay)
 
             # --- 3. Receive AI Responses ---
             async def reset_calm_after_delay():
@@ -320,11 +346,35 @@ async def run_tama_live():
                                 if part.inline_data and isinstance(part.inline_data.data, bytes):
                                     audio_out_queue.put_nowait(part.inline_data.data)
                         
-                        # Function calls (Tama getting angry!)
+                        # Function calls (Tama getting angry or updating suspicion!)
                         if response.tool_call:
                             try:
                                 for fc in response.tool_call.function_calls:
-                                    if fc.name == "close_distracting_tab":
+                                    if fc.name == "update_suspicion_index":
+                                        global current_suspicion_index
+                                        score = int(fc.args.get("score", 0))
+                                        reason = fc.args.get("reason", "No reason provided")
+                                        
+                                        if score < current_suspicion_index:
+                                            # Force suspicion to decay slowly (-1 per tick)
+                                            current_suspicion_index = max(0, current_suspicion_index - 1)
+                                        elif score > current_suspicion_index:
+                                            # Cap the rise speed (+2 max per tick) so it builds up progressively
+                                            increment = min(score - current_suspicion_index, 2)
+                                            current_suspicion_index = min(10, current_suspicion_index + increment)
+                                        print(f"  🔍 Suspicion Index: {current_suspicion_index}/10 — {reason}")
+                                        
+                                        await session.send_tool_response(
+                                            function_responses=[
+                                                types.FunctionResponse(
+                                                    name="update_suspicion_index",
+                                                    response={"status": "updated", "current_score": current_suspicion_index},
+                                                    id=fc.id
+                                                )
+                                            ]
+                                        )
+
+                                    elif fc.name == "close_distracting_tab":
                                         reason = fc.args.get("reason", "Distraction")
                                         update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
                                         
