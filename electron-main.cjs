@@ -32,7 +32,7 @@ function createWindow() {
     // mainWindow.setIgnoreMouseEvents(true, { forward: true });
 
     // Load the Vite Dev Server (React app)
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL('http://localhost:3000');
 
     // mainWindow.webContents.openDevTools({ mode: 'detach' }); // Un-comment to debug
 }
