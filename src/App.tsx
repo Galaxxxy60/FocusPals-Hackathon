@@ -1,58 +1,53 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, ContactShadows } from '@react-three/drei';
+import { OrbitControls, ContactShadows, useGLTF, useAnimations } from '@react-three/drei';
 import './index.css';
 
 function Mascot({ suspicionIndex }: { suspicionIndex: number }) {
-    const meshRef = useRef<THREE.Mesh>(null);
+    const groupRef = useRef<THREE.Group>(null);
+    const { scene, animations } = useGLTF('/Tama.glb');
+    const { actions } = useAnimations(animations, groupRef);
 
     // Color based on Suspicion
-    // 0-2 (Green/Calm), 3-5 (Yellow/Curious), 6-8 (Orange/Suspicious), 9-10 (Red/Raid)
-    let color = "#00ffcc";
+    // For a real model, we might tint a light or tint the materials if they exist
     let alertFactor = 1;
-    if (suspicionIndex >= 9) { color = "#ff3b30"; alertFactor = 3; }
-    else if (suspicionIndex >= 6) { color = "#ff9500"; alertFactor = 2; }
-    else if (suspicionIndex >= 3) { color = "#ffcc00"; alertFactor = 1.5; }
+    if (suspicionIndex >= 9) { alertFactor = 4; }
+    else if (suspicionIndex >= 6) { alertFactor = 2; }
+    else if (suspicionIndex >= 3) { alertFactor = 1.5; }
 
-    useFrame((state) => {
-        if (meshRef.current) {
-            meshRef.current.position.y = Math.sin(state.clock.elapsedTime * 2 * alertFactor) * (0.1 * alertFactor);
-            meshRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.5) * 0.2;
+    useEffect(() => {
+        // Try to play animations based on score
+        const actionNames = Object.keys(actions);
+        if (actionNames.length === 0) return;
+
+        // Try to guess animation names if we don't know them:
+        // Or just play the first one and speed it up based on alert factor
+        let selectedActionName = actionNames[0]; // fallback to first animation
+
+        // You could map specific states to specific animations if you know their names in the .glb file.
+        // E.g.
+        // if (suspicionIndex >= 9 && actions['AttackAnim']) selectedActionName = 'AttackAnim';
+        // else if (suspicionIndex >= 5 && actions['SuspiciousLook']) selectedActionName = 'SuspiciousLook';
+        // else if (actions['Idle']) selectedActionName = 'Idle';
+
+        const action = actions[selectedActionName];
+        if (action) {
+            action.reset().fadeIn(0.5).play();
+            action.setEffectiveTimeScale(alertFactor);
+            // Cleanup on state change
+            return () => { action.fadeOut(0.5); };
         }
-    });
+    }, [suspicionIndex, actions, alertFactor]);
 
     return (
-        <group>
-            <mesh ref={meshRef} position={[0, 0, 0]} castShadow>
-                <boxGeometry args={[1.5, 1.5, 1.5]} />
-                <meshPhysicalMaterial
-                    color={color}
-                    roughness={0.2}
-                    metalness={0.8}
-                    clearcoat={1}
-                />
-            </mesh>
-            {/* Eyes */}
-            <mesh position={[-0.4, 0.2, 0.76]}>
-                <sphereGeometry args={[0.15, 32, 32]} />
-                <meshBasicMaterial color="white" />
-            </mesh>
-            <mesh position={[0.4, 0.2, 0.76]}>
-                <sphereGeometry args={[0.15, 32, 32]} />
-                <meshBasicMaterial color="white" />
-            </mesh>
-            {/* Pupils */}
-            <mesh position={[-0.4, 0.2, 0.88]}>
-                <sphereGeometry args={[0.07, 32, 32]} />
-                <meshBasicMaterial color="black" />
-            </mesh>
-            <mesh position={[0.4, 0.2, 0.88]}>
-                <sphereGeometry args={[0.07, 32, 32]} />
-                <meshBasicMaterial color="black" />
-            </mesh>
+        <group ref={groupRef} position={[0, -1, 0]}>
+            <primitive object={scene} castShadow scale={1.2} />
         </group>
     );
 }
+
+// Preload the model so it doesn't pop in
+useGLTF.preload('/Tama.glb');
 
 function App() {
     const [debugOpen, setDebugOpen] = useState(false);
@@ -70,6 +65,11 @@ function App() {
                 try {
                     const data = JSON.parse(event.data);
                     setTamaData(data);
+                    // Send to Electron Main Process for the Tray Menu
+                    if ((window as any).require) {
+                        const { ipcRenderer } = (window as any).require('electron');
+                        ipcRenderer.send('tama-update', data);
+                    }
                 } catch (e) { }
             };
             ws.onclose = () => {
@@ -102,7 +102,9 @@ function App() {
                     <directionalLight position={[5, 5, 5]} intensity={1.5} castShadow />
                     <pointLight position={[-5, 5, -5]} intensity={0.5} color="#00ffcc" />
 
-                    <Mascot suspicionIndex={tamaData.suspicion_index} />
+                    <React.Suspense fallback={null}>
+                        <Mascot suspicionIndex={tamaData.suspicion_index} />
+                    </React.Suspense>
 
                     <ContactShadows position={[0, -1.2, 0]} opacity={0.4} scale={5} blur={2} far={2} />
                     <OrbitControls enableZoom={false} enablePan={false} />

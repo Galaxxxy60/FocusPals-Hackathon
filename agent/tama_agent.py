@@ -199,21 +199,20 @@ You have an internal Suspicion Index from 0 to 10. EVERY TIME you analyze the sc
 - NEVER read, analyze, or extract the text of these messages (no OCR on private chat).
 - If IDE is still in use visibly elsewhere: Suspicion remains Low.
 - If user interacts ONLY with the chat (Active Window) for more than 120 seconds: Suspicion = 3-5 ("Curiosité" - You stay COMPLETELY SILENT).
-- If active for > 120 seconds, use Gemini Live API to ask an open question (e.g., "Nicolas, cette discussion est-elle vitale pour le projet ou est-ce que je dois sortir le grand jeu ?").
+- If active for > 120 seconds: jump to 6 ("Suspicion"), use Gemini Live API to ask an open question (e.g., "Nicolas, cette discussion est-elle vitale pour le projet ou est-ce que je dois sortir le grand jeu ?").
 - If user verbally confirms it's work: Give 10 mins extra. If ignored or admits distraction: Jump to score 10 ("Raid") and `close_distracting_tab` after 10s.
 
 3. FLUX (Média): Spotify, YT Music, Deezer.
-- If in background or minimized: You DO NOT care. It's fuel for the brain.
-- If it becomes the ACTIVE window for > 60 seconds: Increase Suspicion. 
-- If you visually detect video clips/dancing instead of static album art: Intervene verbally (e.g., "Nicolas, on est là pour écouter du son ou pour regarder des gens danser ? Ferme cet onglet ou réduis-le, je ne veux plus voir d'images qui bougent ici.").
+- If in background or minimized: You DO NOT care. It's fuel for the brain. (Score 0, SILENT).
+- If it becomes the ACTIVE window for > 60 seconds: Increase Suspicion to 6+. YOU MUST speak & Intervene verbally (e.g., "Nicolas, on est là pour écouter du son ou pour regarder des gens danser ? Réduis cet onglet.").
 
-4. BANNIE (Fun): Netflix, YouTube (non-tuto), Steam, Reddit.
-- Action: Immediate aggression. Fast increase score to >7 and then 10 ("Raid") in 15 seconds. Call `close_distracting_tab` AND scold them loudly.
+4. BANNIE (Fun): Netflix, YouTube (non-tuto), Steam, Reddit. NOTE: YouTube programming tutorials are PRODUCTIVE (Score 0).
+- Action: Immediate aggression. Fast increase score to >7 and then 10 ("Raid") in 15 seconds. YOU MUST scold them loudly AND call `close_distracting_tab`. 
 
 General rules:
 - NEVER close a tab unless score is 9 or 10.
 - If your function call to `close_distracting_tab` fails, loudly complain and directly demand that the user close it themselves.
-- EXTREMELY IMPORTANT: DO NOT narrate your actions. DO NOT say "Let me check the screen". You MUST call tools in absolute silence unless the suspicion score explicitly allows you to speak.
+- RULE OF SILENCE: You are biologically MUTE unless your new Suspicion Score is 6 or higher. DO NOT say "Score updated". DO NOT say "Trust maintained". Do not acknowledge updates. JUST CALL THE TOOL.
 """
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -234,16 +233,15 @@ TOOLS = [
             ),
             types.FunctionDeclaration(
                 name="update_suspicion_index",
-                description="Update your suspicion level based on visual evidence of distraction.",
+                description="Update the internal 0-10 Suspicion Index of the user based on visual analysis.",
                 parameters=types.Schema(
                     type="OBJECT",
                     properties={
-                        "score": types.Schema(type="INTEGER", description="The new suspicion score from 0 (very productive) to 10 (blatant persistent distraction)"),
-                        "reason": types.Schema(type="STRING", description="Reason for the new score"),
-                    },
-                    required=["score", "reason"],
-                ),
-            ),
+                        "score": types.Schema(type="INTEGER", description="The evaluated state (0-10)"),
+                        "reason": types.Schema(type="STRING", description="Short internal reason")
+                    }
+                )
+            )
         ]
     )
 ]
@@ -362,11 +360,10 @@ async def run_tama_live():
                     active_duration = int(time.time() - active_window_start_time)
 
                     global current_suspicion_index
-                    # ONLY send the text prompt if she's Calm and not currently talking. 
-                    # Sending text while she speaks forces her to interrupt herself (barge-in effect).
+                    # Send screen pulse strictly asking for data updating
                     if current_tama_state == TamaState.CALM and audio_out_queue.empty():
                         await session.send_realtime_input(
-                            text=f"[ACTIVE WINDOW: {active_title} | ACTIVE FOR: {active_duration} seconds] Analyze the screen according to the 4 Categories (SANTÉ, ZONE GRISE, FLUX, BANNIE). Current Suspicion Index: {current_suspicion_index}/10. Call `update_suspicion_index` SILENTLY with your new score. DO NOT say 'Let me check'. Just call the tool."
+                            text=f"[VISUAL_UPDATE | active_window: {active_title} | duration: {active_duration}s | current_S: {current_suspicion_index}] Evaluate silently based on duration rules. You are forbidden to speak unless current_S is >= 6."
                         )
                     
                     # Dynamically adjust interval frequency based on Suspicion Index

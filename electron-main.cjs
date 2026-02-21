@@ -44,16 +44,32 @@ app.whenReady().then(() => {
 
     // -- Adding System Tray Icon --
     // We create a simple empty icon or native icon for the "Hidden Icons" area
-    const { nativeImage } = require('electron');
-    const emptyIcon = nativeImage.createEmpty();
-    tray = new Tray(emptyIcon);
-    const contextMenu = Menu.buildFromTemplate([
-        { label: 'FocusPals 3D Mascot', type: 'normal', enabled: false },
-        { type: 'separator' },
-        { label: 'Quit', click: () => { app.quit(); } }
-    ]);
+    const { nativeImage, ipcMain } = require('electron');
+    const iconPath = path.join(__dirname, 'public/tray_icon.png').replace(/\\/g, '/');
+    tray = new Tray(nativeImage.createFromPath(iconPath));
+
+    function updateTrayMenu(state, suspicion, windowName, duration) {
+        const contextMenu = Menu.buildFromTemplate([
+            { label: '🧠 Tama Brain Sync', enabled: false },
+            { type: 'separator' },
+            { label: `State: ${state}`, enabled: false },
+            { label: `Suspicion (S): ${suspicion}/10`, enabled: false },
+            { label: `Active Window: ${windowName}`, enabled: false },
+            { label: `Duration: ${duration}s`, enabled: false },
+            { type: 'separator' },
+            { label: 'Quit', click: () => { app.quit(); } }
+        ]);
+        tray.setContextMenu(contextMenu);
+    }
+
+    // Initial empty menu
+    updateTrayMenu('CALM', 0, 'Loading...', 0);
     tray.setToolTip('FocusPals Tama 3D');
-    tray.setContextMenu(contextMenu);
+
+    // Listen for data from the React App via IPC
+    ipcMain.on('tama-update', (event, data) => {
+        updateTrayMenu(data.state, data.suspicion_index, data.active_window, data.active_duration);
+    });
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
