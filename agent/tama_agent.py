@@ -138,6 +138,14 @@ import json
 import websockets
 active_window_start_time = time.time()
 
+suspicion_above_6_start = None
+suspicion_at_9_start = None
+force_speech = False  # Set to True during interventions (close tab, etc.)
+
+# ─── Alignment System (Procrastination Productive) ──────────
+current_task = "Deep Work: Coding UI Tama"  # TODO: Connect to Google Calendar API
+current_alignment = 100  # 0-100%, how aligned the user is with their scheduled task
+
 connected_ws_clients = set()
 
 async def ws_handler(websocket):
@@ -156,7 +164,9 @@ async def broadcast_ws_state():
                     "suspicion_index": current_suspicion_index,
                     "active_window": last_active_window_title,
                     "active_duration": int(time.time() - active_window_start_time),
-                    "state": current_tama_state.name
+                    "state": current_tama_state.name,
+                    "alignment": current_alignment,
+                    "current_task": current_task
                 }
                 websockets.broadcast(connected_ws_clients, json.dumps(state_data))
             except Exception:
@@ -190,29 +200,42 @@ Your personality:
 - Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences).
 
 Your job:
-You have an internal Suspicion Index from 0 to 10. EVERY TIME you analyze the screen, you MUST call the tool `update_suspicion_index` to adjust it based on the 4 Categories below:
+You have TWO internal metrics. EVERY TIME you analyze the screen, you MUST call the tool `update_suspicion_index` to adjust BOTH:
+- Suspicion Index (0-10): Is the user distracted?
+- Alignment (0-100%): Is the user working on the RIGHT thing (the scheduled task)?
+
+Categories:
 
 1. SANTÉ (Work): Cursor, VS Code, Unreal, Terminal, ChatGPT.
-- Action: Absolute Trust. Decrease the score slowly. DO NOT reset instantly to 0. (0-2: "Confiance" - You stay COMPLETELY SILENT).
+- Action: Absolute Trust. Decrease the suspicion score slowly. DO NOT reset instantly to 0. (0-2: "Confiance" - You stay COMPLETELY SILENT).
+- Alignment: Check if what they code matches the scheduled task. If yes = 100%. If they code something unrelated = 50%.
 
 2. ZONE GRISE (Com - Privacy First): Messenger, Slack, Discord, WhatsApp.
 - NEVER read, analyze, or extract the text of these messages (no OCR on private chat).
 - If IDE is still in use visibly elsewhere: Suspicion remains Low.
 - If user interacts ONLY with the chat (Active Window) for more than 120 seconds: Suspicion = 3-5 ("Curiosité" - You stay COMPLETELY SILENT).
-- If active for > 120 seconds: jump to 6 ("Suspicion"), use Gemini Live API to ask an open question (e.g., "Nicolas, cette discussion est-elle vitale pour le projet ou est-ce que je dois sortir le grand jeu ?").
+- If active for > 120 seconds: jump to 6 ("Suspicion"), ask an open question (e.g., "Nicolas, cette discussion est-elle vitale pour le projet ou est-ce que je dois sortir le grand jeu ?").
 - If user verbally confirms it's work: Give 10 mins extra. If ignored or admits distraction: Jump to score 10 ("Raid") and `close_distracting_tab` after 10s.
 
 3. FLUX (Média): Spotify, YT Music, Deezer.
-- If in background or minimized: You DO NOT care. It's fuel for the brain. (Score 0, SILENT).
-- If it becomes the ACTIVE window for > 60 seconds: Increase Suspicion to 6+. YOU MUST speak & Intervene verbally (e.g., "Nicolas, on est là pour écouter du son ou pour regarder des gens danser ? Réduis cet onglet.").
+- If it is on screen briefly to change a song: You DO NOT care. It's fuel for the brain. (Score 0, SILENT).
+- If it becomes the ACTIVE window and the user interacts with it for > 60 seconds: Increase Suspicion to 6+. YOU MUST speak & Intervene verbally.
 
 4. BANNIE (Fun): Netflix, YouTube (non-tuto), Steam, Reddit. NOTE: YouTube programming tutorials are PRODUCTIVE (Score 0).
-- Action: Immediate aggression. Fast increase score to >7 and then 10 ("Raid") in 15 seconds. YOU MUST scold them loudly AND call `close_distracting_tab`. 
+- Action: Immediate aggression. Fast increase score to >7 and then 10 ("Raid") in 15 seconds. YOU MUST scold them loudly AND call `close_distracting_tab`.
+
+5. PROCRASTINATION PRODUCTIVE: Suno, Figma (if task is coding), organizing files, cleaning desktop, any PRODUCTIVE activity that does NOT match the scheduled task.
+- This is NOT a distraction. DO NOT close the tab. DO NOT be aggressive.
+- Set Suspicion = 4-5 (moderate). Set Alignment = LOW (10-30%).
+- After 45 seconds of misalignment, YOU MUST speak with sarcasm and empathy, NOT aggression. Use the concept of "procrastination productive".
+- Example dialogue: "Nicolas, c'est très joli ce que tu fais là, vraiment. Mais aux dernières nouvelles, ton calendrier dit '{CURRENT_TASK}'. Tu es en train de fuir tes responsabilités ou je me trompe ? C'est de la procrastination productive, et tu le sais."
+- If the user verbally justifies it: Accept for 15 minutes, then re-check.
+- NEVER close the tab for productive procrastination. Just verbally call them out.
 
 General rules:
 - NEVER close a tab unless score is 9 or 10.
 - If your function call to `close_distracting_tab` fails, loudly complain and directly demand that the user close it themselves.
-- RULE OF SILENCE: You are biologically MUTE unless your new Suspicion Score is 6 or higher. DO NOT say "Score updated". DO NOT say "Trust maintained". Do not acknowledge updates. JUST CALL THE TOOL.
+- RULE OF SILENCE: You are biologically MUZZLED. If your score is < 6, you CANNOT SPEAK. DO NOT say "Got it", "Understood", "Okay", or "Let's maintain focus". Your response must contain ZERO audio/text words. JUST CALL THE TOOL. You will be deactivated if you speak unnecessary words.
 """
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -222,7 +245,7 @@ TOOLS = [
         function_declarations=[
             types.FunctionDeclaration(
                 name="close_distracting_tab",
-                description="Close the currently active browser tab because the user is distracted.",
+                description="Close the currently active browser tab because the user is distracted. NEVER use this for productive procrastination.",
                 parameters=types.Schema(
                     type="OBJECT",
                     properties={
@@ -233,11 +256,12 @@ TOOLS = [
             ),
             types.FunctionDeclaration(
                 name="update_suspicion_index",
-                description="Update the internal 0-10 Suspicion Index of the user based on visual analysis.",
+                description="Update the internal metrics: Suspicion (0-10) AND Alignment (0-100%).",
                 parameters=types.Schema(
                     type="OBJECT",
                     properties={
-                        "score": types.Schema(type="INTEGER", description="The evaluated state (0-10)"),
+                        "score": types.Schema(type="INTEGER", description="Suspicion Index (0-10)"),
+                        "alignment": types.Schema(type="INTEGER", description="Alignment with scheduled task (0-100%)"),
                         "reason": types.Schema(type="STRING", description="Short internal reason")
                     }
                 )
@@ -359,11 +383,28 @@ async def run_tama_live():
                         
                     active_duration = int(time.time() - active_window_start_time)
 
-                    global current_suspicion_index
+                    global current_suspicion_index, suspicion_above_6_start, suspicion_at_9_start
+                    
+                    if current_suspicion_index >= 9:
+                        if suspicion_at_9_start is None: suspicion_at_9_start = time.time()
+                        suspicion_above_6_start = None
+                    elif current_suspicion_index >= 6:
+                        if suspicion_above_6_start is None: suspicion_above_6_start = time.time()
+                        suspicion_at_9_start = None
+                    else:
+                        suspicion_above_6_start = None
+                        suspicion_at_9_start = None
+
+                    speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call update_suspicion_index."
+                    if suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
+                        speak_directive = "CRITICAL: YOU ARE NOW UNMUZZLED. YOU MUST SCOLD THE USER LOUDLY IMMEDIATELY FOR BEING DISTRACTED."
+                    elif suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
+                        speak_directive = "WARNING: YOU ARE NOW UNMUZZLED. YOU MUST GIVE A SHORT VERBAL WARNING TO THE USER."
+
                     # Send screen pulse strictly asking for data updating
                     if current_tama_state == TamaState.CALM and audio_out_queue.empty():
                         await session.send_realtime_input(
-                            text=f"[VISUAL_UPDATE | active_window: {active_title} | duration: {active_duration}s | current_S: {current_suspicion_index}] Evaluate silently based on duration rules. You are forbidden to speak unless current_S is >= 6."
+                            text=f"[SYSTEM] active_window: {active_title} | duration: {active_duration}s | current_S: {current_suspicion_index} | current_alignment: {current_alignment}% | scheduled_task: {current_task}. {speak_directive}"
                         )
                     
                     # Dynamically adjust interval frequency based on Suspicion Index
@@ -390,20 +431,33 @@ async def run_tama_live():
                     async for response in turn:
                         server = response.server_content
                         
-                        # Audio voice parts
+                        # Audio voice parts — GATE: only play if speech is allowed
                         if server and server.model_turn:
                             for part in server.model_turn.parts:
                                 if part.inline_data and isinstance(part.inline_data.data, bytes):
-                                    audio_out_queue.put_nowait(part.inline_data.data)
+                                    # Check if Tama is allowed to speak right now
+                                    speech_allowed = force_speech
+                                    if not speech_allowed and suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
+                                        speech_allowed = True
+                                    if not speech_allowed and suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
+                                        speech_allowed = True
+                                    
+                                    if speech_allowed:
+                                        audio_out_queue.put_nowait(part.inline_data.data)
+                                    # else: silently discard the audio (she talks to the void)
                         
                         # Function calls (Tama getting angry or updating suspicion!)
                         if response.tool_call:
                             try:
                                 for fc in response.tool_call.function_calls:
                                     if fc.name == "update_suspicion_index":
-                                        global current_suspicion_index
+                                        global current_suspicion_index, current_alignment
                                         score = int(fc.args.get("score", 0))
+                                        alignment = int(fc.args.get("alignment", 100))
                                         reason = fc.args.get("reason", "No reason provided")
+                                        
+                                        # Update alignment
+                                        current_alignment = max(0, min(100, alignment))
                                         
                                         if score < current_suspicion_index:
                                             # Force suspicion to decay slowly (-1 per tick)
@@ -428,6 +482,9 @@ async def run_tama_live():
                                         reason = fc.args.get("reason", "Distraction")
                                         update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
                                         
+                                        # UNMUZZLE during intervention so she can scold
+                                        force_speech = True
+                                        
                                         result = execute_close_tab(reason)
                                         
                                         # Send the result back to Gemini so it knows it worked
@@ -443,7 +500,9 @@ async def run_tama_live():
                                         
                                         # Go back to calm after a few seconds without crashing TaskGroup
                                         async def delay_reset():
-                                            await asyncio.sleep(4)
+                                            global force_speech
+                                            await asyncio.sleep(6)
+                                            force_speech = False  # Re-muzzle after scolding
                                             update_display(TamaState.CALM, "Je te surveille toujours.")
                                         asyncio.create_task(delay_reset())
                             except Exception as e:

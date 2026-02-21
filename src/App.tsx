@@ -55,7 +55,9 @@ function App() {
         suspicion_index: 0,
         active_window: "Loading...",
         active_duration: 0,
-        state: "CALM"
+        state: "CALM",
+        alignment: 100,
+        current_task: "..."
     });
 
     useEffect(() => {
@@ -128,6 +130,8 @@ function App() {
                     <h3 style={{ margin: '0 0 10px 0', borderBottom: '1px solid #444', paddingBottom: '5px', color: '#fff' }}>🧠 Tama Brain Sync</h3>
                     <p style={{ margin: '5px 0' }}><b>AI State:</b> <span style={{ color: '#fff' }}>{tamaData.state}</span></p>
                     <p style={{ margin: '5px 0' }}><b>Suspicion (S):</b> <span style={{ color: '#fff' }}>{tamaData.suspicion_index}/10</span></p>
+                    <p style={{ margin: '5px 0' }}><b>Alignment:</b> <span style={{ color: tamaData.alignment < 50 ? '#ff9500' : '#00ffcc' }}>{tamaData.alignment}%</span></p>
+                    <p style={{ margin: '5px 0' }}><b>Task:</b> <span style={{ color: '#aaa' }}>{tamaData.current_task}</span></p>
                     <p style={{ margin: '5px 0' }}><b>Window Active:</b> <br /><span style={{ color: '#aaa' }}>{tamaData.active_window}</span></p>
                     <p style={{ margin: '5px 0' }}><b>Duration:</b> <span style={{ color: '#fff' }}>{tamaData.active_duration}s</span></p>
                 </div>
