@@ -1,7 +1,8 @@
-const { app, BrowserWindow, screen } = require('electron');
+const { app, BrowserWindow, screen, Tray, Menu } = require('electron');
 const path = require('path');
 
 let mainWindow;
+let tray = null;
 
 function createWindow() {
     const primaryDisplay = screen.getPrimaryDisplay();
@@ -17,10 +18,11 @@ function createWindow() {
         x: width - winWidth - 20, // 20px from right edge
         y: height - winHeight - 20, // 20px from bottom edge
         transparent: true, // Transparent background!
+        backgroundColor: '#00000000', // actually fully transparent
         frame: false, // No app borders or close buttons
         alwaysOnTop: true, // Keep it above other apps
         hasShadow: false, // No windows dropshadow
-        skipTaskbar: true, // Don't show in alt-tab or taskbar (optional, good for floating mascots)
+        skipTaskbar: true, // hide from Alt-Tab and main taskbar
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
@@ -39,6 +41,19 @@ function createWindow() {
 
 app.whenReady().then(() => {
     createWindow();
+
+    // -- Adding System Tray Icon --
+    // We create a simple empty icon or native icon for the "Hidden Icons" area
+    const { nativeImage } = require('electron');
+    const emptyIcon = nativeImage.createEmpty();
+    tray = new Tray(emptyIcon);
+    const contextMenu = Menu.buildFromTemplate([
+        { label: 'FocusPals 3D Mascot', type: 'normal', enabled: false },
+        { type: 'separator' },
+        { label: 'Quit', click: () => { app.quit(); } }
+    ]);
+    tray.setToolTip('FocusPals Tama 3D');
+    tray.setContextMenu(contextMenu);
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
