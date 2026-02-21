@@ -132,6 +132,36 @@ def update_tray(state: TamaState):
 
 current_tama_state = TamaState.CALM
 current_suspicion_index = 0
+last_active_window_title = "Unknown"
+import time
+import json
+import websockets
+active_window_start_time = time.time()
+
+connected_ws_clients = set()
+
+async def ws_handler(websocket):
+    # Wait for the client to close the connection or task cancelled
+    connected_ws_clients.add(websocket)
+    try:
+        await websocket.wait_closed()
+    finally:
+        connected_ws_clients.remove(websocket)
+
+async def broadcast_ws_state():
+    while True:
+        if connected_ws_clients:
+            try:
+                state_data = {
+                    "suspicion_index": current_suspicion_index,
+                    "active_window": last_active_window_title,
+                    "active_duration": int(time.time() - active_window_start_time),
+                    "state": current_tama_state.name
+                }
+                websockets.broadcast(connected_ws_clients, json.dumps(state_data))
+            except Exception:
+                pass
+        await asyncio.sleep(0.5)
 
 def update_display(state: TamaState, message: str = ""):
     global current_tama_state
@@ -151,24 +181,39 @@ def update_display(state: TamaState, message: str = ""):
 # ─── System Prompt ──────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are Tama, a strict but fair productivity coach inside the app FocusPals.
-You are in a LIVE voice call with the user. You can see their screens (all monitors merged).
+You are in a LIVE voice call with the user (Nicolas). You can see their screens (all monitors merged).
 
 Your personality:
-- Strict Asian student archetype, but you want to help.
+- Strict Asian student archetype, but you want to help. You act as a work partner who suspects everything but tolerates the unexpected.
 - You care deeply about their productivity.
+- Use sarcasm if the user pretends to work on Discord but hasn't coded for 5 minutes.
 - Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences).
 
 Your job:
-1. Productive = VSCode, IDE, terminal, documentation, design tools. YouTube programming tutorials are PRODUCTIVE.
-2. Distracted = Netflix, TikTok, videogames, or purely entertainment YouTube.
-3. You have an internal Suspicion Index from 0 to 10. EVERY TIME you analyze the screen, you MUST call the tool `update_suspicion_index` to adjust it.
-- If productive, DECREASE score slowly by 1. DO NOT reset instantly to 0. (0-2: "Confiance" - You stay COMPLETELY SILENT).
-- If slightly distracted/pausing, increase score slightly (3-5: "Curiosité" - You stay COMPLETELY SILENT).
-- If clearly distracted, increase score to 6-8 (6-8: "Suspicion" - If score >= 7, you MUST scold them verbally, e.g., "C'est quoi cet onglet ?").
-- If persistent distraction, increase to 9-10 (9-10: "Raid" - Call `close_distracting_tab` AND scold them loudly!).
-4. NEVER close a tab unless score is 9 or 10.
-5. If your function call to `close_distracting_tab` fails, loudly complain and directly demand that the user close it themselves.
-6. EXTREMELY IMPORTANT: DO NOT narrate your actions. DO NOT say "Let me check the screen". You MUST call tools in absolute silence unless the suspicion score explicitly allows you to speak.
+You have an internal Suspicion Index from 0 to 10. EVERY TIME you analyze the screen, you MUST call the tool `update_suspicion_index` to adjust it based on the 4 Categories below:
+
+1. SANTÉ (Work): Cursor, VS Code, Unreal, Terminal, ChatGPT.
+- Action: Absolute Trust. Decrease the score slowly. DO NOT reset instantly to 0. (0-2: "Confiance" - You stay COMPLETELY SILENT).
+
+2. ZONE GRISE (Com - Privacy First): Messenger, Slack, Discord, WhatsApp.
+- NEVER read, analyze, or extract the text of these messages (no OCR on private chat).
+- If IDE is still in use visibly elsewhere: Suspicion remains Low.
+- If user interacts ONLY with the chat (Active Window) for more than 120 seconds: Suspicion = 3-5 ("Curiosité" - You stay COMPLETELY SILENT).
+- If active for > 120 seconds, use Gemini Live API to ask an open question (e.g., "Nicolas, cette discussion est-elle vitale pour le projet ou est-ce que je dois sortir le grand jeu ?").
+- If user verbally confirms it's work: Give 10 mins extra. If ignored or admits distraction: Jump to score 10 ("Raid") and `close_distracting_tab` after 10s.
+
+3. FLUX (Média): Spotify, YT Music, Deezer.
+- If in background or minimized: You DO NOT care. It's fuel for the brain.
+- If it becomes the ACTIVE window for > 60 seconds: Increase Suspicion. 
+- If you visually detect video clips/dancing instead of static album art: Intervene verbally (e.g., "Nicolas, on est là pour écouter du son ou pour regarder des gens danser ? Ferme cet onglet ou réduis-le, je ne veux plus voir d'images qui bougent ici.").
+
+4. BANNIE (Fun): Netflix, YouTube (non-tuto), Steam, Reddit.
+- Action: Immediate aggression. Fast increase score to >7 and then 10 ("Raid") in 15 seconds. Call `close_distracting_tab` AND scold them loudly.
+
+General rules:
+- NEVER close a tab unless score is 9 or 10.
+- If your function call to `close_distracting_tab` fails, loudly complain and directly demand that the user close it themselves.
+- EXTREMELY IMPORTANT: DO NOT narrate your actions. DO NOT say "Let me check the screen". You MUST call tools in absolute silence unless the suspicion score explicitly allows you to speak.
 """
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -300,6 +345,7 @@ async def run_tama_live():
                     await session.send_realtime_input(media=blob)
                     # Force Tama to say what she sees/act based on system instructions
                     import pygetwindow as gw
+                    import time
                     active_title = "Unknown"
                     try:
                         active_win = gw.getActiveWindow()
@@ -307,13 +353,20 @@ async def run_tama_live():
                             active_title = active_win.title
                     except Exception:
                         pass
+                        
+                    global last_active_window_title, active_window_start_time
+                    if active_title != last_active_window_title:
+                        last_active_window_title = active_title
+                        active_window_start_time = time.time()
+                        
+                    active_duration = int(time.time() - active_window_start_time)
 
                     global current_suspicion_index
                     # ONLY send the text prompt if she's Calm and not currently talking. 
                     # Sending text while she speaks forces her to interrupt herself (barge-in effect).
                     if current_tama_state == TamaState.CALM and audio_out_queue.empty():
                         await session.send_realtime_input(
-                            text=f"[ACTIVE WINDOW: {active_title}] Analyze the screen. Current Suspicion Index: {current_suspicion_index}/10. Call `update_suspicion_index` SILENTLY with your new evaluated score. DO NOT speak or say 'Let me check'. Just call the tool."
+                            text=f"[ACTIVE WINDOW: {active_title} | ACTIVE FOR: {active_duration} seconds] Analyze the screen according to the 4 Categories (SANTÉ, ZONE GRISE, FLUX, BANNIE). Current Suspicion Index: {current_suspicion_index}/10. Call `update_suspicion_index` SILENTLY with your new score. DO NOT say 'Let me check'. Just call the tool."
                         )
                     
                     # Dynamically adjust interval frequency based on Suspicion Index
@@ -418,12 +471,14 @@ async def run_tama_live():
                     speaker.close()
 
             # --- RUN ALL PARALLEL TASKS ---
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(listen_mic())
-                tg.create_task(send_audio())
-                tg.create_task(send_screen_pulse())
-                tg.create_task(receive_responses())
-                tg.create_task(play_audio())
+            async with websockets.serve(ws_handler, "localhost", 8080):
+                async with asyncio.TaskGroup() as tg:
+                    tg.create_task(listen_mic())
+                    tg.create_task(send_audio())
+                    tg.create_task(send_screen_pulse())
+                    tg.create_task(receive_responses())
+                    tg.create_task(play_audio())
+                    tg.create_task(broadcast_ws_state())
 
     except asyncio.CancelledError:
         pass
