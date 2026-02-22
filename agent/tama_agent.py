@@ -258,7 +258,11 @@ Alignment depends on the current_task:
 - If current_task = "coding" and user is on VS Code → alignment = 1.0
 - If current_task = "coding" and user is on Suno → alignment = 0.0 (procrastination productive!)
 
-RULE OF SILENCE: You are MUZZLED. DO NOT speak, DO NOT say "Got it", "Understood". Just call the tool. Speech is handled by the system.
+CRITICAL ACTIONS:
+- If you receive `S: 10.0` AND `can_be_closed: True`, YOU MUST loudly yell at the user AND call `close_distracting_tab` immediately!
+- If you receive `S: 10.0` AND `can_be_closed: False`, YOU MUST loudly harass the user to go back to work, but DO NOT call `close_distracting_tab`.
+
+RULE OF SILENCE: You are MUZZLED by default. DO NOT speak, DO NOT say "Got it", "Understood". Just call `classify_screen`. Speech is allowed only when explicitly unmuzzled in the [SYSTEM] prompt.
 """
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -434,17 +438,20 @@ async def run_tama_live():
                         suspicion_above_6_start = None
                         suspicion_at_9_start = None
 
-                    speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call update_suspicion_index."
-                    if suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
-                        speak_directive = "CRITICAL: YOU ARE NOW UNMUZZLED. YOU MUST SCOLD THE USER LOUDLY IMMEDIATELY FOR BEING DISTRACTED."
-                    elif suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
-                        speak_directive = "WARNING: YOU ARE NOW UNMUZZLED. YOU MUST GIVE A SHORT VERBAL WARNING TO THE USER."
+                    if force_speech:
+                        speak_directive = "UNMUZZLED: You MUST speak now to address the user!"
+                    else:
+                        speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
+                        if suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
+                            speak_directive = "CRITICAL: YOU ARE NOW UNMUZZLED. YOU MUST SCOLD THE USER LOUDLY IMMEDIATELY FOR BEING DISTRACTED."
+                        elif suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
+                            speak_directive = "WARNING: YOU ARE NOW UNMUZZLED. YOU MUST GIVE A SHORT VERBAL WARNING TO THE USER."
 
                     # Send screen pulse
-                    task_info = f"scheduled_task: {current_task}" if current_task else "scheduled_task: NOT SET YET (ask the user!)"
+                    task_info = f"scheduled_task: {current_task}" if current_task else "scheduled_task: NOT SET (ask the user!)"
                     if current_tama_state == TamaState.CALM and audio_out_queue.empty():
                         await session.send_realtime_input(
-                            text=f"[SYSTEM] active_window: {active_title} | duration: {active_duration}s | S: {current_suspicion_index:.1f} | A: {current_alignment} | {task_info}. Call classify_screen. {speak_directive}"
+                            text=f"[SYSTEM] active_window: {active_title} | duration: {active_duration}s | S: {current_suspicion_index:.1f} | A: {current_alignment} | {task_info} | can_be_closed: {can_be_closed}. Call classify_screen. {speak_directive}"
                         )
                     
                     # Dynamically adjust interval frequency based on Suspicion Index
