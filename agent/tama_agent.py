@@ -21,24 +21,16 @@ import threading
 
 import pystray
 from pystray import MenuItem as item
-from PIL import ImageDraw
+from PIL import ImageDraw, Image
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from google.genai import types
-from PIL import Image
 import mss
 import pyaudio
 
-from dotenv import load_dotenv
-
-# Resolves the absolute path of this file (handles both .py and .exe cases)
-if getattr(sys, 'frozen', False):
-    application_path = sys._MEIPASS
-else:
-    application_path = os.path.dirname(os.path.abspath(__file__))
-
+# Resolves the absolute path of this file (handles both .py and .bat launchers)
+application_path = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(application_path, '.env')
 load_dotenv(env_path)
 
