@@ -91,13 +91,19 @@ function App() {
     }, []);
 
     // Tama CSS State Visibility
-    // < 3: complete invisibility
-    // 3 to 5: Semi-transparent, drops slightly
-    // > 5: Fully visible and opaque!
-    let opacity = 0;
-    let yOffset = "100px";
-    if (tamaData.suspicion_index >= 6) { opacity = 1; yOffset = "0px"; }
-    else if (tamaData.suspicion_index >= 3) { opacity = 0.5; yOffset = "50px"; }
+    let opacity = 0.2; // Always slightly visible at S=0
+    let yOffset = "30px";
+
+    if (!sessionActive) {
+        opacity = 1.0;     // Fully visible while waiting for start
+        yOffset = "10px";
+    } else if (tamaData.suspicion_index >= 6) {
+        opacity = 1;
+        yOffset = "0px";
+    } else if (tamaData.suspicion_index >= 3) {
+        opacity = 0.6;
+        yOffset = "15px";
+    }
 
     return (
         <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
