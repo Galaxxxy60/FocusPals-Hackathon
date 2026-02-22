@@ -31,7 +31,16 @@ from PIL import Image
 import mss
 import pyaudio
 
-load_dotenv()
+from dotenv import load_dotenv
+
+# Resolves the absolute path of this file (handles both .py and .exe cases)
+if getattr(sys, 'frozen', False):
+    application_path = sys._MEIPASS
+else:
+    application_path = os.path.dirname(os.path.abspath(__file__))
+
+env_path = os.path.join(application_path, '.env')
+load_dotenv(env_path)
 
 # ─── Configuration ──────────────────────────────────────────
 
@@ -166,7 +175,7 @@ def compute_delta_s(alignment: float, category: str) -> float:
     if alignment >= 1.0:  # Aligned
         return -2.0
     elif alignment >= 0.5:  # Doubt
-        return 0.0
+        return 0.2  # Very slow rise, taking ~5-15 mins of continuous observation to hit 10
     else:  # Misaligned (A = 0.0)
         if category == "BANNIE":
             return 5.0
@@ -257,6 +266,11 @@ Alignment depends on the current_task:
 - If current_task = "musique" and user is on VS Code → alignment = 0.0 (procrastination productive!)
 - If current_task = "coding" and user is on VS Code → alignment = 1.0
 - If current_task = "coding" and user is on Suno → alignment = 0.0 (procrastination productive!)
+
+FREE SESSION MODE (If current_task is NOT SET):
+- Any SANTE app → alignment = 1.0 (Zero suspicion, you assume they are working).
+- Any FLUX or ZONE_GRISE app → alignment = 0.5 (You observe silently, no rush).
+- Any BANNIE app → alignment = 0.0 (Pure distraction).
 
 CRITICAL ACTIONS:
 - If you receive `S: 10.0` AND `can_be_closed: True`, YOU MUST loudly yell at the user AND call `close_distracting_tab` immediately!
