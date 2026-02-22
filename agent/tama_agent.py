@@ -173,6 +173,8 @@ def compute_can_be_closed(window_title: str) -> bool:
 def compute_delta_s(alignment: float, category: str) -> float:
     """Deterministic ΔS formula based on A.S.C. spec."""
     if alignment >= 1.0:  # Aligned
+        if category == "BANNIE":
+            return 0.2  # Tolérance limitée (glissement) : we slowly increase suspicion so they can't stay on it forever
         return -2.0
     elif alignment >= 0.5:  # Doubt
         return 0.2  # Very slow rise, taking ~5-15 mins of continuous observation to hit 10
@@ -266,6 +268,7 @@ Alignment depends on the current_task:
 - If current_task = "musique" and user is on VS Code → alignment = 0.0 (procrastination productive!)
 - If current_task = "coding" and user is on VS Code → alignment = 1.0
 - If current_task = "coding" and user is on Suno → alignment = 0.0 (procrastination productive!)
+- If current_task = "game design" and user is watching a gameplay video on YouTube → alignment = 1.0, and category is STILL BANNIE. (This triggers "Glissement" mechanics).
 
 FREE SESSION MODE (If current_task is NOT SET):
 - Any SANTE app → alignment = 1.0 (Zero suspicion, you assume they are working).
