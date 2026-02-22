@@ -121,10 +121,19 @@ def quit_app(icon, item):
     print("\n👋 Tama: J'arrête de surveiller.")
     os._exit(0) # Hard exit to stop asyncio loop
 
+def start_session_from_tray(icon, item):
+    global is_session_active
+    if not is_session_active:
+        is_session_active = True
+        update_display(TamaState.CALM, "🚀 SESSION COMMENCÉE via Widget Windows !")
+
 def setup_tray():
     global tray_icon
     image = create_tray_image(TamaState.CALM)
-    menu = (item('Stop Tama 🥷', quit_app),)
+    menu = (
+        item('Démarrer Session (Deep Work) ⚡', start_session_from_tray),
+        item('Stop Tama 🥷', quit_app)
+    )
     tray_icon = pystray.Icon("Tama", image, "Tama Agent 🥷 — 🟢 En veille", menu)
     threading.Thread(target=tray_icon.run, daemon=True).start()
 
