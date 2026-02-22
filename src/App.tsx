@@ -90,29 +90,28 @@ function App() {
         connectWs();
     }, []);
 
-    // Tama CSS State Visibility
-    let opacity = 0.2; // Always slightly visible at S=0
-    let yOffset = "30px";
+    // Tama Movement CSS
+    let opacity = 1.0;
+    let yOffset = "100vh"; // Default: completely off-screen at the bottom
 
     if (!sessionActive) {
-        opacity = 1.0;     // Fully visible while waiting for start
-        yOffset = "10px";
+        yOffset = "10px"; // Lobby: centered
     } else if (tamaData.suspicion_index >= 6) {
-        opacity = 1;
-        yOffset = "0px";
+        yOffset = "0px"; // Furious: fully popped up
     } else if (tamaData.suspicion_index >= 3) {
-        opacity = 0.6;
-        yOffset = "15px";
+        yOffset = "35vh"; // Suspicious: head peeking out
+    } else {
+        yOffset = "100vh"; // Good behavior: sliding away
     }
 
     return (
-        <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+        <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
             {/* 3D Canvas */}
             <div style={{
                 position: 'absolute', width: '100%', height: '100%',
                 opacity: opacity,
                 transform: `translateY(${yOffset})`,
-                transition: 'all 0.5s cubic-bezier(0.25, 1, 0.5, 1)'
+                transition: 'transform 1.0s cubic-bezier(0.25, 1, 0.5, 1)'
             }}>
                 <Canvas shadows camera={{ position: [0, 2, 5], fov: 50 }} style={{ background: 'transparent' }}>
                     <ambientLight intensity={0.5} />
