@@ -60,6 +60,9 @@ function App() {
         current_task: "..."
     });
 
+    const wsRef = useRef<WebSocket | null>(null);
+    const [sessionActive, setSessionActive] = useState(false);
+
     useEffect(() => {
         const connectWs = () => {
             const ws = new WebSocket('ws://localhost:8080');
@@ -77,6 +80,12 @@ function App() {
             ws.onclose = () => {
                 setTimeout(connectWs, 2000); // Reconnect loop if python crashes
             };
+            ws.onopen = () => {
+                if (sessionActive) {
+                    ws.send(JSON.stringify({ command: "START_SESSION" }));
+                }
+            };
+            wsRef.current = ws;
         };
         connectWs();
     }, []);
@@ -139,13 +148,37 @@ function App() {
 
             {/* Floating UI overlay */}
             <div className="no-drag" style={{
-                position: 'absolute', bottom: '20px', width: '100%', textAlign: 'center', pointerEvents: 'none', opacity: opacity, transition: 'opacity 0.5s'
+                position: 'absolute', bottom: '20px', width: '100%', textAlign: 'center', pointerEvents: 'none', transition: 'all 0.5s'
             }}>
-                <div style={{
-                    display: 'inline-block', background: 'rgba(0,0,0,0.6)', padding: '8px 16px', borderRadius: '20px', backdropFilter: 'blur(5px)', fontWeight: 'bold', letterSpacing: '1px', fontSize: '14px', pointerEvents: 'auto', cursor: 'pointer'
-                }}>
-                    ● TAMA ACTIVE
-                </div>
+                {!sessionActive ? (
+                    <button
+                        onClick={() => {
+                            setSessionActive(true);
+                            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                                wsRef.current.send(JSON.stringify({ command: "START_SESSION" }));
+                            }
+                        }}
+                        style={{
+                            background: '#ff003c', color: '#fff', border: 'none', padding: '15px 30px',
+                            borderRadius: '30px', fontWeight: 'bold', fontSize: '18px', cursor: 'pointer',
+                            pointerEvents: 'auto', boxShadow: '0px 0px 20px rgba(255, 0, 60, 0.5)',
+                            transition: 'all 0.2s', textTransform: 'uppercase'
+                        }}
+                        onMouseOver={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
+                        onMouseOut={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                    >
+                        ⚡ Start Deep Work
+                    </button>
+                ) : (
+                    <div style={{
+                        display: 'inline-block', background: 'rgba(0,0,0,0.6)', padding: '8px 16px',
+                        borderRadius: '20px', backdropFilter: 'blur(5px)', fontWeight: 'bold',
+                        letterSpacing: '1px', fontSize: '14px', pointerEvents: 'auto', opacity: opacity,
+                        transition: 'opacity 0.5s'
+                    }}>
+                        ● TAMA ACTIVE
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -191,12 +191,20 @@ def compute_delta_s(alignment: float, category: str) -> float:
             return 1.0
 
 connected_ws_clients = set()
+is_session_active = False
 
 async def ws_handler(websocket):
-    # Wait for the client to close the connection or task cancelled
+    global is_session_active
     connected_ws_clients.add(websocket)
     try:
-        await websocket.wait_closed()
+        async for message in websocket:
+            try:
+                data = json.loads(message)
+                if data.get("command") == "START_SESSION":
+                    is_session_active = True
+                    update_display(TamaState.CALM, "🚀 SESSION COMMENCÉE via UI !")
+            except Exception:
+                pass
     finally:
         connected_ws_clients.remove(websocket)
 
@@ -378,7 +386,7 @@ def capture_all_screens() -> bytes:
 # ─── Main Pipeline ──────────────────────────────────────────
 
 async def run_tama_live():
-    pya = pyaudio.PyAudio()
+    global is_session_active
     
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"], # We want voice!
@@ -386,256 +394,269 @@ async def run_tama_live():
         tools=TOOLS,
     )
 
-    update_display(TamaState.CALM, "Connecting to Google WebSocket...")
+    pya = pyaudio.PyAudio()
 
-    try:
-        async with client.aio.live.connect(model=MODEL, config=config) as session:
+    async def run_gemini_loop():
+        # Wait silently until the user clicks "Start Deep Work" on UI
+        update_display(TamaState.CALM, "En attente du lancement dans l'UI (Start Deep Work)...")
+        while not is_session_active:
+            await asyncio.sleep(0.5)
             
-            update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
-            
-            audio_out_queue = asyncio.Queue()
-            audio_in_queue = asyncio.Queue(maxsize=5)
-            
-            # Start in silent "Free Session Mode"
-            global force_speech
-            force_speech = False
-            
-            # --- 1. Audio Input (Microphone) ---
-            async def listen_mic():
-                mic_info = pya.get_default_input_device_info()
-                stream = await asyncio.to_thread(
-                    pya.open, format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
-                    input=True, input_device_index=mic_info["index"], frames_per_buffer=CHUNK_SIZE,
-                )
-                try:
-                    while True:
-                        data = await asyncio.to_thread(stream.read, CHUNK_SIZE, exception_on_overflow=False)
-                        await audio_in_queue.put(types.Blob(data=data, mime_type="audio/pcm"))
-                except asyncio.CancelledError:
-                    stream.close()
+        update_display(TamaState.CALM, "Connecting to Google WebSocket...")
 
-            async def send_audio():
-                while True:
-                    blob = await audio_in_queue.get()
-                    await session.send_realtime_input(audio=blob)
+        try:
+            async with client.aio.live.connect(model=MODEL, config=config) as session:
 
-            # --- 2. Video Input (Pulsed Screen) ---
-            async def send_screen_pulse():
-                """Sends the dual-monitor screenshot every N seconds and prompts analysis."""
-                while True:
-                    jpeg_bytes = await asyncio.to_thread(capture_all_screens)
-                    blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
-                    # Send screen
-                    await session.send_realtime_input(media=blob)
-                    # Force Tama to say what she sees/act based on system instructions
-                    import pygetwindow as gw
-                    import time
-                    active_title = "Unknown"
+            
+                update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
+            
+                audio_out_queue = asyncio.Queue()
+                audio_in_queue = asyncio.Queue(maxsize=5)
+            
+                # Start in silent "Free Session Mode"
+                global force_speech
+                force_speech = False
+            
+                # --- 1. Audio Input (Microphone) ---
+                async def listen_mic():
+                    mic_info = pya.get_default_input_device_info()
+                    stream = await asyncio.to_thread(
+                        pya.open, format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
+                        input=True, input_device_index=mic_info["index"], frames_per_buffer=CHUNK_SIZE,
+                    )
                     try:
-                        active_win = gw.getActiveWindow()
-                        if active_win:
-                            active_title = active_win.title
-                    except Exception:
-                        pass
-                        
-                    global last_active_window_title, active_window_start_time
-                    if active_title != last_active_window_title:
-                        last_active_window_title = active_title
-                        active_window_start_time = time.time()
-                        
-                    active_duration = int(time.time() - active_window_start_time)
-
-                    global current_suspicion_index, suspicion_above_6_start, suspicion_at_9_start
-                    
-                    if current_suspicion_index >= 9:
-                        if suspicion_at_9_start is None: suspicion_at_9_start = time.time()
-                        suspicion_above_6_start = None
-                    elif current_suspicion_index >= 6:
-                        if suspicion_above_6_start is None: suspicion_above_6_start = time.time()
-                        suspicion_at_9_start = None
-                    else:
-                        suspicion_above_6_start = None
-                        suspicion_at_9_start = None
-
-                    if force_speech:
-                        speak_directive = "UNMUZZLED: You MUST speak now to address the user!"
-                    else:
-                        speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
-                        if suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
-                            speak_directive = "CRITICAL: YOU ARE NOW UNMUZZLED. YOU MUST SCOLD THE USER LOUDLY IMMEDIATELY FOR BEING DISTRACTED."
-                        elif suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
-                            speak_directive = "WARNING: YOU ARE NOW UNMUZZLED. YOU MUST GIVE A SHORT VERBAL WARNING TO THE USER."
-
-                    # Send screen pulse
-                    task_info = f"scheduled_task: {current_task}" if current_task else "scheduled_task: NOT SET (ask the user!)"
-                    if current_tama_state == TamaState.CALM and audio_out_queue.empty():
-                        await session.send_realtime_input(
-                            text=f"[SYSTEM] active_window: {active_title} | duration: {active_duration}s | S: {current_suspicion_index:.1f} | A: {current_alignment} | {task_info} | can_be_closed: {can_be_closed}. Call classify_screen. {speak_directive}"
-                        )
-                    
-                    # Dynamically adjust interval frequency based on Suspicion Index
-                    # Plus l'indice est fort, plus les scans sont fréquents !
-                    if current_suspicion_index <= 2:
-                        pulse_delay = 8.0 # Confiance
-                    elif current_suspicion_index <= 5:
-                        pulse_delay = 5.0 # Curiosité
-                    elif current_suspicion_index <= 8:
-                        pulse_delay = 3.0 # Suspicion
-                    else:
-                        pulse_delay = 1.0 # Raid !
-                    
-                    await asyncio.sleep(pulse_delay)
-
-            # --- 3. Receive AI Responses ---
-            async def reset_calm_after_delay():
-                await asyncio.sleep(4)
-                update_display(TamaState.CALM, "Je te surveille toujours.")
-
-            async def receive_responses():
-                global force_speech, current_suspicion_index, current_alignment, current_category, can_be_closed, current_task
-                while True:
-                    try:
-                        turn = session.receive()
-                        async for response in turn:
-                            server = response.server_content
-                            
-                            # Audio voice parts — GATE: only play if speech is allowed
-                            if server and server.model_turn:
-                                for part in server.model_turn.parts:
-                                    if part.inline_data and isinstance(part.inline_data.data, bytes):
-                                        # Check if Tama is allowed to speak right now
-                                        speech_allowed = force_speech
-                                        if not speech_allowed and suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
-                                            speech_allowed = True
-                                        if not speech_allowed and suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
-                                            speech_allowed = True
-                                        
-                                        if speech_allowed:
-                                            audio_out_queue.put_nowait(part.inline_data.data)
-                                        # else: silently discard the audio (she talks to the void)
-                            
-                            # Function calls
-                            if response.tool_call:
-                                try:
-                                    for fc in response.tool_call.function_calls:
-                                        if fc.name == "classify_screen":
-                                            cat = fc.args.get("category", "SANTE")
-                                            ali = float(fc.args.get("alignment", 1.0))
-                                            reason = fc.args.get("reason", "")
-                                            
-                                            # Clamp alignment to valid values
-                                            if ali > 0.75: ali = 1.0
-                                            elif ali > 0.25: ali = 0.5
-                                            else: ali = 0.0
-                                            
-                                            current_alignment = ali
-                                            current_category = cat
-                                            can_be_closed = compute_can_be_closed(last_active_window_title)
-                                            
-                                            # Compute ΔS deterministically
-                                            delta = compute_delta_s(ali, cat)
-                                            current_suspicion_index = max(0.0, min(10.0, current_suspicion_index + delta))
-                                            
-                                            s_int = int(current_suspicion_index)
-                                            print(f"  🔍 S:{s_int}/10 | A:{ali} | Cat:{cat} | ΔS:{delta:+.1f} — {reason}")
-                                            
-                                            await session.send_tool_response(
-                                                function_responses=[
-                                                    types.FunctionResponse(
-                                                        name="classify_screen",
-                                                        response={"status": "updated", "S": round(current_suspicion_index,1), "A": ali, "cat": cat},
-                                                        id=fc.id
-                                                    )
-                                                ]
-                                            )
-
-                                        elif fc.name == "close_distracting_tab":
-                                            reason = fc.args.get("reason", "Distraction")
-                                            update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
-                                            
-                                            # UNMUZZLE during intervention so she can scold
-                                            force_speech = True
-                                            
-                                            result = execute_close_tab(reason)
-                                            
-                                            # Send the result back to Gemini so it knows it worked
-                                            await session.send_tool_response(
-                                                function_responses=[
-                                                    types.FunctionResponse(
-                                                        name="close_distracting_tab",
-                                                        response=result,
-                                                        id=fc.id
-                                                    )
-                                                ]
-                                            )
-                                            
-                                            # Go back to calm after a few seconds without crashing TaskGroup
-                                            async def delay_reset():
-                                                await asyncio.sleep(6)
-                                                force_speech = False  # Re-muzzle after scolding
-                                                update_display(TamaState.CALM, "Je te surveille toujours.")
-                                            asyncio.create_task(delay_reset())
-
-                                        elif fc.name == "set_current_task":
-                                            task = fc.args.get("task", "Unknown")
-                                            current_task = task
-                                            force_speech = False  # Re-muzzle after task is set
-                                            print(f"  🎯 Tâche définie : {current_task}")
-                                            
-                                            await session.send_tool_response(
-                                                function_responses=[
-                                                    types.FunctionResponse(
-                                                        name="set_current_task",
-                                                        response={"status": "task_set", "current_task": current_task},
-                                                        id=fc.id
-                                                    )
-                                                ]
-                                            )
-                                except Exception as e:
-                                    print(f"⚠️ Erreur function call : {e}")
-
-                            # Handle Barge-in (user interrupted the AI)
-                            if server and server.interrupted:
-                                while not audio_out_queue.empty():
-                                    audio_out_queue.get_nowait()
+                        while True:
+                            data = await asyncio.to_thread(stream.read, CHUNK_SIZE, exception_on_overflow=False)
+                            await audio_in_queue.put(types.Blob(data=data, mime_type="audio/pcm"))
                     except asyncio.CancelledError:
-                        break
-                    except Exception as e:
-                        # Catch Google API intermittent errors (e.g. 1011) and try to continue
-                        print(f"\n⚠️  [WARN] Live API Sync lost during receive: {e}. Recovering...")
-                        await asyncio.sleep(1)
+                        stream.close()
 
-
-            # --- 4. Audio Output (Speakers) ---
-            async def play_audio():
-                speaker = await asyncio.to_thread(
-                    pya.open, format=FORMAT, channels=CHANNELS, rate=RECEIVE_SAMPLE_RATE, output=True,
-                )
-                try:
+                async def send_audio():
                     while True:
-                        audio_data = await audio_out_queue.get()
-                        await asyncio.to_thread(speaker.write, audio_data)
-                except asyncio.CancelledError:
-                    speaker.close()
+                        blob = await audio_in_queue.get()
+                        await session.send_realtime_input(audio=blob)
+
+                # --- 2. Video Input (Pulsed Screen) ---
+                async def send_screen_pulse():
+                    """Sends the dual-monitor screenshot every N seconds and prompts analysis."""
+                    while True:
+                        jpeg_bytes = await asyncio.to_thread(capture_all_screens)
+                        blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
+                        # Send screen
+                        await session.send_realtime_input(media=blob)
+                        # Force Tama to say what she sees/act based on system instructions
+                        import pygetwindow as gw
+                        import time
+                        active_title = "Unknown"
+                        try:
+                            active_win = gw.getActiveWindow()
+                            if active_win:
+                                active_title = active_win.title
+                        except Exception:
+                            pass
+                        
+                        global last_active_window_title, active_window_start_time
+                        if active_title != last_active_window_title:
+                            last_active_window_title = active_title
+                            active_window_start_time = time.time()
+                        
+                        active_duration = int(time.time() - active_window_start_time)
+
+                        global current_suspicion_index, suspicion_above_6_start, suspicion_at_9_start
+                    
+                        if current_suspicion_index >= 9:
+                            if suspicion_at_9_start is None: suspicion_at_9_start = time.time()
+                            suspicion_above_6_start = None
+                        elif current_suspicion_index >= 6:
+                            if suspicion_above_6_start is None: suspicion_above_6_start = time.time()
+                            suspicion_at_9_start = None
+                        else:
+                            suspicion_above_6_start = None
+                            suspicion_at_9_start = None
+
+                        if force_speech:
+                            speak_directive = "UNMUZZLED: You MUST speak now to address the user!"
+                        else:
+                            speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
+                            if suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
+                                speak_directive = "CRITICAL: YOU ARE NOW UNMUZZLED. YOU MUST SCOLD THE USER LOUDLY IMMEDIATELY FOR BEING DISTRACTED."
+                            elif suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
+                                speak_directive = "WARNING: YOU ARE NOW UNMUZZLED. YOU MUST GIVE A SHORT VERBAL WARNING TO THE USER."
+
+                        # Send screen pulse
+                        task_info = f"scheduled_task: {current_task}" if current_task else "scheduled_task: NOT SET (ask the user!)"
+                        if current_tama_state == TamaState.CALM and audio_out_queue.empty():
+                            await session.send_realtime_input(
+                                text=f"[SYSTEM] active_window: {active_title} | duration: {active_duration}s | S: {current_suspicion_index:.1f} | A: {current_alignment} | {task_info} | can_be_closed: {can_be_closed}. Call classify_screen. {speak_directive}"
+                            )
+                    
+                        # Dynamically adjust interval frequency based on Suspicion Index
+                        # Plus l'indice est fort, plus les scans sont fréquents !
+                        if current_suspicion_index <= 2:
+                            pulse_delay = 8.0 # Confiance
+                        elif current_suspicion_index <= 5:
+                            pulse_delay = 5.0 # Curiosité
+                        elif current_suspicion_index <= 8:
+                            pulse_delay = 3.0 # Suspicion
+                        else:
+                            pulse_delay = 1.0 # Raid !
+                    
+                        await asyncio.sleep(pulse_delay)
+
+                # --- 3. Receive AI Responses ---
+                async def reset_calm_after_delay():
+                    await asyncio.sleep(4)
+                    update_display(TamaState.CALM, "Je te surveille toujours.")
+
+                async def receive_responses():
+                    global force_speech, current_suspicion_index, current_alignment, current_category, can_be_closed, current_task
+                    while True:
+                        try:
+                            turn = session.receive()
+                            async for response in turn:
+                                server = response.server_content
+                            
+                                # Audio voice parts — GATE: only play if speech is allowed
+                                if server and server.model_turn:
+                                    for part in server.model_turn.parts:
+                                        if part.inline_data and isinstance(part.inline_data.data, bytes):
+                                            # Check if Tama is allowed to speak right now
+                                            speech_allowed = force_speech
+                                            if not speech_allowed and suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
+                                                speech_allowed = True
+                                            if not speech_allowed and suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
+                                                speech_allowed = True
+                                        
+                                            if speech_allowed:
+                                                audio_out_queue.put_nowait(part.inline_data.data)
+                                            # else: silently discard the audio (she talks to the void)
+                            
+                                # Function calls
+                                if response.tool_call:
+                                    try:
+                                        for fc in response.tool_call.function_calls:
+                                            if fc.name == "classify_screen":
+                                                cat = fc.args.get("category", "SANTE")
+                                                ali = float(fc.args.get("alignment", 1.0))
+                                                reason = fc.args.get("reason", "")
+                                            
+                                                # Clamp alignment to valid values
+                                                if ali > 0.75: ali = 1.0
+                                                elif ali > 0.25: ali = 0.5
+                                                else: ali = 0.0
+                                            
+                                                current_alignment = ali
+                                                current_category = cat
+                                                can_be_closed = compute_can_be_closed(last_active_window_title)
+                                            
+                                                # Compute ΔS deterministically
+                                                delta = compute_delta_s(ali, cat)
+                                                current_suspicion_index = max(0.0, min(10.0, current_suspicion_index + delta))
+                                            
+                                                s_int = int(current_suspicion_index)
+                                                print(f"  🔍 S:{s_int}/10 | A:{ali} | Cat:{cat} | ΔS:{delta:+.1f} — {reason}")
+                                            
+                                                await session.send_tool_response(
+                                                    function_responses=[
+                                                        types.FunctionResponse(
+                                                            name="classify_screen",
+                                                            response={"status": "updated", "S": round(current_suspicion_index,1), "A": ali, "cat": cat},
+                                                            id=fc.id
+                                                        )
+                                                    ]
+                                                )
+
+                                            elif fc.name == "close_distracting_tab":
+                                                reason = fc.args.get("reason", "Distraction")
+                                                update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
+                                            
+                                                # UNMUZZLE during intervention so she can scold
+                                                force_speech = True
+                                            
+                                                result = execute_close_tab(reason)
+                                            
+                                                # Send the result back to Gemini so it knows it worked
+                                                await session.send_tool_response(
+                                                    function_responses=[
+                                                        types.FunctionResponse(
+                                                            name="close_distracting_tab",
+                                                            response=result,
+                                                            id=fc.id
+                                                        )
+                                                    ]
+                                                )
+                                            
+                                                # Go back to calm after a few seconds without crashing TaskGroup
+                                                async def delay_reset():
+                                                    await asyncio.sleep(6)
+                                                    force_speech = False  # Re-muzzle after scolding
+                                                    update_display(TamaState.CALM, "Je te surveille toujours.")
+                                                asyncio.create_task(delay_reset())
+
+                                            elif fc.name == "set_current_task":
+                                                task = fc.args.get("task", "Unknown")
+                                                current_task = task
+                                                force_speech = False  # Re-muzzle after task is set
+                                                print(f"  🎯 Tâche définie : {current_task}")
+                                            
+                                                await session.send_tool_response(
+                                                    function_responses=[
+                                                        types.FunctionResponse(
+                                                            name="set_current_task",
+                                                            response={"status": "task_set", "current_task": current_task},
+                                                            id=fc.id
+                                                        )
+                                                    ]
+                                                )
+                                    except Exception as e:
+                                        print(f"⚠️ Erreur function call : {e}")
+
+                                # Handle Barge-in (user interrupted the AI)
+                                if server and server.interrupted:
+                                    while not audio_out_queue.empty():
+                                        audio_out_queue.get_nowait()
+                        except asyncio.CancelledError:
+                            break
+                        except Exception as e:
+                            # Catch Google API intermittent errors (e.g. 1011) and try to continue
+                            print(f"\n⚠️  [WARN] Live API Sync lost during receive: {e}. Recovering...")
+                            await asyncio.sleep(1)
+
+
+                # --- 4. Audio Output (Speakers) ---
+                async def play_audio():
+                    speaker = await asyncio.to_thread(
+                        pya.open, format=FORMAT, channels=CHANNELS, rate=RECEIVE_SAMPLE_RATE, output=True,
+                    )
+                    try:
+                        while True:
+                            audio_data = await audio_out_queue.get()
+                            await asyncio.to_thread(speaker.write, audio_data)
+                    except asyncio.CancelledError:
+                        speaker.close()
 
             # --- RUN ALL PARALLEL TASKS ---
-            async with websockets.serve(ws_handler, "localhost", 8080):
-                async with asyncio.TaskGroup() as tg:
-                    tg.create_task(listen_mic())
-                    tg.create_task(send_audio())
-                    tg.create_task(send_screen_pulse())
-                    tg.create_task(receive_responses())
-                    tg.create_task(play_audio())
-                    tg.create_task(broadcast_ws_state())
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(listen_mic())
+                tg.create_task(send_audio())
+                tg.create_task(send_screen_pulse())
+                tg.create_task(receive_responses())
+                tg.create_task(play_audio())
 
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:
-        import traceback
-        print(f"\n❌ [ERROR] {e}")
-        traceback.print_exc()
-    finally:
-        pya.terminate()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            import traceback
+            print(f"\n❌ [ERROR] {e}")
+            traceback.print_exc()
+        finally:
+            pya.terminate()
+
+    # Outer application lifecycle (Runs the UI sever and waits)
+    async with websockets.serve(ws_handler, "localhost", 8080):
+        async with asyncio.TaskGroup() as main_tg:
+            main_tg.create_task(broadcast_ws_state())
+            main_tg.create_task(run_gemini_loop())
 
 if __name__ == "__main__":
     setup_tray()
