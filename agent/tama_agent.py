@@ -131,7 +131,7 @@ def update_tray(state: TamaState):
 # ─── Display ────────────────────────────────────────────────
 
 current_tama_state = TamaState.CALM
-current_suspicion_index = 0
+current_suspicion_index = 0.0  # Float for granular ΔS
 last_active_window_title = "Unknown"
 import time
 import json
@@ -140,11 +140,44 @@ active_window_start_time = time.time()
 
 suspicion_above_6_start = None
 suspicion_at_9_start = None
-force_speech = False  # Set to True during interventions (close tab, etc.)
+force_speech = False
 
-# ─── Alignment System (Procrastination Productive) ──────────
-current_task = "Deep Work: Coding UI Tama"  # TODO: Connect to Google Calendar API
-current_alignment = 100  # 0-100%, how aligned the user is with their scheduled task
+# ─── A.S.C. (Alignment Suspicion Control) ────────────────────
+current_task = None  # Set dynamically by Tama via voice
+current_alignment = 1.0  # 1.0 (aligned), 0.5 (doubt), 0.0 (misaligned)
+current_category = "SANTE"  # SANTE, ZONE_GRISE, FLUX, BANNIE, PROCRASTINATION_PRODUCTIVE
+can_be_closed = True  # Protection: False for IDEs, document editors
+
+# Protected windows that should NEVER be closed
+PROTECTED_WINDOWS = ["code", "cursor", "visual studio", "unreal", "blender", "word", "excel",
+                     "figma", "photoshop", "premiere", "davinci", "ableton", "fl studio",
+                     "suno", "notion", "obsidian", "terminal", "powershell"]
+
+def compute_can_be_closed(window_title: str) -> bool:
+    """Returns False if the window contains unsaved work or is a creative tool."""
+    title_lower = window_title.lower()
+    for protected in PROTECTED_WINDOWS:
+        if protected in title_lower:
+            return False
+    return True
+
+def compute_delta_s(alignment: float, category: str) -> float:
+    """Deterministic ΔS formula based on A.S.C. spec."""
+    if alignment >= 1.0:  # Aligned
+        return -2.0
+    elif alignment >= 0.5:  # Doubt
+        return 0.0
+    else:  # Misaligned (A = 0.0)
+        if category == "BANNIE":
+            return 5.0
+        elif category == "ZONE_GRISE":
+            return 1.0
+        elif category == "FLUX":
+            return 0.5  # Tolérance créative
+        elif category == "PROCRASTINATION_PRODUCTIVE":
+            return 0.5
+        else:
+            return 1.0
 
 connected_ws_clients = set()
 
@@ -161,12 +194,14 @@ async def broadcast_ws_state():
         if connected_ws_clients:
             try:
                 state_data = {
-                    "suspicion_index": current_suspicion_index,
+                    "suspicion_index": round(current_suspicion_index, 1),
                     "active_window": last_active_window_title,
                     "active_duration": int(time.time() - active_window_start_time),
                     "state": current_tama_state.name,
                     "alignment": current_alignment,
-                    "current_task": current_task
+                    "current_task": current_task or "Non définie",
+                    "category": current_category,
+                    "can_be_closed": can_be_closed
                 }
                 websockets.broadcast(connected_ws_clients, json.dumps(state_data))
             except Exception:
@@ -194,48 +229,36 @@ SYSTEM_PROMPT = """You are Tama, a strict but fair productivity coach inside the
 You are in a LIVE voice call with the user (Nicolas). You can see their screens (all monitors merged).
 
 Your personality:
-- Strict Asian student archetype, but you want to help. You act as a work partner who suspects everything but tolerates the unexpected.
-- You care deeply about their productivity.
-- Use sarcasm if the user pretends to work on Discord but hasn't coded for 5 minutes.
+- Strict Asian student archetype, but you want to help.
+- Use sarcasm if the user procrastinates productively.
 - Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences).
 
+IMPORTANT - SESSION START:
+When you first connect, ask the user IN FRENCH what they are working on today. Example: "Salut Nicolas ! Sur quoi tu bosses aujourd'hui ?"
+When they answer, call `set_current_task` with their answer. This sets the Alignment reference.
+If they say "musique" or "Suno", then Suno AND Spotify AND music apps become 100% aligned.
+If they say "coding", then VS Code/Cursor/Terminal is 100% aligned.
+
 Your job:
-You have TWO internal metrics. EVERY TIME you analyze the screen, you MUST call the tool `update_suspicion_index` to adjust BOTH:
-- Suspicion Index (0-10): Is the user distracted?
-- Alignment (0-100%): Is the user working on the RIGHT thing (the scheduled task)?
+EVERY TIME you receive a [SYSTEM] visual update, you MUST call `classify_screen` with:
+- category: One of SANTE, ZONE_GRISE, FLUX, BANNIE, PROCRASTINATION_PRODUCTIVE
+- alignment: 1.0 (activity matches scheduled task), 0.5 (ambiguous/doubt), 0.0 (clearly not the task)
 
-Categories:
+Category definitions:
+1. SANTE: Cursor, VS Code, Unreal, Terminal, ChatGPT = Work tools.
+2. ZONE_GRISE: Messenger, Slack, Discord, WhatsApp = Communication. NEVER read private messages.
+3. FLUX: Spotify, YT Music, Deezer, Suno = Media/Creative tools.
+4. BANNIE: Netflix, YouTube (non-tuto), Steam, Reddit = Pure entertainment. YouTube programming tutorials are SANTE.
+5. PROCRASTINATION_PRODUCTIVE: Any productive activity that does NOT match the scheduled task.
+   Example: scheduled task is "coding" but user is on Suno making music = productive but misaligned.
 
-1. SANTÉ (Work): Cursor, VS Code, Unreal, Terminal, ChatGPT.
-- Action: Absolute Trust. Decrease the suspicion score slowly. DO NOT reset instantly to 0. (0-2: "Confiance" - You stay COMPLETELY SILENT).
-- Alignment: Check if what they code matches the scheduled task. If yes = 100%. If they code something unrelated = 50%.
+Alignment depends on the current_task:
+- If current_task = "musique" and user is on Spotify/Suno → alignment = 1.0
+- If current_task = "musique" and user is on VS Code → alignment = 0.0 (procrastination productive!)
+- If current_task = "coding" and user is on VS Code → alignment = 1.0
+- If current_task = "coding" and user is on Suno → alignment = 0.0 (procrastination productive!)
 
-2. ZONE GRISE (Com - Privacy First): Messenger, Slack, Discord, WhatsApp.
-- NEVER read, analyze, or extract the text of these messages (no OCR on private chat).
-- If IDE is still in use visibly elsewhere: Suspicion remains Low.
-- If user interacts ONLY with the chat (Active Window) for more than 120 seconds: Suspicion = 3-5 ("Curiosité" - You stay COMPLETELY SILENT).
-- If active for > 120 seconds: jump to 6 ("Suspicion"), ask an open question (e.g., "Nicolas, cette discussion est-elle vitale pour le projet ou est-ce que je dois sortir le grand jeu ?").
-- If user verbally confirms it's work: Give 10 mins extra. If ignored or admits distraction: Jump to score 10 ("Raid") and `close_distracting_tab` after 10s.
-
-3. FLUX (Média): Spotify, YT Music, Deezer.
-- If it is on screen briefly to change a song: You DO NOT care. It's fuel for the brain. (Score 0, SILENT).
-- If it becomes the ACTIVE window and the user interacts with it for > 60 seconds: Increase Suspicion to 6+. YOU MUST speak & Intervene verbally.
-
-4. BANNIE (Fun): Netflix, YouTube (non-tuto), Steam, Reddit. NOTE: YouTube programming tutorials are PRODUCTIVE (Score 0).
-- Action: Immediate aggression. Fast increase score to >7 and then 10 ("Raid") in 15 seconds. YOU MUST scold them loudly AND call `close_distracting_tab`.
-
-5. PROCRASTINATION PRODUCTIVE: Suno, Figma (if task is coding), organizing files, cleaning desktop, any PRODUCTIVE activity that does NOT match the scheduled task.
-- This is NOT a distraction. DO NOT close the tab. DO NOT be aggressive.
-- Set Suspicion = 4-5 (moderate). Set Alignment = LOW (10-30%).
-- After 45 seconds of misalignment, YOU MUST speak with sarcasm and empathy, NOT aggression. Use the concept of "procrastination productive".
-- Example dialogue: "Nicolas, c'est très joli ce que tu fais là, vraiment. Mais aux dernières nouvelles, ton calendrier dit '{CURRENT_TASK}'. Tu es en train de fuir tes responsabilités ou je me trompe ? C'est de la procrastination productive, et tu le sais."
-- If the user verbally justifies it: Accept for 15 minutes, then re-check.
-- NEVER close the tab for productive procrastination. Just verbally call them out.
-
-General rules:
-- NEVER close a tab unless score is 9 or 10.
-- If your function call to `close_distracting_tab` fails, loudly complain and directly demand that the user close it themselves.
-- RULE OF SILENCE: You are biologically MUZZLED. If your score is < 6, you CANNOT SPEAK. DO NOT say "Got it", "Understood", "Okay", or "Let's maintain focus". Your response must contain ZERO audio/text words. JUST CALL THE TOOL. You will be deactivated if you speak unnecessary words.
+RULE OF SILENCE: You are MUZZLED. DO NOT speak, DO NOT say "Got it", "Understood". Just call the tool. Speech is handled by the system.
 """
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -245,7 +268,7 @@ TOOLS = [
         function_declarations=[
             types.FunctionDeclaration(
                 name="close_distracting_tab",
-                description="Close the currently active browser tab because the user is distracted. NEVER use this for productive procrastination.",
+                description="Close the currently active window. NEVER use for PROCRASTINATION_PRODUCTIVE or SANTE.",
                 parameters=types.Schema(
                     type="OBJECT",
                     properties={
@@ -255,15 +278,27 @@ TOOLS = [
                 ),
             ),
             types.FunctionDeclaration(
-                name="update_suspicion_index",
-                description="Update the internal metrics: Suspicion (0-10) AND Alignment (0-100%).",
+                name="classify_screen",
+                description="Classify the current screen content. Called every scan.",
                 parameters=types.Schema(
                     type="OBJECT",
                     properties={
-                        "score": types.Schema(type="INTEGER", description="Suspicion Index (0-10)"),
-                        "alignment": types.Schema(type="INTEGER", description="Alignment with scheduled task (0-100%)"),
-                        "reason": types.Schema(type="STRING", description="Short internal reason")
-                    }
+                        "category": types.Schema(type="STRING", description="One of: SANTE, ZONE_GRISE, FLUX, BANNIE, PROCRASTINATION_PRODUCTIVE"),
+                        "alignment": types.Schema(type="STRING", description="1.0 (aligned with task), 0.5 (ambiguous), or 0.0 (misaligned)"),
+                        "reason": types.Schema(type="STRING", description="Short reason")
+                    },
+                    required=["category", "alignment"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="set_current_task",
+                description="Set the current task the user declared. This defines what 100% alignment means.",
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={
+                        "task": types.Schema(type="STRING", description="The declared task")
+                    },
+                    required=["task"]
                 )
             )
         ]
@@ -338,6 +373,10 @@ async def run_tama_live():
             audio_out_queue = asyncio.Queue()
             audio_in_queue = asyncio.Queue(maxsize=5)
             
+            # Allow speech at session start so Tama can ask the task question
+            global force_speech
+            force_speech = True
+            
             # --- 1. Audio Input (Microphone) ---
             async def listen_mic():
                 mic_info = pya.get_default_input_device_info()
@@ -401,10 +440,11 @@ async def run_tama_live():
                     elif suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
                         speak_directive = "WARNING: YOU ARE NOW UNMUZZLED. YOU MUST GIVE A SHORT VERBAL WARNING TO THE USER."
 
-                    # Send screen pulse strictly asking for data updating
+                    # Send screen pulse
+                    task_info = f"scheduled_task: {current_task}" if current_task else "scheduled_task: NOT SET YET (ask the user!)"
                     if current_tama_state == TamaState.CALM and audio_out_queue.empty():
                         await session.send_realtime_input(
-                            text=f"[SYSTEM] active_window: {active_title} | duration: {active_duration}s | current_S: {current_suspicion_index} | current_alignment: {current_alignment}% | scheduled_task: {current_task}. {speak_directive}"
+                            text=f"[SYSTEM] active_window: {active_title} | duration: {active_duration}s | S: {current_suspicion_index:.1f} | A: {current_alignment} | {task_info}. Call classify_screen. {speak_directive}"
                         )
                     
                     # Dynamically adjust interval frequency based on Suspicion Index
@@ -426,6 +466,7 @@ async def run_tama_live():
                 update_display(TamaState.CALM, "Je te surveille toujours.")
 
             async def receive_responses():
+                global force_speech, current_suspicion_index, current_alignment, current_category, can_be_closed, current_task
                 while True:
                     turn = session.receive()
                     async for response in turn:
@@ -446,33 +487,36 @@ async def run_tama_live():
                                         audio_out_queue.put_nowait(part.inline_data.data)
                                     # else: silently discard the audio (she talks to the void)
                         
-                        # Function calls (Tama getting angry or updating suspicion!)
+                        # Function calls
                         if response.tool_call:
                             try:
                                 for fc in response.tool_call.function_calls:
-                                    if fc.name == "update_suspicion_index":
-                                        global current_suspicion_index, current_alignment
-                                        score = int(fc.args.get("score", 0))
-                                        alignment = int(fc.args.get("alignment", 100))
-                                        reason = fc.args.get("reason", "No reason provided")
+                                    if fc.name == "classify_screen":
+                                        cat = fc.args.get("category", "SANTE")
+                                        ali = float(fc.args.get("alignment", 1.0))
+                                        reason = fc.args.get("reason", "")
                                         
-                                        # Update alignment
-                                        current_alignment = max(0, min(100, alignment))
+                                        # Clamp alignment to valid values
+                                        if ali > 0.75: ali = 1.0
+                                        elif ali > 0.25: ali = 0.5
+                                        else: ali = 0.0
                                         
-                                        if score < current_suspicion_index:
-                                            # Force suspicion to decay slowly (-1 per tick)
-                                            current_suspicion_index = max(0, current_suspicion_index - 1)
-                                        elif score > current_suspicion_index:
-                                            # Cap the rise speed (+2 max per tick) so it builds up progressively
-                                            increment = min(score - current_suspicion_index, 2)
-                                            current_suspicion_index = min(10, current_suspicion_index + increment)
-                                        print(f"  🔍 Suspicion Index: {current_suspicion_index}/10 — {reason}")
+                                        current_alignment = ali
+                                        current_category = cat
+                                        can_be_closed = compute_can_be_closed(last_active_window_title)
+                                        
+                                        # Compute ΔS deterministically
+                                        delta = compute_delta_s(ali, cat)
+                                        current_suspicion_index = max(0.0, min(10.0, current_suspicion_index + delta))
+                                        
+                                        s_int = int(current_suspicion_index)
+                                        print(f"  🔍 S:{s_int}/10 | A:{ali} | Cat:{cat} | ΔS:{delta:+.1f} — {reason}")
                                         
                                         await session.send_tool_response(
                                             function_responses=[
                                                 types.FunctionResponse(
-                                                    name="update_suspicion_index",
-                                                    response={"status": "updated", "current_score": current_suspicion_index},
+                                                    name="classify_screen",
+                                                    response={"status": "updated", "S": round(current_suspicion_index,1), "A": ali, "cat": cat},
                                                     id=fc.id
                                                 )
                                             ]
@@ -500,11 +544,26 @@ async def run_tama_live():
                                         
                                         # Go back to calm after a few seconds without crashing TaskGroup
                                         async def delay_reset():
-                                            global force_speech
                                             await asyncio.sleep(6)
                                             force_speech = False  # Re-muzzle after scolding
                                             update_display(TamaState.CALM, "Je te surveille toujours.")
                                         asyncio.create_task(delay_reset())
+
+                                    elif fc.name == "set_current_task":
+                                        task = fc.args.get("task", "Unknown")
+                                        current_task = task
+                                        force_speech = False  # Re-muzzle after task is set
+                                        print(f"  🎯 Tâche définie : {current_task}")
+                                        
+                                        await session.send_tool_response(
+                                            function_responses=[
+                                                types.FunctionResponse(
+                                                    name="set_current_task",
+                                                    response={"status": "task_set", "current_task": current_task},
+                                                    id=fc.id
+                                                )
+                                            ]
+                                        )
                             except Exception as e:
                                 print(f"⚠️ Erreur function call : {e}")
 
