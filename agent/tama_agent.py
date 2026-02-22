@@ -245,10 +245,12 @@ Your personality:
 - Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences).
 
 IMPORTANT - SESSION START:
-When you first connect, ask the user IN FRENCH what they are working on today. Example: "Salut Nicolas ! Sur quoi tu bosses aujourd'hui ?"
-When they answer, call `set_current_task` with their answer. This sets the Alignment reference.
-If they say "musique" or "Suno", then Suno AND Spotify AND music apps become 100% aligned.
-If they say "coding", then VS Code/Cursor/Terminal is 100% aligned.
+IMPORTANT - INITIAL STATE:
+When you first connect, DO NOT SAY ANYTHING. We start in "Free Session Mode".
+If the user explicitly tells you what they are working on, you may call `set_current_task` with their answer to set the Alignment reference. Otherwise, remain silent and observe.
+If `set_current_task` is called:
+- "musique" or "Suno" means Suno AND Spotify AND music apps become 100% aligned.
+- "coding" means VS Code/Cursor/Terminal is 100% aligned.
 
 Your job:
 EVERY TIME you receive a [SYSTEM] visual update, you MUST call `classify_screen` with:
@@ -394,9 +396,9 @@ async def run_tama_live():
             audio_out_queue = asyncio.Queue()
             audio_in_queue = asyncio.Queue(maxsize=5)
             
-            # Allow speech at session start so Tama can ask the task question
+            # Start in silent "Free Session Mode"
             global force_speech
-            force_speech = True
+            force_speech = False
             
             # --- 1. Audio Input (Microphone) ---
             async def listen_mic():
