@@ -114,16 +114,36 @@ def quit_app(icon, item):
     os._exit(0) # Hard exit to stop asyncio loop
 
 def start_session_from_tray(icon, item):
-    global is_session_active
+    global is_session_active, session_start_time, current_break_index, break_reminder_active, is_on_break
     if not is_session_active:
         is_session_active = True
+        session_start_time = time.time()
+        current_break_index = 0
+        break_reminder_active = False
+        is_on_break = False
         update_display(TamaState.CALM, "🚀 SESSION COMMENCÉE via Widget Windows !")
+
+def accept_break_from_tray(icon, item):
+    global is_on_break, break_reminder_active, break_start_time
+    break_reminder_active = False
+    is_on_break = True
+    break_start_time = time.time()
+    print("☕ Pause acceptée ! Repose-toi pendant 5 minutes.")
+
+def refuse_break_from_tray(icon, item):
+    global current_break_index, break_reminder_active
+    break_reminder_active = False
+    current_break_index = min(current_break_index + 1, len(BREAK_CHECKPOINTS) - 1)
+    next_min = BREAK_CHECKPOINTS[current_break_index]
+    print(f"💪 Pause refusée. Prochaine suggestion dans {next_min} min.")
 
 def setup_tray():
     global tray_icon
     image = create_tray_image(TamaState.CALM)
     menu = (
         item('Démarrer Session (Deep Work) ⚡', start_session_from_tray),
+        item('☕ Accepter la pause', accept_break_from_tray),
+        item('💪 Refuser la pause', refuse_break_from_tray),
         item('Stop Tama 🥷', quit_app)
     )
     tray_icon = pystray.Icon("Tama", image, "Tama Agent 🥷 — 🟢 En veille", menu)
@@ -157,6 +177,15 @@ current_task = None  # Set dynamically by Tama via voice
 current_alignment = 1.0  # 1.0 (aligned), 0.5 (doubt), 0.0 (misaligned)
 current_category = "SANTE"  # SANTE, ZONE_GRISE, FLUX, BANNIE, PROCRASTINATION_PRODUCTIVE
 can_be_closed = True  # Protection: False for IDEs, document editors
+
+# ─── Break Reminder System ────────────────────────────────────
+BREAK_CHECKPOINTS = [20, 40, 90, 120]  # Minutes de travail avant suggestion
+BREAK_DURATIONS   = [5,  8,  15, 20]   # Durée de pause correspondante (minutes)
+session_start_time = None
+current_break_index = 0  # Index dans BREAK_CHECKPOINTS
+break_reminder_active = False  # True quand Tama suggère une pause
+is_on_break = False  # True pendant une pause
+break_start_time = None
 
 # Protected windows that should NEVER be closed
 PROTECTED_WINDOWS = ["code", "cursor", "visual studio", "unreal", "blender", "word", "excel",
@@ -213,6 +242,30 @@ async def broadcast_ws_state():
     while True:
         if connected_ws_clients:
             try:
+                # Calcul du temps de travail depuis le début de la session
+                session_minutes = 0
+                if session_start_time:
+                    session_minutes = int((time.time() - session_start_time) / 60)
+                
+                # ── Break Reminder Check ──
+                global break_reminder_active, is_on_break, break_start_time, current_break_index
+                
+                if is_on_break and break_start_time:
+                    # Durée de pause selon le palier
+                    current_break_duration = BREAK_DURATIONS[min(current_break_index, len(BREAK_DURATIONS) - 1)]
+                    break_elapsed = (time.time() - break_start_time) / 60
+                    if break_elapsed >= current_break_duration:
+                        is_on_break = False
+                        break_start_time = None
+                        current_break_index = min(current_break_index + 1, len(BREAK_CHECKPOINTS) - 1)
+                        print("⏰ Pause terminée ! On reprend le travail.")
+                
+                elif session_start_time and not break_reminder_active and current_break_index < len(BREAK_CHECKPOINTS):
+                    # Vérifier si on a atteint le prochain checkpoint de pause
+                    if session_minutes >= BREAK_CHECKPOINTS[current_break_index]:
+                        break_reminder_active = True
+                        print(f"☕ Tama suggère une pause ! ({session_minutes} min de travail)")
+                
                 state_data = {
                     "suspicion_index": round(current_suspicion_index, 1),
                     "active_window": last_active_window_title,
@@ -221,7 +274,11 @@ async def broadcast_ws_state():
                     "alignment": current_alignment,
                     "current_task": current_task or "Non définie",
                     "category": current_category,
-                    "can_be_closed": can_be_closed
+                    "can_be_closed": can_be_closed,
+                    "session_minutes": session_minutes,
+                    "break_reminder": break_reminder_active,
+                    "is_on_break": is_on_break,
+                    "next_break_at": BREAK_CHECKPOINTS[current_break_index] if current_break_index < len(BREAK_CHECKPOINTS) else None
                 }
                 websockets.broadcast(connected_ws_clients, json.dumps(state_data))
             except Exception:
