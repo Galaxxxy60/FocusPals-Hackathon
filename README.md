@@ -1,31 +1,35 @@
-# FocusPals — Gamified AI Productivity Coach
+# FocusPals 🥷
 
-> Submission for the **Gemini Live Agent Challenge** by Google.
+**Tama** — Your AI productivity coach that watches over you as a 3D desktop pet.
 
-FocusPals is a gamified productivity app featuring **Tama**, a proactive AI coach powered by Google's Gemini Live API. She watches your screen, listens to your voice, and takes action when you procrastinate.
+## Architecture
 
-## Features
-
-- ⏱️ **Pomodoro Timer** with customizable rhythms
-- 🥷 **Proactive AI Coach** (Tama) — sees your screen, hears your voice, closes distracting tabs
-- 🎮 **Gamification** — achievements, streaks, stats
-- 🎨 **PS1 Retro 3D** — Low-poly characters with Three.js and CRT shader
-- ☁️ **Google Cloud** — Firebase sync + Gemini Live API
-
-## Tech Stack
-
-- **Frontend:** React 18 + TypeScript + Three.js
-- **AI:** Google Gen AI SDK (Gemini Live API)
-- **Cloud:** Firebase Hosting + Google Cloud Run
-- **Agent:** Python local script (screen capture, OS actions)
-
-## Getting Started
-
-```bash
-npm install
-npm run dev
+```
+┌─────────────────────────────────────────────┐
+│  Python Agent (agent/tama_agent.py)         │
+│  • Gemini Live API (voice + vision)         │
+│  • Screen capture + window monitoring       │
+│  • Suspicion Index / Alignment engine       │
+│         │                                   │
+│         ▼  WebSocket (ws://localhost:8080)   │
+│                                             │
+│  Godot 4 (godot/)                           │
+│  • 3D model rendering (Tama.glb, ~512 poly) │
+│  • Transparent overlay window               │
+│  • Animations driven by suspicion index     │
+│  • ~25 MB RAM total                         │
+└─────────────────────────────────────────────┘
 ```
 
-## License
+## Quick Start
 
-MIT
+1. **Start the AI Agent:**
+   ```bash
+   cd agent
+   python tama_agent.py
+   ```
+
+2. **Start the 3D Overlay:**
+   Open `godot/project.godot` in Godot 4.4 and press F5.
+
+See `godot/README.md` for full setup instructions.

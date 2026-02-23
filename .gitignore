@@ -1,7 +1,14 @@
+# Godot
+.godot/
+*.import
+export_presets.cfg
+
+# Python
+__pycache__/
+*.pyc
+agent/.env
+
+# Old web stuff (safe to delete)
 node_modules/
 dist/
-.env
-.env.local
-*.log
-.DS_Store
-Thumbs.db
+.vite/
