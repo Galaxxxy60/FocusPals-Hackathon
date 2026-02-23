@@ -353,12 +353,13 @@ def execute_close_tab(reason: str):
             target_x = active.left + (active.width // 2) - 40
             target_y = active.top + 20
             
-            # Run the visual "Hand" Overlay Animation as a completely separate process!
-            # This completely avoids Tkinter locking up the asyncio/threading event loops.
-            subprocess.Popen([sys.executable, "hand_animation.py", str(target_x), str(target_y)])
+            # Récupère le HWND de la fenêtre AVANT que l'utilisateur change de focus
+            hwnd = active._hWnd
+            
+            # Passe le HWND à hand_animation.py pour qu'il re-cible la bonne fenêtre
+            subprocess.Popen([sys.executable, "hand_animation.py", str(target_x), str(target_y), str(hwnd)])
             
         else:
-            # Fallback if no active window found
             import pyautogui
             pyautogui.hotkey('ctrl', 'w')
             
@@ -659,11 +660,80 @@ async def run_tama_live():
             main_tg.create_task(broadcast_ws_state())
             main_tg.create_task(run_gemini_loop())
 
+
+# ─── Godot Launcher + Click-Through ─────────────────────────
+
+import ctypes
+import ctypes.wintypes
+import subprocess
+
+def launch_godot_overlay():
+    """Lance focuspals.exe (Godot) et applique le click-through Windows."""
+    godot_exe = os.path.join(application_path, '..', 'godot', 'focuspals.exe')
+    godot_exe = os.path.abspath(godot_exe)
+    
+    if not os.path.exists(godot_exe):
+        print(f"⚠️  Godot exe non trouvé: {godot_exe}")
+        print("   Tama fonctionnera sans overlay 3D.")
+        return
+    
+    print(f"🎮 Lancement de Tama 3D: {godot_exe}")
+    subprocess.Popen([godot_exe], cwd=os.path.dirname(godot_exe))
+    
+    # Attend que la fenêtre apparaisse puis applique click-through
+    threading.Thread(target=_apply_click_through_delayed, daemon=True).start()
+
+def _apply_click_through_delayed():
+    """Cherche la fenêtre Godot et applique WS_EX_TRANSPARENT + WS_EX_TOOLWINDOW."""
+    user32 = ctypes.windll.user32
+    GWL_EXSTYLE = -20
+    WS_EX_LAYERED = 0x80000
+    WS_EX_TRANSPARENT = 0x20
+    WS_EX_TOOLWINDOW = 0x80
+    
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+    
+    def find_window():
+        result = []
+        def callback(hwnd, lparam):
+            if user32.IsWindowVisible(hwnd):
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buf = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buf, length + 1)
+                    t = buf.value.lower()
+                    if "focuspals" in t or "foculpal" in t or "focupals" in t:
+                        result.append(hwnd)
+            return True
+        user32.EnumWindows(WNDENUMPROC(callback), 0)
+        return result[0] if result else None
+    
+    # Attend max 10 secondes que la fenêtre apparaisse
+    for _ in range(20):
+        hwnd = find_window()
+        if hwnd:
+            time.sleep(0.5)  # Petite attente supplémentaire pour la stabilité
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)
+            print(f"✅ Click-through + caché taskbar (handle: {hwnd})")
+            return
+        time.sleep(0.5)
+    
+    print("⚠️  Fenêtre Godot non trouvée, click-through non appliqué.")
+
+# ─── Main ────────────────────────────────────────────────────
+
 if __name__ == "__main__":
+    # 1. Lance l'overlay 3D Godot
+    launch_godot_overlay()
+    
+    # 2. Lance le system tray
     setup_tray()
+    
+    # 3. Lance l'agent IA (WebSocket + Gemini)
     try:
         asyncio.run(run_tama_live())
     except KeyboardInterrupt:
         pass
     finally:
         print("👋 Tama: Au revoir. N'oublie pas de travailler.")
+
