@@ -56,10 +56,25 @@ def animate(target_x, target_y, target_hwnd=None):
         hwnd = int(target_hwnd)
         # Vérifie que la fenêtre existe toujours
         if user32.IsWindow(hwnd):
-            # Remet le focus sur la fenêtre bannière
-            user32.SetForegroundWindow(hwnd)
-            time.sleep(0.1)  # Laisse Windows changer le focus
-            pyautogui.hotkey('ctrl', 'w')
+            # Windows bloque SetForegroundWindow si notre process n'a pas le focus.
+            # Astuce: simuler un appui Alt pour débloquer la restriction.
+            user32.keybd_event(0x12, 0, 0, 0)  # Alt press
+            user32.keybd_event(0x12, 0, 2, 0)  # Alt release
+            time.sleep(0.05)
+            
+            result = user32.SetForegroundWindow(hwnd)
+            time.sleep(0.15)  # Laisse Windows changer le focus
+            
+            # Vérifie que le focus a bien changé
+            foreground = user32.GetForegroundWindow()
+            if foreground == hwnd:
+                print(f"✅ Focus OK sur hwnd={hwnd}, envoi Ctrl+W")
+                pyautogui.hotkey('ctrl', 'w')
+            else:
+                print(f"⚠️ Focus échoué (foreground={foreground}, cible={hwnd}), tentative WM_CLOSE")
+                # Fallback: envoyer WM_CLOSE directement à la fenêtre
+                WM_CLOSE = 0x0010
+                user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
         else:
             print("⚠️ Fenêtre déjà fermée, annulation.")
     else:
