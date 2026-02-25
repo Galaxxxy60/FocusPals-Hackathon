@@ -31,6 +31,10 @@ var _prev_suspicion_tier: int = -1
 var radial_menu = null
 const RadialMenuScript = preload("res://settings_radial.gd")
 
+# ─── Mic Selection Panel ─────────────────────────────────
+var mic_panel = null
+const MicPanelScript = preload("res://mic_panel.gd")
+
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
@@ -43,7 +47,13 @@ func _setup_radial_menu() -> void:
 	add_child(radial_menu)
 	radial_menu.action_triggered.connect(_on_radial_action)
 	radial_menu.request_hide.connect(_on_radial_hide)
-	print("🎛️ Radial menu initialisé OK")
+	# Mic panel
+	mic_panel = CanvasLayer.new()
+	mic_panel.set_script(MicPanelScript)
+	add_child(mic_panel)
+	mic_panel.mic_selected.connect(_on_mic_selected)
+	mic_panel.panel_closed.connect(_on_mic_panel_closed)
+	print("🎛️ Radial menu + Mic panel initialisés OK")
 
 func _unhandled_input(event: InputEvent) -> void:
 	# F1 = debug toggle du menu radial (fonctionne même sans Python)
@@ -58,6 +68,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
+	if action_id == "mic":
+		# Demander la liste des micros à Python
+		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			ws.send_text(JSON.stringify({"command": "GET_MICS"}))
+		return
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		var msg := JSON.stringify({"command": "MENU_ACTION", "action": action_id})
 		ws.send_text(msg)
@@ -66,6 +81,15 @@ func _on_radial_hide() -> void:
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		var msg := JSON.stringify({"command": "HIDE_RADIAL"})
 		ws.send_text(msg)
+
+func _on_mic_selected(mic_index: int) -> void:
+	print("🎤 Micro sélectionné: " + str(mic_index))
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "SELECT_MIC", "index": mic_index}))
+
+func _on_mic_panel_closed() -> void:
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
 
 func _position_window() -> void:
 	var screen_size := DisplayServer.screen_get_size()
@@ -135,6 +159,13 @@ func _handle_message(raw: String) -> void:
 	elif command == "HIDE_RADIAL":
 		if radial_menu:
 			radial_menu.close()
+		return
+	elif command == "MIC_LIST":
+		var mics = data.get("mics", [])
+		var selected = int(data.get("selected", -1))
+		print("🎤 Reçu %d micros, sélectionné: %d" % [mics.size(), selected])
+		if mic_panel and mics.size() > 0:
+			mic_panel.show_mics(mics, selected)
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──

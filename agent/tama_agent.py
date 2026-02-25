@@ -487,6 +487,20 @@ async def ws_handler(websocket):
                 elif cmd == "MENU_ACTION":
                     action = data.get("action", "")
                     _handle_menu_action(action)
+                elif cmd == "GET_MICS":
+                    mics = get_available_mics()
+                    response = json.dumps({
+                        "command": "MIC_LIST",
+                        "mics": mics,
+                        "selected": selected_mic_index if selected_mic_index is not None else -1
+                    })
+                    await websocket.send(response)
+                elif cmd == "SELECT_MIC":
+                    mic_idx = int(data.get("index", -1))
+                    if mic_idx >= 0:
+                        select_mic(mic_idx)
+                    radial_shown = False
+                    _toggle_click_through(True)
             except Exception:
                 pass
     finally:
