@@ -147,6 +147,14 @@ def start_session(source="UI"):
         is_on_break = False
         just_started_session = True
         update_display(TamaState.CALM, f"🚀 SESSION COMMENCÉE via {source} !")
+        # Notifier Godot pour activer les animations de session
+        start_msg = json.dumps({"command": "START_SESSION"})
+        for ws_client in list(connected_ws_clients):
+            try:
+                if main_loop and main_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(ws_client.send(start_msg), main_loop)
+            except Exception:
+                pass
 
 def start_session_from_tray(icon, item):
     start_session("Widget Windows")
@@ -293,6 +301,19 @@ async def broadcast_ws_state():
     while True:
         if connected_ws_clients:
             try:
+                # ── MODE LIBRE : payload minimal, pas de logique de pause ──
+                if not is_session_active:
+                    state_data = {
+                        "session_active": False,
+                        "suspicion_index": 0.0,
+                        "state": "CALM",
+                        "window_ready": False
+                    }
+                    websockets.broadcast(connected_ws_clients, json.dumps(state_data))
+                    await asyncio.sleep(2.0)  # Pas besoin de broadcast rapide en mode libre
+                    continue
+                
+                # ── SESSION ACTIVE : logique complète ──
                 # Calcul du temps de travail depuis le début de la session
                 session_minutes = 0
                 if session_start_time:
@@ -318,6 +339,7 @@ async def broadcast_ws_state():
                         print(f"☕ Tama suggère une pause ! ({session_minutes} min de travail)")
                 
                 state_data = {
+                    "session_active": True,
                     "suspicion_index": round(current_suspicion_index, 1),
                     "active_window": last_active_window_title,
                     "active_duration": int(time.time() - active_window_start_time),

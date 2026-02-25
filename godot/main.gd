@@ -58,12 +58,9 @@ func _process(delta: float) -> void:
 		WebSocketPeer.STATE_OPEN:
 			if not ws_connected:
 				ws_connected = true
-				print("✅ WebSocket connecté !")
-				session_active = true
-				ws.send_text(JSON.stringify({"command": "START_SESSION"}))
-				# ── Intro : Tama peek dans l'écran ──
-				_play("Peek", false)
-				phase = Phase.PEEKING
+				# Mode Libre : on n'active PAS la session automatiquement
+				# On attend que Python envoie START_SESSION (clic tray)
+				print("✅ WebSocket connecté — Mode Libre (en attente de Deep Work)")
 			while ws.get_available_packet_count() > 0:
 				_handle_message(ws.get_packet().get_string_from_utf8())
 		WebSocketPeer.STATE_CLOSED:
@@ -82,6 +79,27 @@ func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if data == null:
 		return
+
+	# ── Commandes depuis Python ──
+	var command = data.get("command", "")
+	if command == "QUIT":
+		print("👋 Signal QUIT reçu, fermeture propre.")
+		get_tree().quit()
+		return
+	elif command == "START_SESSION":
+		if not session_active:
+			session_active = true
+			print("🚀 Session Deep Work lancée !")
+			# Lancer l'intro de Tama
+			_play("Peek", false)
+			phase = Phase.PEEKING
+		return
+
+	# ── Mode Libre : on ignore les données de surveillance ──
+	if not data.get("session_active", false):
+		return
+
+	# ── Session Active : mise à jour de l'état ──
 	suspicion_index = data.get("suspicion_index", 0.0)
 	state = data.get("state", "CALM")
 	alignment = data.get("alignment", 1.0)
@@ -104,6 +122,8 @@ func _get_tier() -> int:
 
 # ─── Logique Normale (Post-Intro) ─────────────────────────
 func _update_suspicion_anim() -> void:
+	if not session_active:
+		return
 	if not intro_done:
 		return
 	# Ne pas interférer pendant un Peek ou un Bye en cours
