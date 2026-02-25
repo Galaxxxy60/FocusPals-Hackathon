@@ -36,6 +36,7 @@ func show_mics(mics: Array, selected: int) -> void:
 		return
 	is_open = true
 	visible = true
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
 	var tw := create_tween()
 	tw.tween_property(self, "_progress", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
@@ -47,6 +48,7 @@ func close() -> void:
 	tw.tween_property(self, "_progress", 0.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_callback(func():
 		visible = false
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 		panel_closed.emit()
 	)
 

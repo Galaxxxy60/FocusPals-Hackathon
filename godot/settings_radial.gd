@@ -63,6 +63,7 @@ func open() -> void:
 	visible = true
 	_close_timer = 0.0
 	_hovered = -1
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
 	var tw := create_tween()
 	tw.tween_property(self, "_progress", 1.0, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
@@ -76,6 +77,7 @@ func close() -> void:
 
 func _on_closed() -> void:
 	visible = false
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 	request_hide.emit()
 
 func _process(delta: float) -> void:
