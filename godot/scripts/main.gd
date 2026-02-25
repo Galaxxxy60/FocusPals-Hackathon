@@ -32,19 +32,26 @@ const ANIM_RELAX      := "Relax"        # Pause (loop)
 var current_anim: String = ""
 var anim_player_ref: AnimationPlayer = null
 
+# ─── Intro State ───
+var has_done_intro: bool = false
+var intro_step: String = ""
+var intro_timer: float = 0.0
+
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
 	
-	# Cherche l'AnimationPlayer une seule fois au démarrage
-	var tama = get_node_or_null("Tama")
-	if tama:
-		anim_player_ref = _find_animation_player(tama)
-		if anim_player_ref:
-			var anims = anim_player_ref.get_animation_list()
-			print("🎬 Animations trouvées: ", anims)
-		else:
-			print("⚠️ Pas d'AnimationPlayer trouvé dans Tama")
+	# Cherche l'AnimationPlayer (chemin direct, puis fallback récursif)
+	anim_player_ref = get_node_or_null("Tama/AnimationPlayer")
+	if anim_player_ref == null:
+		var tama = get_node_or_null("Tama")
+		if tama:
+			anim_player_ref = _find_animation_player(tama)
+	if anim_player_ref:
+		var anims = anim_player_ref.get_animation_list()
+		print("🎬 Animations trouvées: ", anims)
+	else:
+		print("⚠️ Pas d'AnimationPlayer trouvé dans Tama")
 	
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
@@ -93,14 +100,16 @@ func _process(delta: float) -> void:
 	# ── Animation SEULEMENT (plus de position) ──
 	_update_tama_state(delta)
 
-# ─── Intro State ───
-var has_done_intro: bool = false
-var intro_step: String = ""
-var intro_timer: float = 0.0
 
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if data == null:
+		return
+
+	# ── Commande QUIT : fermeture propre depuis Python ──
+	if data.get("command", "") == "QUIT":
+		print("👋 Signal QUIT reçu, fermeture propre.")
+		get_tree().quit()
 		return
 
 	# Démarrage de l'intro UNIQUEMENT 1 FOIS quand la fenêtre est positionnée 

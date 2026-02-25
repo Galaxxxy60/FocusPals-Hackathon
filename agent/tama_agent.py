@@ -12,12 +12,21 @@ Features:
 
 import asyncio
 import io
+import logging
 import os
 import sys
 import time
 from datetime import datetime
 from enum import Enum
 import threading
+
+# ─── Logging ────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S"
+)
+log = logging.getLogger("Tama")
 
 import pystray
 from pystray import MenuItem as item
@@ -98,6 +107,7 @@ def clear_screen():
 # ─── System Tray Icon ───────────────────────────────────────
 
 tray_icon = None
+main_loop = None  # Référence à l'event loop asyncio pour le thread tray
 
 def create_tray_image(state: TamaState):
     image = Image.new('RGB', (64, 64), color=(30, 30, 30))
@@ -110,11 +120,22 @@ def create_tray_image(state: TamaState):
 
 def quit_app(icon, item):
     icon.stop()
-    print("\n👋 Tama: J'arrête de surveiller. Fermeture...")
+    print("\n👋 Tama: Fermeture propre...")
+    # Envoyer QUIT à Godot via WebSocket
+    quit_msg = json.dumps({"command": "QUIT"})
+    for ws_client in list(connected_ws_clients):
+        try:
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(ws_client.send(quit_msg), main_loop)
+        except Exception:
+            pass
+    # Laisser 1.5s pour que Godot se ferme proprement
+    time.sleep(1.5)
+    # Fallback taskkill si Godot n'a pas répondu
     import subprocess
     subprocess.run("taskkill /F /IM focuspals.exe", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run("taskkill /F /IM focuspals.console.exe", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    os._exit(0) # Hard exit to stop asyncio loop
+    os._exit(0)
 
 def start_session(source="UI"):
     global is_session_active, session_start_time, current_break_index, break_reminder_active, is_on_break, just_started_session
@@ -170,7 +191,6 @@ def update_tray(state: TamaState):
 current_tama_state = TamaState.CALM
 current_suspicion_index = 0.0  # Float for granular ΔS
 last_active_window_title = "Unknown"
-import time
 import json
 import websockets
 active_window_start_time = time.time()
@@ -232,6 +252,28 @@ def compute_delta_s(alignment: float, category: str) -> float:
 connected_ws_clients = set()
 is_session_active = False
 window_positioned = False  # True quand Python a repositionné la fenêtre Godot
+
+# ─── Window Cache (évite les appels répétés à pygetwindow) ──
+import pygetwindow as gw
+_cached_windows = []       # Liste des fenêtres visibles (objets gw.Window)
+_cached_active_title = ""  # Titre de la fenêtre active
+
+def refresh_window_cache():
+    """Rafraîchit le cache des fenêtres. Appelé UNE SEULE FOIS par scan."""
+    global _cached_windows, _cached_active_title
+    try:
+        _cached_windows = [w for w in gw.getAllWindows() if w.title and w.visible and w.width > 200]
+        active = gw.getActiveWindow()
+        _cached_active_title = active.title if active else "Unknown"
+    except Exception:
+        pass
+
+def get_cached_window_by_title(target_title: str):
+    """Cherche dans le cache au lieu de refaire getAllWindows()."""
+    for w in _cached_windows:
+        if target_title.lower() in w.title.lower():
+            return w
+    return None
 
 async def ws_handler(websocket):
     global is_session_active
@@ -415,15 +457,11 @@ def execute_close_tab(reason: str, target_window: str = None):
     - Apps standalone → mode 'app' (WM_CLOSE = ferme toute la fenêtre)
     """
     try:
-        import pygetwindow as gw
         import subprocess
         
         target = None
         if target_window:
-            for w in gw.getAllWindows():
-                if w.title and target_window.lower() in w.title.lower():
-                    target = w
-                    break
+            target = get_cached_window_by_title(target_window)
         
         if not target:
             return {"status": "error", "message": f"Could not find window matching '{target_window}'. Provide the exact title from open_windows list."}
@@ -465,16 +503,17 @@ def capture_all_screens() -> bytes:
 
     # Downscale heavily to save bandwidth while keeping text somewhat legible for AI.
     # 1024x512 is a good wide aspect ratio for dual monitors
-    img.thumbnail((1024, 512), Image.Resampling.LANCZOS)
+    img.thumbnail((1024, 512), Image.Resampling.BILINEAR)
 
     buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=40)
+    img.save(buffer, format="JPEG", quality=30)
     return buffer.getvalue()
 
 # ─── Main Pipeline ──────────────────────────────────────────
 
 async def run_tama_live():
-    global is_session_active
+    global is_session_active, main_loop
+    main_loop = asyncio.get_running_loop()
     
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"], # We want voice!
@@ -543,20 +582,9 @@ async def run_tama_live():
                                 break
                             
                             # Force Tama to say what she sees/act based on system instructions
-                            import pygetwindow as gw
-                            import time
-                            active_title = "Unknown"
-                            open_win_titles = []
-                            try:
-                                active_win = gw.getActiveWindow()
-                                if active_win:
-                                    active_title = active_win.title
-                                
-                                for w in gw.getAllWindows():
-                                    if w.title and w.visible and w.width > 200:
-                                        open_win_titles.append(w.title)
-                            except Exception:
-                                pass
+                            await asyncio.to_thread(refresh_window_cache)
+                            active_title = _cached_active_title
+                            open_win_titles = [w.title for w in _cached_windows]
                             
                             global last_active_window_title, active_window_start_time
                             if active_title != last_active_window_title:
@@ -677,11 +705,10 @@ async def run_tama_live():
                                                     # ═══ AUTO-CLOSE : S=10 + BANNIE → Python ferme sans attendre Gemini ═══
                                                     if current_suspicion_index >= 10.0 and cat == "BANNIE":
                                                         try:
-                                                            import pygetwindow as gw
                                                             bannie_keywords = ["youtube", "netflix", "twitch", "reddit", "tiktok", "instagram", "facebook", "steam", "discord"]
                                                             closed = False
-                                                            for w in gw.getAllWindows():
-                                                                if not w.title or w.width < 100:
+                                                            for w in _cached_windows:
+                                                                if w.width < 100:
                                                                     continue
                                                                 t_lower = w.title.lower()
                                                                 if not compute_can_be_closed(t_lower):
@@ -820,6 +847,7 @@ async def run_tama_live():
 import ctypes
 import ctypes.wintypes
 import subprocess
+godot_process = None  # Stocke le process Godot pour identification par PID
 
 def launch_godot_overlay():
     """Lance focuspals.exe (Godot) et applique le click-through Windows."""
@@ -832,7 +860,8 @@ def launch_godot_overlay():
         return
     
     print(f"🎮 Lancement de Tama 3D: {godot_exe}")
-    subprocess.Popen([godot_exe], cwd=os.path.dirname(godot_exe))
+    global godot_process
+    godot_process = subprocess.Popen([godot_exe], cwd=os.path.dirname(godot_exe))
     
     # Attend que la fenêtre apparaisse puis applique click-through
     threading.Thread(target=_apply_click_through_delayed, daemon=True).start()
@@ -848,16 +877,17 @@ def _apply_click_through_delayed():
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
     
     def find_window():
+        """Trouve le HWND du process Godot par son PID (plus fiable que le titre)."""
         result = []
+        pid = godot_process.pid if godot_process else None
+        if not pid:
+            return None
         def callback(hwnd, lparam):
             if user32.IsWindowVisible(hwnd):
-                length = user32.GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buf = ctypes.create_unicode_buffer(length + 1)
-                    user32.GetWindowTextW(hwnd, buf, length + 1)
-                    t = buf.value.lower()
-                    if "focuspals" in t or "foculpal" in t or "focupals" in t:
-                        result.append(hwnd)
+                lpdw_pid = ctypes.wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lpdw_pid))
+                if lpdw_pid.value == pid:
+                    result.append(hwnd)
             return True
         user32.EnumWindows(WNDENUMPROC(callback), 0)
         return result[0] if result else None
