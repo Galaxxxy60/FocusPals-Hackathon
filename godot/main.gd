@@ -27,10 +27,45 @@ var current_anim: String = ""
 var _anim_player: AnimationPlayer = null
 var _prev_suspicion_tier: int = -1
 
+# ─── Radial Settings Menu ─────────────────────────────────
+var radial_menu = null
+const RadialMenuScript = preload("res://settings_radial.gd")
+
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
+	_setup_radial_menu()
 	print("🥷 FocusPals Godot — En attente de connexion...")
+
+func _setup_radial_menu() -> void:
+	radial_menu = CanvasLayer.new()
+	radial_menu.set_script(RadialMenuScript)
+	add_child(radial_menu)
+	radial_menu.action_triggered.connect(_on_radial_action)
+	radial_menu.request_hide.connect(_on_radial_hide)
+	print("🎛️ Radial menu initialisé OK")
+
+func _unhandled_input(event: InputEvent) -> void:
+	# F1 = debug toggle du menu radial (fonctionne même sans Python)
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F1:
+		if radial_menu:
+			if radial_menu.is_open:
+				print("🎛️ [DEBUG] F1 → Fermeture du radial menu")
+				radial_menu.close()
+			else:
+				print("🎛️ [DEBUG] F1 → Ouverture du radial menu")
+				radial_menu.open()
+
+func _on_radial_action(action_id: String) -> void:
+	print("🎛️ Radial action: " + action_id)
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		var msg := JSON.stringify({"command": "MENU_ACTION", "action": action_id})
+		ws.send_text(msg)
+
+func _on_radial_hide() -> void:
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		var msg := JSON.stringify({"command": "HIDE_RADIAL"})
+		ws.send_text(msg)
 
 func _position_window() -> void:
 	var screen_size := DisplayServer.screen_get_size()
@@ -90,9 +125,16 @@ func _handle_message(raw: String) -> void:
 		if not session_active:
 			session_active = true
 			print("🚀 Session Deep Work lancée !")
-			# Lancer l'intro de Tama
 			_play("Peek", false)
 			phase = Phase.PEEKING
+		return
+	elif command == "SHOW_RADIAL":
+		if radial_menu:
+			radial_menu.open()
+		return
+	elif command == "HIDE_RADIAL":
+		if radial_menu:
+			radial_menu.close()
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──

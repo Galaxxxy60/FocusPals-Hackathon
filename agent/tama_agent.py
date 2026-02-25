@@ -63,6 +63,45 @@ CHANNELS = 1
 SEND_SAMPLE_RATE = 16000
 RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE = 1024
+selected_mic_index = None  # None = micro par défaut du système
+
+def get_available_mics():
+    """Liste les vrais micros disponibles (WASAPI uniquement, sans les virtuels)."""
+    pya = pyaudio.PyAudio()
+    mics = []
+    # Trouver l'index de l'API WASAPI (meilleure qualité sur Windows)
+    wasapi_index = None
+    for i in range(pya.get_host_api_count()):
+        api = pya.get_host_api_info_by_index(i)
+        if "WASAPI" in api["name"]:
+            wasapi_index = i
+            break
+    
+    # Mots-clés de devices virtuels/inutiles à exclure
+    exclude = ["steam streaming", "vb-audio", "cable output", "mappeur", "wo mic",
+               "réseau de microphones", "input (vb", "cable input"]
+    
+    for i in range(pya.get_device_count()):
+        info = pya.get_device_info_by_index(i)
+        if info["maxInputChannels"] <= 0:
+            continue
+        # Filtrer par WASAPI si disponible
+        if wasapi_index is not None and info["hostApi"] != wasapi_index:
+            continue
+        name_lower = info["name"].lower()
+        if any(ex in name_lower for ex in exclude):
+            continue
+        mics.append({"index": i, "name": info["name"]})
+    pya.terminate()
+    return mics
+
+def select_mic(index):
+    """Change le micro utilisé (prend effet au prochain redémarrage de session)."""
+    global selected_mic_index
+    selected_mic_index = index
+    mics = get_available_mics()
+    name = next((m["name"] for m in mics if m["index"] == index), "?")
+    print(f"🎤 Micro sélectionné: [{index}] {name}")
 
 # ─── Tama's States & Display ────────────────────────────────
 
@@ -173,13 +212,78 @@ def refuse_break_from_tray(icon, item):
     next_min = BREAK_CHECKPOINTS[current_break_index]
     print(f"💪 Pause refusée. Prochaine suggestion dans {next_min} min.")
 
+def open_settings_popup(icon=None, item=None):
+    """Ouvre une fenêtre de réglages avec sélection du micro."""
+    import tkinter as tk
+    from tkinter import ttk
+    
+    mics = get_available_mics()
+    if not mics:
+        return
+    
+    win = tk.Tk()
+    win.title("FocusPals — Réglages 🎤")
+    win.geometry("420x150")
+    win.resizable(False, False)
+    win.attributes("-topmost", True)
+    win.configure(bg="#1e1e2e")
+    
+    # Style
+    style = ttk.Style(win)
+    style.theme_use("clam")
+    style.configure("TLabel", background="#1e1e2e", foreground="#cdd6f4", font=("Segoe UI", 11))
+    style.configure("TCombobox", font=("Segoe UI", 10))
+    style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
+    
+    ttk.Label(win, text="🎤 Microphone").pack(pady=(15, 5))
+    
+    mic_names = [m["name"] for m in mics]
+    mic_var = tk.StringVar()
+    
+    # Trouver le micro actuellement sélectionné
+    current_name = ""
+    for m in mics:
+        if m["index"] == selected_mic_index:
+            current_name = m["name"]
+            break
+    if current_name:
+        mic_var.set(current_name)
+    elif mic_names:
+        mic_var.set(mic_names[0])
+    
+    combo = ttk.Combobox(win, textvariable=mic_var, values=mic_names, state="readonly", width=50)
+    combo.pack(padx=20, pady=5)
+    
+    def save():
+        name = mic_var.get()
+        for m in mics:
+            if m["name"] == name:
+                select_mic(m["index"])
+                break
+        win.destroy()
+    
+    ttk.Button(win, text="✅ Sauvegarder", command=save, style="Accent.TButton").pack(pady=15)
+    win.mainloop()
+
 def setup_tray():
-    global tray_icon
+    global tray_icon, selected_mic_index
     image = create_tray_image(TamaState.CALM)
+    
+    # Résoudre le micro par défaut si pas encore sélectionné
+    if selected_mic_index is None:
+        try:
+            pya_tmp = pyaudio.PyAudio()
+            selected_mic_index = pya_tmp.get_default_input_device_info()["index"]
+            pya_tmp.terminate()
+        except Exception:
+            pass
+    
     menu = (
         item('Démarrer Session (Deep Work) ⚡', start_session_from_tray),
         item('☕ Accepter la pause', accept_break_from_tray),
         item('💪 Refuser la pause', refuse_break_from_tray),
+        pystray.Menu.SEPARATOR,
+        item('Réglages 🎤', open_settings_popup),
         item('Stop Tama 🥷', quit_app)
     )
     tray_icon = pystray.Icon("Tama", image, "Tama Agent 🥷 — 🟢 En veille", menu)
@@ -260,6 +364,8 @@ def compute_delta_s(alignment: float, category: str) -> float:
 connected_ws_clients = set()
 is_session_active = False
 window_positioned = False  # True quand Python a repositionné la fenêtre Godot
+godot_hwnd = None           # HWND de la fenêtre Godot (stocké pour toggle click-through)
+radial_shown = False        # True quand le menu radial est affiché
 
 # ─── Window Cache (évite les appels répétés à pygetwindow) ──
 import pygetwindow as gw
@@ -283,15 +389,104 @@ def get_cached_window_by_title(target_title: str):
             return w
     return None
 
+# ─── Click-Through Toggle ───────────────────────────────────
+
+def _toggle_click_through(enable: bool):
+    """Toggle WS_EX_TRANSPARENT on the Godot window."""
+    global godot_hwnd
+    if not godot_hwnd:
+        return
+    user32 = ctypes.windll.user32
+    GWL_EXSTYLE = -20
+    WS_EX_LAYERED    = 0x80000
+    WS_EX_TRANSPARENT = 0x20
+    WS_EX_TOOLWINDOW  = 0x80
+    if enable:
+        user32.SetWindowLongW(godot_hwnd, GWL_EXSTYLE,
+                              WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)
+    else:
+        user32.SetWindowLongW(godot_hwnd, GWL_EXSTYLE,
+                              WS_EX_LAYERED | WS_EX_TOOLWINDOW)
+
+def _handle_menu_action(action: str):
+    """Handle radial menu item clicks."""
+    if action == "session":
+        if not is_session_active:
+            start_session("Radial Menu")
+        else:
+            print("⏸️ Session déjà en cours.")
+    elif action == "mic":
+        threading.Thread(target=open_settings_popup, daemon=True).start()
+    elif action == "task":
+        print("🎯 Tâche : demandez à Tama par la voix !")
+    elif action == "breaks":
+        print("⏰ Config pauses : fonctionnalité à venir.")
+    elif action == "quit":
+        quit_app(tray_icon, None)
+
+# ─── Mouse Edge Monitor ────────────────────────────────────
+
+def _mouse_edge_monitor():
+    """Detects when the cursor reaches the right screen edge (bottom third only) to show the radial menu."""
+    global radial_shown
+
+    class POINT(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+    user32 = ctypes.windll.user32
+    screen_w = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+
+    # Calculer la zone de détection (tiers inférieur de l'écran = zone de Tama)
+    work_area = ctypes.wintypes.RECT()
+    ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
+    detect_y_min = work_area.bottom - 500  # Hauteur de la fenêtre Godot
+    print(f"🖱️ [EdgeMonitor] Démarré — écran: {screen_w}px, zone Y: {detect_y_min}-{work_area.bottom}")
+
+    radial_shown_time = 0
+
+    while True:
+        pt = POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        near_edge = pt.x >= screen_w - 5
+        in_zone = pt.y >= detect_y_min
+
+        if near_edge and in_zone and not radial_shown:
+            radial_shown = True
+            radial_shown_time = time.time()
+            print(f"🖱️ [EdgeMonitor] Bord droit détecté ! ({pt.x}, {pt.y}) — SHOW_RADIAL")
+            _toggle_click_through(False)
+            msg = json.dumps({"command": "SHOW_RADIAL"})
+            for ws_client in list(connected_ws_clients):
+                try:
+                    if main_loop and main_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
+                except Exception as e:
+                    print(f"🖱️ [EdgeMonitor] Erreur envoi WS: {e}")
+
+        # Safety timeout: si Godot ne répond pas HIDE_RADIAL dans les 5s, on reset
+        if radial_shown and (time.time() - radial_shown_time > 5.0):
+            print("🖱️ [EdgeMonitor] Timeout — reset radial_shown")
+            radial_shown = False
+            _toggle_click_through(True)
+
+        time.sleep(0.1)
+
 async def ws_handler(websocket):
-    global is_session_active
+    global is_session_active, radial_shown
     connected_ws_clients.add(websocket)
     try:
         async for message in websocket:
             try:
                 data = json.loads(message)
-                if data.get("command") == "START_SESSION":
+                cmd = data.get("command", "")
+                if cmd == "START_SESSION":
                     start_session("Interface Godot 3D")
+                elif cmd == "HIDE_RADIAL":
+                    radial_shown = False
+                    _toggle_click_through(True)
+                elif cmd == "MENU_ACTION":
+                    action = data.get("action", "")
+                    _handle_menu_action(action)
             except Exception:
                 pass
     finally:
@@ -408,10 +603,11 @@ Category definitions:
 - alignment: 1.0 (activity matches scheduled task), 0.5 (ambiguous), or 0.0 (misaligned)
 
 MULTI-MONITOR MONITORING:
-- You see all screens.
-- The user might have a work app (e.g. VS Code) active on Screen 1, but a distracting video (BANNIE) open on Screen 2.
-- If ANY visible screen contains a BANNIE distraction, you MUST classify it as BANNIE/0.0, even if the active window is SANTE.
-- You will receive a list of `open_windows` and the `active_window`.
+- You receive a screenshot of ALL screens + `open_windows` list + `active_window`.
+- **Classify based on what you can SEE in the screenshot.** If a distracting app is VISIBLE on any screen, classify BANNIE.
+- If a window is in `open_windows` but NOT visible in the screenshot (hidden behind another window), IGNORE it. The user may keep tabs for breaks.
+- Example: YouTube visible on Screen 2 while coding on Screen 1 → BANNIE (you can see it).
+- Example: YouTube in open_windows but fully hidden behind VS Code → IGNORE (you can't see it, user keeps it for break).
 
 FREE SESSION MODE (If current_task is NOT SET):
 - Any SANTE app → alignment = 1.0 (Zero suspicion, you assume they are working).
@@ -419,8 +615,9 @@ FREE SESSION MODE (If current_task is NOT SET):
 - Any BANNIE app → alignment = 0.0 (Pure distraction).
 
 CRITICAL ACTIONS:
-- If you receive `S: 10.0`, YOU MUST loudly yell at the user AND call `close_distracting_tab` specifying the `target_window` title to close! You can pick the exact title from the `open_windows` list.
-- ONLY avoid calling `close_distracting_tab` if the only distracting windows are protected creative tools (you must NEVER close code editors).
+- If S reaches 10.0 and category is BANNIE: YOU MUST yell at the user AND call `close_distracting_tab` with the `target_window` title from `open_windows`.
+- If S reaches 10.0 and category is ZONE_GRISE: YOU MUST scold the user loudly, but NEVER call `close_distracting_tab`. Messaging apps (Messenger, Discord, WhatsApp) should NOT be closed — just verbally reprimand.
+- NEVER call `close_distracting_tab` for PROCRASTINATION_PRODUCTIVE or SANTE.
 
 RULE OF SILENCE: You are MUZZLED by default. DO NOT speak, DO NOT say "Got it", "Understood". Just call `classify_screen`. Speech is allowed only when explicitly unmuzzled in the [SYSTEM] prompt.
 """
@@ -569,10 +766,14 @@ async def run_tama_live():
             
                     # --- 1. Audio Input (Microphone) ---
                     async def listen_mic():
-                        mic_info = pya.get_default_input_device_info()
+                        mic_index = selected_mic_index
+                        if mic_index is None:
+                            mic_info = pya.get_default_input_device_info()
+                            mic_index = mic_info["index"]
+                        print(f"🎤 Micro actif: index {mic_index}")
                         stream = await asyncio.to_thread(
                             pya.open, format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
-                            input=True, input_device_index=mic_info["index"], frames_per_buffer=CHUNK_SIZE,
+                            input=True, input_device_index=mic_index, frames_per_buffer=CHUNK_SIZE,
                         )
                         try:
                             while True:
@@ -727,7 +928,7 @@ async def run_tama_live():
                                                     # ═══ AUTO-CLOSE : S=10 + BANNIE → Python ferme sans attendre Gemini ═══
                                                     if current_suspicion_index >= 10.0 and cat == "BANNIE":
                                                         try:
-                                                            bannie_keywords = ["youtube", "netflix", "twitch", "reddit", "tiktok", "instagram", "facebook", "steam", "discord"]
+                                                            distraction_keywords = ["youtube", "netflix", "twitch", "reddit", "tiktok", "instagram", "facebook", "steam"]
                                                             closed = False
                                                             for w in _cached_windows:
                                                                 if w.width < 100:
@@ -735,7 +936,7 @@ async def run_tama_live():
                                                                 t_lower = w.title.lower()
                                                                 if not compute_can_be_closed(t_lower):
                                                                     continue
-                                                                if any(kw in t_lower for kw in bannie_keywords):
+                                                                if any(kw in t_lower for kw in distraction_keywords):
                                                                     print(f"  🤖 AUTO-CLOSE: S=10, fermeture de '{w.title[:60]}'")
                                                                     update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({w.title[:30]})")
                                                                     force_speech = True
@@ -923,6 +1124,9 @@ def _apply_click_through_delayed():
         if hwnd:
             time.sleep(0.5)  # Attente supplémentaire pour la stabilité
             user32.SetWindowLongW(hwnd, GWL_EXSTYLE, WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)
+            # Store globally for click-through toggling (radial menu)
+            global godot_hwnd
+            godot_hwnd = hwnd
             
             # ── Repositionner la fenêtre au bord droit après le changement de style ──
             try:
@@ -963,6 +1167,9 @@ if __name__ == "__main__":
     
     # 2. Lance le system tray
     setup_tray()
+    
+    # 3. Lance le moniteur de souris (bordure écran → menu radial)
+    threading.Thread(target=_mouse_edge_monitor, daemon=True).start()
     
     # 3. Lance l'agent IA (WebSocket + Gemini)
     try:

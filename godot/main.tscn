@@ -1,17 +1,17 @@
 [gd_scene format=3 uid="uid://duc1ybk88isa8"]
 
 [ext_resource type="Script" uid="uid://dk11vbtj4hllf" path="res://main.gd" id="1_0xm2m"]
-[ext_resource type="PackedScene" uid="uid://b2871ainf1bvk" path="res://Tama.glb" id="1_ig7tw"]
+[ext_resource type="PackedScene" uid="uid://des7njx6aa57f" path="res://Tama.glb" id="1_ig7tw"]
 
 [node name="Main" type="Node3D" unique_id=206640461]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0009098351, 1.2723705, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0009098351, 1.2777086, 0)
 script = ExtResource("1_0xm2m")
 
-[node name="Tama" parent="." unique_id=349247197 instance=ExtResource("1_ig7tw")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16812924, 0, -0.14062428)
-
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1527185340]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16317892, 0.03308642, 2.4100032)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0016760826, 0.03308642, 2.4100032)
 projection = 1
 fov = 34.5
 size = 2.044509
+
+[node name="Tama" parent="." unique_id=1264182 instance=ExtResource("1_ig7tw")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.99566305, -0.009599686)
