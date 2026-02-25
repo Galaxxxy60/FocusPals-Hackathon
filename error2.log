@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\tama_agent.py", line 826, in <module>
+    launch_godot_overlay()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\tama_agent.py", line 776, in launch_godot_overlay
+    print(f"\U0001f3ae Lancement de Tama 3D: {godot_exe}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f3ae' in position 0: character maps to <undefined>

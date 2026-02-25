@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://daf4p1yx505k0"]
+
+[ext_resource type="PackedScene" uid="uid://b2871ainf1bvk" path="res://Tama.glb" id="1_a202f"]
+
+[node name="Main" type="Node3D" unique_id=206640461]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0009098351, 0, 0)
+
+[node name="Tama" parent="." unique_id=349247197 instance=ExtResource("1_a202f")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16812924, 0, -0.14062428)
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1527185340]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16317892, 0.845314, 2.4100032)
+projection = 1
+fov = 34.5
+size = 2.006

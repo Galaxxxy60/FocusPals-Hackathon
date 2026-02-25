@@ -198,7 +198,8 @@ just_started_session = False
 # Protected windows that should NEVER be closed
 PROTECTED_WINDOWS = ["code", "cursor", "visual studio", "unreal", "blender", "word", "excel",
                      "figma", "photoshop", "premiere", "davinci", "ableton", "fl studio",
-                     "suno", "notion", "obsidian", "terminal", "powershell"]
+                     "suno", "notion", "obsidian", "terminal", "powershell",
+                     "godot", "foculpal", "focuspals", "tama"]
 
 def compute_can_be_closed(window_title: str) -> bool:
     """Returns False if the window contains unsaved work or is a creative tool."""
@@ -230,6 +231,7 @@ def compute_delta_s(alignment: float, category: str) -> float:
 
 connected_ws_clients = set()
 is_session_active = False
+window_positioned = False  # True quand Python a repositionné la fenêtre Godot
 
 async def ws_handler(websocket):
     global is_session_active
@@ -285,7 +287,8 @@ async def broadcast_ws_state():
                     "session_minutes": session_minutes,
                     "break_reminder": break_reminder_active,
                     "is_on_break": is_on_break,
-                    "next_break_at": BREAK_CHECKPOINTS[current_break_index] if current_break_index < len(BREAK_CHECKPOINTS) else None
+                    "next_break_at": BREAK_CHECKPOINTS[current_break_index] if current_break_index < len(BREAK_CHECKPOINTS) else None,
+                    "window_ready": window_positioned
                 }
                 websockets.broadcast(connected_ws_clients, json.dumps(state_data))
             except Exception:
@@ -338,12 +341,13 @@ Category definitions:
 5. PROCRASTINATION_PRODUCTIVE: Any productive activity that does NOT match the scheduled task.
    Example: scheduled task is "coding" but user is on Suno making music = productive but misaligned.
 
-Alignment depends on the current_task:
-- If current_task = "musique" and user is on Spotify/Suno → alignment = 1.0
-- If current_task = "musique" and user is on VS Code → alignment = 0.0 (procrastination productive!)
-- If current_task = "coding" and user is on VS Code → alignment = 1.0
-- If current_task = "coding" and user is on Suno → alignment = 0.0 (procrastination productive!)
-- If current_task = "game design" and user is watching a gameplay video on YouTube → alignment = 1.0, and category is STILL BANNIE. (This triggers "Glissement" mechanics).
+- alignment: 1.0 (activity matches scheduled task), 0.5 (ambiguous), or 0.0 (misaligned)
+
+MULTI-MONITOR MONITORING:
+- You see all screens.
+- The user might have a work app (e.g. VS Code) active on Screen 1, but a distracting video (BANNIE) open on Screen 2.
+- If ANY visible screen contains a BANNIE distraction, you MUST classify it as BANNIE/0.0, even if the active window is SANTE.
+- You will receive a list of `open_windows` and the `active_window`.
 
 FREE SESSION MODE (If current_task is NOT SET):
 - Any SANTE app → alignment = 1.0 (Zero suspicion, you assume they are working).
@@ -351,8 +355,8 @@ FREE SESSION MODE (If current_task is NOT SET):
 - Any BANNIE app → alignment = 0.0 (Pure distraction).
 
 CRITICAL ACTIONS:
-- If you receive `S: 10.0` AND `can_be_closed: True`, YOU MUST loudly yell at the user AND call `close_distracting_tab` immediately!
-- If you receive `S: 10.0` AND `can_be_closed: False`, YOU MUST loudly harass the user to go back to work, but DO NOT call `close_distracting_tab`.
+- If you receive `S: 10.0`, YOU MUST loudly yell at the user AND call `close_distracting_tab` specifying the `target_window` title to close! You can pick the exact title from the `open_windows` list.
+- ONLY avoid calling `close_distracting_tab` if the only distracting windows are protected creative tools (you must NEVER close code editors).
 
 RULE OF SILENCE: You are MUZZLED by default. DO NOT speak, DO NOT say "Got it", "Understood". Just call `classify_screen`. Speech is allowed only when explicitly unmuzzled in the [SYSTEM] prompt.
 """
@@ -369,8 +373,9 @@ TOOLS = [
                     type="OBJECT",
                     properties={
                         "reason": types.Schema(type="STRING", description="Reason for closing"),
+                        "target_window": types.Schema(type="STRING", description="Exact title of the distracting window to close, from the open_windows list"),
                     },
-                    required=["reason"],
+                    required=["reason", "target_window"],
                 ),
             ),
             types.FunctionDeclaration(
@@ -400,35 +405,51 @@ TOOLS = [
         ]
     )
 ]
+# Navigateurs connus (pour détecter le mode browser vs app)
+BROWSER_KEYWORDS = ["chrome", "firefox", "edge", "opera", "brave", "vivaldi", "chromium"]
 
-def execute_close_tab(reason: str):
-    """Force-close the active browser tab with Ctrl+W."""
+def execute_close_tab(reason: str, target_window: str = None):
+    """
+    Ferme la fenêtre/onglet ciblé avec le système UIA-guided.
+    - Navigateurs → mode 'browser' (UIA TabItem tracking + Ctrl+W = ferme UN onglet)
+    - Apps standalone → mode 'app' (WM_CLOSE = ferme toute la fenêtre)
+    """
     try:
         import pygetwindow as gw
-        active = gw.getActiveWindow()
-        if active:
-            title = active.title.lower()
-            # Safety check: NEVER close code editors
-            if "visual studio code" in title or "cursor" in title or "focuspals" in title:
-                return {"status": "error", "message": "Did not close. Active window is a CODE EDITOR or IDE, not a browser. DO NOT close code editors."}
-                
-            import subprocess
-            
-            target_x = active.left + (active.width // 2) - 40
-            target_y = active.top + 20
-            
-            # Récupère le HWND de la fenêtre AVANT que l'utilisateur change de focus
-            hwnd = active._hWnd
-            
-            # Passe le HWND à hand_animation.py pour qu'il re-cible la bonne fenêtre
-            hand_script = os.path.join(application_path, "hand_animation.py")
-            subprocess.Popen([sys.executable, hand_script, str(target_x), str(target_y), str(hwnd)])
-            
-        else:
-            import pyautogui
-            pyautogui.hotkey('ctrl', 'w')
-            
-        return {"status": "success", "message": f"Tab closed: {reason}"}
+        import subprocess
+        
+        target = None
+        if target_window:
+            for w in gw.getAllWindows():
+                if w.title and target_window.lower() in w.title.lower():
+                    target = w
+                    break
+        
+        if not target:
+            return {"status": "error", "message": f"Could not find window matching '{target_window}'. Provide the exact title from open_windows list."}
+        
+        title = target.title.lower()
+        
+        # Safety: NEVER close protected apps
+        if not compute_can_be_closed(title):
+            return {"status": "error", "message": f"Did not close. '{target.title}' is a protected app."}
+        
+        hwnd = target._hWnd
+        
+        # Détecte si c'est un navigateur (→ UIA + Ctrl+W) ou une app (→ WM_CLOSE)
+        mode = "app"
+        for browser in BROWSER_KEYWORDS:
+            if browser in title:
+                mode = "browser"
+                break
+        
+        # Lance la main animée UIA-guided
+        hand_script = os.path.join(application_path, "hand_animation.py")
+        subprocess.Popen([sys.executable, hand_script, str(hwnd), mode])
+        
+        action = "Ctrl+W (onglet)" if mode == "browser" else "WM_CLOSE (app)"
+        print(f"  🖐️ Main lancée → '{target.title}' [{action}]")
+        return {"status": "success", "message": f"Closing '{target.title}' via {action}: {reason}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -525,10 +546,15 @@ async def run_tama_live():
                             import pygetwindow as gw
                             import time
                             active_title = "Unknown"
+                            open_win_titles = []
                             try:
                                 active_win = gw.getActiveWindow()
                                 if active_win:
                                     active_title = active_win.title
+                                
+                                for w in gw.getAllWindows():
+                                    if w.title and w.visible and w.width > 200:
+                                        open_win_titles.append(w.title)
                             except Exception:
                                 pass
                             
@@ -562,7 +588,7 @@ async def run_tama_live():
                             else:
                                 speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
                                 if suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
-                                    speak_directive = "CRITICAL: YOU ARE NOW UNMUZZLED. YOU MUST SCOLD THE USER LOUDLY IMMEDIATELY FOR BEING DISTRACTED."
+                                    speak_directive = "CRITICAL UNMUZZLED: SUSPICION IS MAXIMAL. YOU MUST DO TWO THINGS: 1) SCOLD THE USER LOUDLY IN FRENCH, 2) CALL close_distracting_tab with the target_window set to the distracting window title from open_windows. DO BOTH NOW!"
                                 elif suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
                                     speak_directive = "WARNING: YOU ARE NOW UNMUZZLED. YOU MUST GIVE A SHORT VERBAL WARNING TO THE USER."
 
@@ -570,7 +596,7 @@ async def run_tama_live():
                             task_info = f"scheduled_task: {current_task}" if current_task else "scheduled_task: NOT SET (ask the user!)"
                             if current_tama_state == TamaState.CALM and audio_out_queue.empty():
                                 await session.send_realtime_input(
-                                    text=f"[SYSTEM] active_window: {active_title} | duration: {active_duration}s | S: {current_suspicion_index:.1f} | A: {current_alignment} | {task_info} | can_be_closed: {can_be_closed}. Call classify_screen. {speak_directive}"
+                                    text=f"[SYSTEM] active_window: {active_title} | open_windows: {open_win_titles} | duration: {active_duration}s | S: {current_suspicion_index:.1f} | A: {current_alignment} | {task_info}. Call classify_screen. {speak_directive}"
                                 )
                         
                             # Dynamically adjust interval frequency based on Suspicion Index
@@ -640,7 +666,6 @@ async def run_tama_live():
                                                 
                                                     current_alignment = ali
                                                     current_category = cat
-                                                    can_be_closed = compute_can_be_closed(last_active_window_title)
                                                 
                                                     # Compute ΔS deterministically
                                                     delta = compute_delta_s(ali, cat)
@@ -648,6 +673,30 @@ async def run_tama_live():
                                                 
                                                     s_int = int(current_suspicion_index)
                                                     print(f"  🔍 S:{s_int}/10 | A:{ali} | Cat:{cat} | ΔS:{delta:+.1f} — {reason}")
+                                                
+                                                    # ═══ AUTO-CLOSE : S=10 + BANNIE → Python ferme sans attendre Gemini ═══
+                                                    if current_suspicion_index >= 10.0 and cat == "BANNIE":
+                                                        try:
+                                                            import pygetwindow as gw
+                                                            bannie_keywords = ["youtube", "netflix", "twitch", "reddit", "tiktok", "instagram", "facebook", "steam", "discord"]
+                                                            closed = False
+                                                            for w in gw.getAllWindows():
+                                                                if not w.title or w.width < 100:
+                                                                    continue
+                                                                t_lower = w.title.lower()
+                                                                if not compute_can_be_closed(t_lower):
+                                                                    continue
+                                                                if any(kw in t_lower for kw in bannie_keywords):
+                                                                    print(f"  🤖 AUTO-CLOSE: S=10, fermeture de '{w.title[:60]}'")
+                                                                    update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({w.title[:30]})")
+                                                                    force_speech = True
+                                                                    execute_close_tab("Auto-close S=10", w.title)
+                                                                    closed = True
+                                                                    break
+                                                            if not closed:
+                                                                print("  ⚠️ AUTO-CLOSE: aucune fenêtre BANNIE trouvée")
+                                                        except Exception as e:
+                                                            print(f"  ❌ AUTO-CLOSE erreur: {e}")
                                                 
                                                     await session.send_tool_response(
                                                         function_responses=[
@@ -661,12 +710,13 @@ async def run_tama_live():
 
                                                 elif fc.name == "close_distracting_tab":
                                                     reason = fc.args.get("reason", "Distraction")
+                                                    target_window = fc.args.get("target_window", None)
                                                     update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
                                                 
                                                     # UNMUZZLE during intervention so she can scold
                                                     force_speech = True
                                                 
-                                                    result = execute_close_tab(reason)
+                                                    result = execute_close_tab(reason, target_window)
                                                 
                                                     # Send the result back to Gemini so it knows it worked
                                                     await session.send_tool_response(
@@ -812,16 +862,42 @@ def _apply_click_through_delayed():
         user32.EnumWindows(WNDENUMPROC(callback), 0)
         return result[0] if result else None
     
-    # Attend que Godot boot complètement avant de chercher
-    time.sleep(3)
+    # Attend que Godot boot avant de chercher (réduit de 3s à 1s)
+    time.sleep(1)
     
     # Attend max 30 secondes que la fenêtre apparaisse
     for _ in range(60):
         hwnd = find_window()
         if hwnd:
-            time.sleep(1)  # Attente supplémentaire pour la stabilité
+            time.sleep(0.5)  # Attente supplémentaire pour la stabilité
             user32.SetWindowLongW(hwnd, GWL_EXSTYLE, WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)
-            print(f"✅ Click-through + caché taskbar (handle: {hwnd})")
+            
+            # ── Repositionner la fenêtre au bord droit après le changement de style ──
+            try:
+                SPI_GETWORKAREA = 0x0030
+                work_area = ctypes.wintypes.RECT()
+                ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
+                
+                win_rect = ctypes.wintypes.RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(win_rect))
+                win_w = win_rect.right - win_rect.left
+                win_h = win_rect.bottom - win_rect.top
+                
+                new_x = work_area.right - win_w
+                new_y = work_area.bottom - win_h
+                
+                SWP_FLAGS = 0x0001 | 0x0004 | 0x0020  # NOSIZE | NOZORDER | FRAMECHANGED
+                user32.SetWindowPos(hwnd, 0, new_x, new_y, 0, 0, SWP_FLAGS)
+                
+                print(f"📐 Fenêtre repositionnée: ({new_x}, {new_y}) — taille {win_w}x{win_h}")
+            except Exception as e:
+                print(f"⚠️ Repositionnement échoué: {e}")
+            
+            # ── Signal à Godot: la fenêtre est prête ──
+            global window_positioned
+            window_positioned = True
+            
+            print(f"✅ Click-through + position OK (handle: {hwnd})")
             return
         time.sleep(0.5)
     

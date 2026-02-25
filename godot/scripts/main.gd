@@ -19,20 +19,18 @@ var session_active: bool = false
 var just_connected: bool = false
 
 # ─── Animation State Machine ──────────────────────────────
-# Noms des animations dans le .glb (à ajuster si les noms sont différents)
-const ANIM_WAVE       := "wave"         # Bonjour 👋
-const ANIM_PEEK       := "peek"         # Rentre dans l'écran pour voir 👀
-const ANIM_SUSPICIOUS := "suspicious"   # Regard interrogatif 🤔
-const ANIM_ANGRY      := "angry"        # Pas contente 😡
-const ANIM_LEAVE      := "leave"        # S'en va de l'écran 👋
-const ANIM_IDLE_BREAK := "idle_break"   # Chill pendant les pauses 😌
+# Les vrais noms de TES animations !
+const ANIM_HELLO      := "Hello"        # Bonjour (loop)
+const ANIM_PEEK       := "Peek"         # Rentre dans l'écran (play once)
+const ANIM_SUSPICIOUS := "Suspicious"   # Regard interrogatif (loop)
+const ANIM_ANGRY      := "Angry"        # Pas contente (loop)
+const ANIM_STRIKE     := "Strike"       # Intervient (play once)
+const ANIM_BYE        := "bye"          # S'en va (play once)
+const ANIM_IDLE       := "Idle"         # Par défaut (loop)
+const ANIM_RELAX      := "Relax"        # Pause (loop)
 
 var current_anim: String = ""
 var anim_player_ref: AnimationPlayer = null
-
-# ─── Slide animation ──────────────────────────────────────
-var target_y: float = -6.0
-var slide_speed: float = 3.0
 
 func _ready() -> void:
 	_position_window()
@@ -51,6 +49,7 @@ func _ready() -> void:
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _position_window() -> void:
+	# Position fenêtre de base, RIEN à voir avec Tama 3D
 	var screen_size := DisplayServer.screen_get_size()
 	var win_size := DisplayServer.window_get_size()
 	var x := screen_size.x - win_size.x - 20
@@ -91,13 +90,23 @@ func _process(delta: float) -> void:
 				reconnect_timer = 0.0
 				_connect_ws()
 
-	# ── Animation + Position ──
+	# ── Animation SEULEMENT (plus de position) ──
 	_update_tama_state(delta)
+
+# ─── Intro State ───
+var has_done_intro: bool = false
+var intro_step: String = ""
+var intro_timer: float = 0.0
 
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if data == null:
 		return
+
+	# Démarrage de l'intro UNIQUEMENT 1 FOIS quand la fenêtre est positionnée 
+	if data.get("window_ready", false) and not has_done_intro and intro_step == "":
+		intro_step = "PEEK"
+		print("📐 Fenêtre en place. Lancement de l'intro !")
 
 	prev_suspicion = suspicion_index
 	suspicion_index = data.get("suspicion_index", 0.0)
@@ -107,61 +116,63 @@ func _handle_message(raw: String) -> void:
 	active_window = data.get("active_window", "Unknown")
 	active_duration = data.get("active_duration", 0)
 
-# ─── STATE MACHINE: Animation + Position ──────────────────
+# ─── STATE MACHINE: Animation (Root Motion gère la position) ──
 
 func _update_tama_state(delta: float) -> void:
+	if not session_active:
+		_play_anim(ANIM_IDLE)
+		return
+	
+	# ─── Séquence d'intro chronologique ───
+	if intro_step != "":
+		if intro_step == "PEEK":
+			_play_anim(ANIM_PEEK)
+			# Attendre la fin du play_once
+			if anim_player_ref and current_anim == ANIM_PEEK and not anim_player_ref.is_playing():
+				intro_step = "HELLO"
+				intro_timer = 4.0  # Jouer l'animation Hello pendant 4 secondes
+		
+		elif intro_step == "HELLO":
+			_play_anim(ANIM_HELLO)
+			intro_timer -= delta
+			if intro_timer <= 0.0:
+				intro_step = "BYE"
+				
+		elif intro_step == "BYE":
+			_play_anim(ANIM_BYE)
+			# Attendre que "bye" se termine
+			if anim_player_ref and current_anim == ANIM_BYE and not anim_player_ref.is_playing():
+				intro_step = ""
+				has_done_intro = true
+				print("👋 Intro terminée, passage en écoute du code Suspicion !")
+				
+		return # Interdit de lire les autres humeurs comportementales pendant l'intro
+	
+	# ─── Comportement Standard (Basé sur le Suspicion Index) ───
 	var desired_anim := ""
 	
-	if not session_active:
-		# Pas encore connecté → cachée
-		target_y = -6.0
-		desired_anim = ANIM_IDLE_BREAK
-	
-	elif just_connected:
-		# Vient de se connecter → dit bonjour
-		target_y = -1.0
-		desired_anim = ANIM_WAVE
-		# Après l'anim de bonjour, on passe en mode normal
-		if anim_player_ref and not anim_player_ref.is_playing():
-			just_connected = false
+	if suspicion_index >= 9.0:
+		desired_anim = ANIM_STRIKE
 	
 	elif suspicion_index >= 7.0:
-		# ═══ ANGRY ═══ Tama est furieuse, totalement visible
-		target_y = -1.0
 		desired_anim = ANIM_ANGRY
 	
 	elif suspicion_index >= 5.0:
-		# ═══ SUSPICIOUS ═══ Tama regarde avec un air interrogatif
-		target_y = -1.0
 		desired_anim = ANIM_SUSPICIOUS
 	
 	elif suspicion_index >= 3.0:
-		# ═══ PEEK ═══ Tama entre dans l'écran, curieuse
-		target_y = -2.5
 		desired_anim = ANIM_PEEK
 	
 	elif suspicion_index <= 1.0 and prev_suspicion > 3.0:
-		# ═══ LEAVE ═══ La suspicion est retombée, Tama s'en va
-		target_y = -6.0
-		desired_anim = ANIM_LEAVE
+		desired_anim = ANIM_BYE
 	
 	elif suspicion_index <= 1.0:
-		# ═══ CALM ═══ Tout va bien, Tama est cachée
-		target_y = -6.0
-		desired_anim = ANIM_IDLE_BREAK
+		desired_anim = ANIM_RELAX
 	
 	else:
-		# Zone intermédiaire (S: 1-3)
-		target_y = -4.0
 		desired_anim = ANIM_PEEK
 	
-	# ── Applique l'animation ──
 	_play_anim(desired_anim)
-	
-	# ── Slide smooth ──
-	var tama = get_node_or_null("Tama")
-	if tama:
-		tama.position.y = lerpf(tama.position.y, target_y, delta * slide_speed)
 
 func _play_anim(anim_name: String) -> void:
 	if anim_player_ref == null:
@@ -171,14 +182,13 @@ func _play_anim(anim_name: String) -> void:
 		return
 	
 	if anim_player_ref.has_animation(anim_name):
-		# 0.3 = durée du fondu enchaîné entre les 2 anims (en secondes)
+		# 0.3 = durée du fondu enchaîné entre les 2 anims
 		anim_player_ref.play(anim_name, 0.3)
 		current_anim = anim_name
 		print("🎬 Animation: ", anim_name)
 	else:
-		var anims = anim_player_ref.get_animation_list()
-		if anims.size() > 0 and not anim_player_ref.is_playing():
-			anim_player_ref.play(anims[0], 0.3)
+		# Fallback de sécu, si le nom est mauvais on prévient dans la console
+		print("⚠️ L'animation '", anim_name, "' n'existe pas dans l'AnimationPlayer ! Noms trouvés: ", anim_player_ref.get_animation_list())
 
 # ─── Utilitaires ──────────────────────────────────────────
 

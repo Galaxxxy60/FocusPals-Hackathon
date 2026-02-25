@@ -4,3 +4,7 @@ Pillow
 pyautogui
 pyaudio
 python-dotenv
+pygetwindow
+pywinauto
+websockets
+pystray
