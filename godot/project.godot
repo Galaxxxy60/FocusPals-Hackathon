@@ -26,6 +26,10 @@ window/size/transparent=true
 window/subwindows/embed_subwindows=false
 window/per_pixel_transparency/allowed=true
 
+[audio]
+
+driver/enable_input=true
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

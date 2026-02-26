@@ -103,6 +103,26 @@ def select_mic(index):
     name = next((m["name"] for m in mics if m["index"] == index), "?")
     print(f"🎤 Micro sélectionné: [{index}] {name}")
 
+def resolve_default_mic():
+    global selected_mic_index
+    if selected_mic_index is not None:
+        return
+    mics = get_available_mics()
+    if not mics:
+        return
+    try:
+        pya_tmp = pyaudio.PyAudio()
+        default_name = pya_tmp.get_default_input_device_info()["name"].lower()
+        pya_tmp.terminate()
+        for m in mics:
+            if m["name"].lower().startswith(default_name[:15]):
+                selected_mic_index = m["index"]
+                break
+        if selected_mic_index is None:
+            selected_mic_index = mics[0]["index"]
+    except Exception:
+        selected_mic_index = mics[0]["index"]
+
 # ─── Tama's States & Display ────────────────────────────────
 
 class TamaState(Enum):
@@ -270,13 +290,7 @@ def setup_tray():
     image = create_tray_image(TamaState.CALM)
     
     # Résoudre le micro par défaut si pas encore sélectionné
-    if selected_mic_index is None:
-        try:
-            pya_tmp = pyaudio.PyAudio()
-            selected_mic_index = pya_tmp.get_default_input_device_info()["index"]
-            pya_tmp.terminate()
-        except Exception:
-            pass
+    resolve_default_mic()
     
     menu = (
         item('Démarrer Session (Deep Work) ⚡', start_session_from_tray),
@@ -472,7 +486,7 @@ def _mouse_edge_monitor():
         time.sleep(0.1)
 
 async def ws_handler(websocket):
-    global is_session_active, radial_shown
+    global is_session_active, radial_shown, selected_mic_index
     connected_ws_clients.add(websocket)
     try:
         async for message in websocket:
@@ -488,7 +502,9 @@ async def ws_handler(websocket):
                     action = data.get("action", "")
                     _handle_menu_action(action)
                 elif cmd == "GET_MICS":
+                    resolve_default_mic()
                     mics = get_available_mics()
+                    print(f"\U0001f3a4 GET_MICS: {len(mics)} micros, selected={selected_mic_index}")
                     response = json.dumps({
                         "command": "MIC_LIST",
                         "mics": mics,
@@ -501,8 +517,9 @@ async def ws_handler(websocket):
                         select_mic(mic_idx)
                     radial_shown = False
                     _toggle_click_through(True)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"⚠️ [WS] Erreur commande: {e}")
+                import traceback; traceback.print_exc()
     finally:
         connected_ws_clients.remove(websocket)
 

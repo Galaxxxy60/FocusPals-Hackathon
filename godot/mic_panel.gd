@@ -1,6 +1,6 @@
 extends CanvasLayer
 ## Microphone selection panel — uses _input() directly for 100% reliable click capture.
-## Positioned at the center of the radial menu arc.
+## VU meter powered by Godot's native AudioStreamMicrophone — zero Python dependency.
 
 signal mic_selected(mic_index: int)
 signal panel_closed()
@@ -11,11 +11,19 @@ var _mics: Array = []
 var _selected_index: int = -1
 var _hovered: int = -1
 var _canvas: Control
+var _vu_level := 0.0
 
-const PANEL_WIDTH := 280.0
+# Audio capture for VU meter
+var _mic_player: AudioStreamPlayer
+var _mic_effect: AudioEffectCapture
+var _mic_bus_idx: int = -1
+
+const PANEL_WIDTH := 310.0
 const ITEM_HEIGHT := 36.0
 const PADDING := 12.0
 const MARGIN_RIGHT := 10.0
+const VU_WIDTH := 14.0
+const VU_MARGIN := 28.0  # Space reserved on the left for VU meter
 
 func _ready() -> void:
 	layer = 101
@@ -26,6 +34,28 @@ func _ready() -> void:
 	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.connect("draw", _draw_panel)
 	add_child(_canvas)
+	_setup_mic_capture()
+
+func _setup_mic_capture() -> void:
+	# Create a dedicated audio bus for mic capture
+	var bus_count := AudioServer.bus_count
+	AudioServer.add_bus(bus_count)
+	AudioServer.set_bus_name(bus_count, "MicCapture")
+	# Mute the bus — prevents mic audio from playing through speakers
+	# AudioEffectCapture still receives audio data before mute is applied
+	AudioServer.set_bus_mute(bus_count, true)
+	_mic_bus_idx = bus_count
+	
+	# Add AudioEffectCapture to read raw audio samples
+	_mic_effect = AudioEffectCapture.new()
+	AudioServer.add_bus_effect(_mic_bus_idx, _mic_effect)
+	
+	# Create player with AudioStreamMicrophone
+	_mic_player = AudioStreamPlayer.new()
+	_mic_player.stream = AudioStreamMicrophone.new()
+	_mic_player.bus = "MicCapture"
+	_mic_player.volume_db = 0.0
+	add_child(_mic_player)
 
 func show_mics(mics: Array, selected: int) -> void:
 	_mics = mics
@@ -37,13 +67,21 @@ func show_mics(mics: Array, selected: int) -> void:
 	visible = true
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
 	_progress = 0.0
+	_vu_level = 0.0
 	var tw := create_tween()
 	tw.tween_property(self, "_progress", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# Start mic capture for VU meter
+	if _mic_player and not _mic_player.playing:
+		_match_input_device()
+		_mic_player.play()
 
 func close() -> void:
 	if not is_open:
 		return
 	is_open = false
+	# Stop mic capture
+	if _mic_player and _mic_player.playing:
+		_mic_player.stop()
 	var tw := create_tween()
 	tw.tween_property(self, "_progress", 0.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_callback(func():
@@ -63,13 +101,66 @@ func _panel_rect() -> Rect2:
 func _item_rect(index: int) -> Rect2:
 	var pr := _panel_rect()
 	var y := pr.position.y + 30 + PADDING + index * ITEM_HEIGHT
-	return Rect2(pr.position.x + PADDING, y, PANEL_WIDTH - PADDING * 2, ITEM_HEIGHT - 4)
+	# Shift right to make room for VU meter on the left
+	return Rect2(pr.position.x + PADDING + VU_MARGIN, y, PANEL_WIDTH - PADDING * 2 - VU_MARGIN, ITEM_HEIGHT - 4)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not visible:
 		return
+	if is_open:
+		_read_vu_level()
 	_update_hover()
 	_canvas.queue_redraw()
+
+func _match_input_device() -> void:
+	## Match our selected mic to a Godot input device by name
+	var godot_devices := AudioServer.get_input_device_list()
+	var selected_mic_name := ""
+	for mic in _mics:
+		if int(mic.get("index", -1)) == _selected_index:
+			selected_mic_name = str(mic.get("name", ""))
+			break
+	
+	var best_match := "Default"
+	for gd_dev in godot_devices:
+		if gd_dev == "Default":
+			continue
+		if selected_mic_name != "" and (selected_mic_name.to_lower() in gd_dev.to_lower() or gd_dev.to_lower() in selected_mic_name.to_lower()):
+			best_match = gd_dev
+			break
+	
+	# Fallback: first non-virtual physical device
+	if best_match == "Default":
+		for gd_dev in godot_devices:
+			if gd_dev == "Default":
+				continue
+			if "CABLE" in gd_dev or "Steam" in gd_dev or "WO Mic" in gd_dev:
+				continue
+			best_match = gd_dev
+			break
+	
+	AudioServer.input_device = best_match
+
+func _read_vu_level() -> void:
+	if _mic_effect == null:
+		return
+	var frames := _mic_effect.get_frames_available()
+	if frames <= 0:
+		_vu_level = lerp(_vu_level, 0.0, 0.1)
+		return
+	# Read all available frames
+	var buf := _mic_effect.get_buffer(mini(frames, 1024))
+	var peak := 0.0
+	for i in buf.size():
+		var sample := absf(buf[i].x)
+		if sample > peak:
+			peak = sample
+	
+	# Fast attack, slow decay
+	if peak > _vu_level:
+		_vu_level = lerp(_vu_level, peak, 0.5)
+	else:
+		_vu_level = lerp(_vu_level, peak, 0.15)
 
 func _update_hover() -> void:
 	var mouse := _canvas.get_local_mouse_position()
@@ -121,6 +212,37 @@ func _draw_panel() -> void:
 	_canvas.draw_string(font, Vector2(pr.position.x + PADDING, pr.position.y + 22),
 		"🎤  Microphone", HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 15,
 		Color(0.7, 0.85, 1.0, alpha))
+
+	# ── Vertical Segment VU Meter (LEFT side) ──
+	var num_segments := 12
+	var vu_x_pos := pr.position.x + PADDING + 2
+	var vu_y_start := pr.position.y + 34.0
+	var vu_y_end := pr.position.y + pr.size.y - PADDING
+	var vu_h_total := maxf(vu_y_end - vu_y_start, 20.0)
+	var segment_gap := 2.0
+	var segment_h := (vu_h_total - (num_segments - 1) * segment_gap) / num_segments
+
+	# Background
+	_canvas.draw_rect(Rect2(vu_x_pos - 3, vu_y_start - 3, VU_WIDTH + 6, vu_h_total + 6),
+		Color(0.04, 0.04, 0.08, 0.9 * alpha), true)
+	_canvas.draw_rect(Rect2(vu_x_pos - 3, vu_y_start - 3, VU_WIDTH + 6, vu_h_total + 6),
+		Color(0.2, 0.3, 0.5, 0.3 * alpha), false, 1.0)
+
+	for s in range(num_segments):
+		var segment_index := num_segments - 1 - s  # top = highest index
+		var sy := vu_y_start + s * (segment_h + segment_gap)
+		var threshold := float(segment_index) / float(num_segments)
+		var is_lit := _vu_level > threshold
+
+		# Color: green → yellow → red
+		var lit_color := Color(0.1, 0.9, 0.2, alpha)
+		if segment_index >= num_segments - 2:
+			lit_color = Color(0.95, 0.15, 0.1, alpha)
+		elif segment_index >= num_segments - 4:
+			lit_color = Color(0.95, 0.8, 0.1, alpha)
+
+		var c := lit_color if is_lit else Color(lit_color.r * 0.15, lit_color.g * 0.15, lit_color.b * 0.15, 0.4 * alpha)
+		_canvas.draw_rect(Rect2(vu_x_pos, sy, VU_WIDTH, segment_h), c, true)
 
 	# Separator
 	var sep_y := pr.position.y + 28
