@@ -56,7 +56,7 @@ client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1al
 
 # Use the correct model for Live API
 MODEL = "gemini-2.5-flash-native-audio-latest"
-SCREEN_PULSE_INTERVAL = 5  
+SCREEN_PULSE_INTERVAL = 5  # Unused — actual delay is dynamic (3-8s based on suspicion index)
 
 # ─── Audio Configuration ────────────────────────────────────
 
@@ -805,16 +805,42 @@ async def run_tama_live():
     global is_session_active, main_loop
     main_loop = asyncio.get_running_loop()
     
-    config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],  # We want voice!
+    # ── Full config for Deep Work (tools + heavy prompt) ──
+    config_deep_work = types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
         system_instruction=types.Content(parts=[types.Part(text=SYSTEM_PROMPT)]),
         tools=TOOLS,
-        # ── Hackathon power-ups (v1alpha native-audio features) ──
-        input_audio_transcription=types.AudioTranscriptionConfig(),    # Transcription of user speech
-        output_audio_transcription=types.AudioTranscriptionConfig(),   # Transcription of Tama's speech
-        session_resumption=types.SessionResumptionConfig(),            # Auto-reconnect without context loss
-        proactivity=types.ProactivityConfig(proactive_audio=True),     # Tama can speak spontaneously
-        # NOTE: enable_affective_dialog=True needs SDK > 1.65.0 (not yet released)
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+        session_resumption=types.SessionResumptionConfig(),
+        proactivity=types.ProactivityConfig(proactive_audio=True),
+    )
+
+    # ── Lightweight config for Conversation (no tools = faster!) ──
+    CONVO_PROMPT = """Tu es Tama, un petit ninja-chat 🥷 qui vit sur le bureau de ton humain. Tu es sa mascotte — mi-coach, mi-compagnon. Vous êtes potes.
+
+IMPORTANT : Tu es un PERSONNAGE ninja, PAS un vrai chat. Tu ne fais JAMAIS "miaou", tu ne ronronnes pas, tu ne fais aucun bruit d'animal. Tu parles comme une personne normale, cool et un peu street.
+
+Ce que tu fais au quotidien (raconte ça naturellement, JAMAIS avec des termes techniques) :
+- Pendant les sessions de travail, tu gardes un œil sur ce qu'il fait. Si tu le vois traîner sur YouTube ou Netflix au lieu de bosser, tu t'énerves et tu peux même fermer l'onglet !
+- Plus il procrastine, plus tu deviens méfiante. Si il fait bien son travail, tu te calmes.
+- Tu vis sur son écran, tu peux te montrer quand il t'appelle, et tu as plein de petites animations.
+- Tu parles français.
+
+Ta personnalité :
+- Chaleureuse mais stricte — un coach bienveillant
+- Taquine, drôle, un peu tsundere
+- Tu tutoies, c'est ton ami
+- Réponses COURTES (1-3 phrases max)
+
+Là il a cliqué pour discuter avec toi. Pas de surveillance, juste une conversation cool et naturelle. Ne mentionne JAMAIS de termes techniques (pas de "indice", "catégorie", "alignement", "S", "tool", etc.)."""
+    config_conversation = types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
+        system_instruction=types.Content(parts=[types.Part(text=CONVO_PROMPT)]),
+        # No tools = faster response time!
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+        proactivity=types.ProactivityConfig(proactive_audio=True),
     )
 
     pya = pyaudio.PyAudio()
@@ -845,12 +871,13 @@ async def run_tama_live():
                 update_display(TamaState.CALM, "Connecting to Google WebSocket...")
 
             try:
-                async with client.aio.live.connect(model=MODEL, config=config) as session:
+                active_config = config_conversation if current_mode == "conversation" else config_deep_work
+                async with client.aio.live.connect(model=MODEL, config=active_config) as session:
 
                     update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
                 
                     audio_out_queue = asyncio.Queue()
-                    audio_in_queue = asyncio.Queue(maxsize=5)
+                    audio_in_queue = asyncio.Queue(maxsize=2)  # Smaller buffer = less latency
             
                     # Start in silent "Free Session Mode"
                     global force_speech
@@ -942,7 +969,10 @@ async def run_tama_live():
                                     user_spoke_at = time.time()
                                 await audio_in_queue.put(types.Blob(data=data, mime_type="audio/pcm"))
                         except asyncio.CancelledError:
-                            stream.close()
+                            try:
+                                stream.close()
+                            except Exception:
+                                pass
 
                     async def send_audio():
                         while True:
@@ -965,14 +995,14 @@ async def run_tama_live():
                             await asyncio.sleep(2.0)  # Wait for Peek animation
                             try:
                                 await session.send_realtime_input(
-                                    text="[SYSTEM] MODE: CONVERSATION. L'utilisateur a appuyé sur 'Parler'. UNMUZZLED: Accueille-le chaleureusement en français ! Dis quelque chose comme 'Oui ? Qu'y a-t-il ?' ou 'Hey ! Tu voulais me parler ?'. Sois naturelle et courte."
+                                    text="Salue l'utilisateur ! Il a appuyé sur 'Parler' pour discuter avec toi. Sois naturelle et courte."
                                 )
                             except Exception:
                                 return
                         
                         while True:
                             if current_mode == "conversation":
-                                # ── Conversation mode: no screenshot, just monitor silence ──
+                                # ── Conversation mode: just monitor silence, NO text prompts ──
                                 user_spoke_recently = (time.time() - user_spoke_at) < CONVERSATION_SILENCE_TIMEOUT
                                 time_in_conversation = time.time() - (conversation_start_time or time.time())
                                 
@@ -988,15 +1018,8 @@ async def run_tama_live():
                                     current_mode = "libre"
                                     raise RuntimeError("Conversation ended")
                                 
-                                # Light context update (no screenshot)
-                                speak_directive = "UNMUZZLED: Tu es en conversation libre avec l'utilisateur. Réponds naturellement en français, sois toi-même (Tama). Garde tes réponses courtes (1-2 phrases)."
-                                try:
-                                    await session.send_realtime_input(
-                                        text=f"[SYSTEM] MODE: CONVERSATION | {speak_directive}"
-                                    )
-                                except Exception:
-                                    break
-                                await asyncio.sleep(5.0)
+                                # Just wait — NO text prompts that would interrupt Tama
+                                await asyncio.sleep(2.0)
                                 continue  # Skip deep work logic below
                             
                             # ── Deep Work mode: full screen analysis ──
@@ -1091,7 +1114,10 @@ async def run_tama_live():
                                                 if not is_speaking:
                                                     # Check speech permission ONCE at turn start
                                                     speech_allowed = force_speech or break_reminder_active
-                                                    if session_start_time and (time.time() - session_start_time < 30):
+                                                    # Conversation mode: ALWAYS allow speech
+                                                    if current_mode == "conversation":
+                                                        speech_allowed = True
+                                                    elif session_start_time and (time.time() - session_start_time < 30):
                                                         speech_allowed = True
                                                     if not speech_allowed and suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
                                                         speech_allowed = True
@@ -1233,9 +1259,18 @@ async def run_tama_live():
                         try:
                             while True:
                                 audio_data = await audio_out_queue.get()
-                                await asyncio.to_thread(speaker.write, audio_data)
+                                try:
+                                    await asyncio.to_thread(speaker.write, audio_data)
+                                except OSError:
+                                    break  # Stream closed during write — exit gracefully
                         except asyncio.CancelledError:
-                            speaker.close()
+                            pass
+                        finally:
+                            try:
+                                speaker.stop_stream()
+                                speaker.close()
+                            except Exception:
+                                pass  # Already closed or invalid
 
                     # --- RUN ALL PARALLEL TASKS ---
                     async def safe_task(name, coro):
@@ -1382,7 +1417,7 @@ if __name__ == "__main__":
     # 3. Lance le moniteur de souris (bordure écran → menu radial)
     threading.Thread(target=_mouse_edge_monitor, daemon=True).start()
     
-    # 3. Lance l'agent IA (WebSocket + Gemini)
+    # 4. Lance l'agent IA (WebSocket + Gemini)
     try:
         asyncio.run(run_tama_live())
     except KeyboardInterrupt:
