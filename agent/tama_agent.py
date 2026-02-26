@@ -67,8 +67,16 @@ RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE = 1024
 selected_mic_index = None  # None = micro par défaut du système
 
-def get_available_mics():
+_mic_cache = None
+_mic_cache_time = 0
+
+def get_available_mics(force_refresh=False):
     """Liste les micros disponibles qui supportent 16kHz (priorité WASAPI, fallback MME)."""
+    global _mic_cache, _mic_cache_time
+    # Return cached list if fresh (< 30s old)
+    if not force_refresh and _mic_cache is not None and (time.time() - _mic_cache_time) < 30:
+        return _mic_cache
+    
     pya = pyaudio.PyAudio()
     mics = []
     seen_names = set()  # Avoid duplicates (same physical mic in multiple APIs)
@@ -100,6 +108,8 @@ def get_available_mics():
             continue  # This device doesn't support 16kHz, skip it
     
     pya.terminate()
+    _mic_cache = mics
+    _mic_cache_time = time.time()
     return mics
 
 def select_mic(index):
@@ -410,6 +420,8 @@ conversation_start_time = None
 window_positioned = False  # True quand Python a repositionné la fenêtre Godot
 godot_hwnd = None           # HWND de la fenêtre Godot (stocké pour toggle click-through)
 radial_shown = False        # True quand le menu radial est affiché
+_radial_cooldown_until = 0  # Timestamp: no re-trigger before this time
+_mic_panel_pending = False   # True when mic panel is about to open (blocks click-through restore)
 
 # ─── Window Cache (évite les appels répétés à pygetwindow) ──
 import pygetwindow as gw
@@ -481,13 +493,13 @@ def _handle_menu_action(action: str):
 
 def _mouse_edge_monitor():
     """Detects when the cursor reaches the right screen edge (bottom third only) to show the radial menu."""
-    global radial_shown
+    global radial_shown, _radial_cooldown_until
 
     class POINT(ctypes.Structure):
         _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
     user32 = ctypes.windll.user32
-    screen_w = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+    screen_w = user32.GetSystemMetrics(0)  # SM_CXSCREEN (primary monitor)
 
     # Calculer la zone de détection (tiers inférieur de l'écran = zone de Tama)
     work_area = ctypes.wintypes.RECT()
@@ -496,17 +508,36 @@ def _mouse_edge_monitor():
     print(f"🖱️ [EdgeMonitor] Démarré — écran: {screen_w}px, zone Y: {detect_y_min}-{work_area.bottom}")
 
     radial_shown_time = 0
+    mouse_was_away = True   # Must leave edge zone before re-triggering
+    _last_diag = 0          # DEBUG: diagnostic log timer
 
     while True:
         pt = POINT()
         user32.GetCursorPos(ctypes.byref(pt))
-        near_edge = pt.x >= screen_w - 5
+        
+        # DEBUG: detect DPI drift — recalculate screen_w each time
+        live_screen_w = user32.GetSystemMetrics(0)
+        if live_screen_w != screen_w:
+            print(f"⚠️ [EdgeMonitor] DPI DRIFT! screen_w changed: {screen_w} → {live_screen_w}")
+            screen_w = live_screen_w
+        
+        # DEBUG: log position periodically during deep work
+        if is_session_active and time.time() - _last_diag > 5.0:
+            _last_diag = time.time()
+            print(f"🖱️ [EdgeMonitor] DEBUG pos=({pt.x},{pt.y}) screen_w={screen_w} near={pt.x >= screen_w - 5} zone={pt.y >= detect_y_min} shown={radial_shown} away={mouse_was_away}")
+        
+        near_edge = (screen_w - 5) <= pt.x <= screen_w  # Only PRIMARY monitor edge, not 2nd screen
         in_zone = pt.y >= detect_y_min
 
-        if near_edge and in_zone and not radial_shown:
+        if not near_edge or not in_zone:
+            mouse_was_away = True  # Mouse left the zone — can re-trigger later
+
+        if near_edge and in_zone and not radial_shown and mouse_was_away and time.time() > _radial_cooldown_until:
             radial_shown = True
+            mouse_was_away = False  # Must leave and come back to re-trigger
             radial_shown_time = time.time()
-            print(f"🖱️ [EdgeMonitor] Bord droit détecté ! ({pt.x}, {pt.y}) — SHOW_RADIAL")
+            _radial_cooldown_until = time.time() + 0.5  # Brief safety cooldown
+            print(f"🖱️ [EdgeMonitor] SHOW_RADIAL ({pt.x}, {pt.y}) screen_w={screen_w}")
             _toggle_click_through(False)
             msg = json.dumps({"command": "SHOW_RADIAL"})
             for ws_client in list(connected_ws_clients):
@@ -518,14 +549,14 @@ def _mouse_edge_monitor():
 
         # Safety timeout: si Godot ne répond pas HIDE_RADIAL dans les 5s, on reset
         if radial_shown and (time.time() - radial_shown_time > 5.0):
-            print("🖱️ [EdgeMonitor] Timeout — reset radial_shown")
             radial_shown = False
+            _radial_cooldown_until = time.time() + 0.5
             _toggle_click_through(True)
 
         time.sleep(0.1)
 
 async def ws_handler(websocket):
-    global is_session_active, radial_shown, selected_mic_index
+    global is_session_active, radial_shown, selected_mic_index, _mic_panel_pending
     connected_ws_clients.add(websocket)
     try:
         async for message in websocket:
@@ -536,12 +567,18 @@ async def ws_handler(websocket):
                     start_session("Interface Godot 3D")
                 elif cmd == "HIDE_RADIAL":
                     radial_shown = False
-                    _toggle_click_through(True)
+                    _radial_cooldown_until = time.time() + 0.5
+                    if not _mic_panel_pending:
+                        _toggle_click_through(True)
+                    else:
+                        _mic_panel_pending = False  # Consumed — next HIDE_RADIAL (from mic panel close) will restore
                 elif cmd == "MENU_ACTION":
                     action = data.get("action", "")
                     _handle_menu_action(action)
                 elif cmd == "GET_MICS":
-                    radial_shown = False  # Prevent 5s timeout from re-enabling click-through
+                    _mic_panel_pending = True  # Don't let HIDE_RADIAL re-enable click-through
+                    radial_shown = False
+                    _toggle_click_through(False)  # Ensure clickable for mic panel
                     resolve_default_mic()
                     mics = get_available_mics()
                     print(f"\U0001f3a4 GET_MICS: {len(mics)} micros, selected={selected_mic_index}")
