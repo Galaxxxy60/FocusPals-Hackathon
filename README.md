@@ -2,34 +2,53 @@
 
 **Tama** — Your AI productivity coach that watches over you as a 3D desktop pet.
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│  Python Agent (agent/tama_agent.py)         │
-│  • Gemini Live API (voice + vision)         │
-│  • Screen capture + window monitoring       │
-│  • Suspicion Index / Alignment engine       │
-│         │                                   │
-│         ▼  WebSocket (ws://localhost:8080)   │
-│                                             │
-│  Godot 4 (godot/)                           │
-│  • 3D model rendering (Tama.glb, ~512 poly) │
-│  • Transparent overlay window               │
-│  • Animations driven by suspicion index     │
-│  • ~25 MB RAM total                         │
-└─────────────────────────────────────────────┘
-```
-
 ## Quick Start
 
-1. **Start the AI Agent:**
-   ```bash
-   cd agent
-   python tama_agent.py
-   ```
+Double-click `Start_FocusPals.bat` — that's it.
 
-2. **Start the 3D Overlay:**
-   Open `godot/project.godot` in Godot 4.4 and press F5.
+Or manually:
+```bash
+cd agent
+python tama_agent.py
+```
 
-See `godot/README.md` for full setup instructions.
+## Architecture
+
+> **📖 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec.**
+
+```
+Python Agent (6 modules)
+    ├── Gemini Live API (voice + vision)
+    ├── Screen capture + A.S.C. engine
+    │
+    ↕ WebSocket (ws://localhost:8080)
+    │
+Godot 4 Overlay (~25 MB RAM)
+    ├── 3D model + animations
+    ├── Radial settings menu
+    └── Transparent click-through window
+```
+
+## Project Structure
+
+```
+agent/
+├── tama_agent.py        # Entry point (orchestrator)
+├── config.py            # Constants, state dict, A.S.C. engine
+├── audio.py             # Mic management, VAD
+├── ui.py                # Display, tray icon, settings
+├── godot_bridge.py      # WebSocket, Godot launcher, edge monitor
+├── gemini_session.py    # Gemini Live loop, screen capture, tools
+└── hand_animation.py    # Close-tab animation (subprocess)
+
+godot/
+├── main.gd              # WebSocket client, animation state machine
+├── settings_radial.gd   # Radial menu (edge-triggered)
+└── mic_panel.gd         # Mic selection + VU meter
+```
+
+## Requirements
+
+- Python 3.10+
+- Godot 4.4 (for development only — pre-built .exe included)
+- `GEMINI_API_KEY` in `agent/.env`

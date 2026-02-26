@@ -7,7 +7,7 @@ signal action_triggered(action_id: String)
 signal request_hide()
 
 var ITEMS := [
-	{"icon": "🎤", "label": "Micro",    "id": "mic",      "color": Color(0.4, 0.8, 1.0),  "scale": 0.85},
+	{"icon": "⚙️", "label": "Settings",  "id": "settings", "color": Color(0.4, 0.8, 1.0),  "scale": 0.85},
 	{"icon": "💬", "label": "Parler",   "id": "talk",     "color": Color(0.6, 0.4, 1.0),  "scale": 1.0},
 	{"icon": "⚡", "label": "Session",  "id": "session",  "color": Color(0.4, 1.0, 0.5),  "scale": 1.35},
 	{"icon": "🎯", "label": "Tâche",    "id": "task",     "color": Color(1.0, 0.85, 0.3), "scale": 0.9},
