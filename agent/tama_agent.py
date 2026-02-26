@@ -52,7 +52,7 @@ if not GEMINI_API_KEY:
     print("❌ GEMINI_API_KEY missing! Copy agent/.env.example to agent/.env")
     sys.exit(1)
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1alpha"})
 
 # Use the correct model for Live API
 MODEL = "gemini-2.5-flash-native-audio-latest"
@@ -809,12 +809,12 @@ async def run_tama_live():
         response_modalities=["AUDIO"],  # We want voice!
         system_instruction=types.Content(parts=[types.Part(text=SYSTEM_PROMPT)]),
         tools=TOOLS,
-        # ── Hackathon power-ups (native-audio features) ──
+        # ── Hackathon power-ups (v1alpha native-audio features) ──
         input_audio_transcription=types.AudioTranscriptionConfig(),    # Transcription of user speech
         output_audio_transcription=types.AudioTranscriptionConfig(),   # Transcription of Tama's speech
         session_resumption=types.SessionResumptionConfig(),            # Auto-reconnect without context loss
         proactivity=types.ProactivityConfig(proactive_audio=True),     # Tama can speak spontaneously
-        enable_affective_dialog=True,                                  # Emotional voice (angry, gentle, etc)
+        # NOTE: enable_affective_dialog=True needs SDK > 1.65.0 (not yet released)
     )
 
     pya = pyaudio.PyAudio()
