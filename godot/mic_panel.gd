@@ -41,9 +41,9 @@ func _setup_mic_capture() -> void:
 	var bus_count := AudioServer.bus_count
 	AudioServer.add_bus(bus_count)
 	AudioServer.set_bus_name(bus_count, "MicCapture")
-	# Mute the bus — prevents mic audio from playing through speakers
-	# AudioEffectCapture still receives audio data before mute is applied
-	AudioServer.set_bus_mute(bus_count, true)
+	# Don't mute! Muting blocks AudioEffectCapture too.
+	# Set volume to -80dB = inaudible but effects still process full audio
+	AudioServer.set_bus_volume_db(bus_count, -80.0)
 	_mic_bus_idx = bus_count
 	
 	# Add AudioEffectCapture to read raw audio samples
@@ -156,6 +156,9 @@ func _read_vu_level() -> void:
 		if sample > peak:
 			peak = sample
 	
+	# Boost sensitivity — raw mic samples are very quiet (0.01-0.2)
+	peak = clampf(peak * 2.5, 0.0, 1.0)
+	
 	# Fast attack, slow decay
 	if peak > _vu_level:
 		_vu_level = lerp(_vu_level, peak, 0.5)
@@ -188,8 +191,7 @@ func _input(event: InputEvent) -> void:
 			var idx: int = int(mic.get("index", 0))
 			_selected_index = idx
 			mic_selected.emit(idx)
-			var t := get_tree().create_timer(0.3)
-			t.timeout.connect(close)
+			_match_input_device()  # Update VU meter to new mic
 		else:
 			var pr := _panel_rect()
 			var mouse := _canvas.get_local_mouse_position()

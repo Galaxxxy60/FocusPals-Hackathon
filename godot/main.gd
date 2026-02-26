@@ -78,6 +78,9 @@ func _on_radial_action(action_id: String) -> void:
 		ws.send_text(msg)
 
 func _on_radial_hide() -> void:
+	# Don't re-enable click-through or send HIDE_RADIAL if mic panel just opened
+	if mic_panel and mic_panel.is_open:
+		return
 	_safe_restore_passthrough()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))

@@ -502,6 +502,7 @@ async def ws_handler(websocket):
                     action = data.get("action", "")
                     _handle_menu_action(action)
                 elif cmd == "GET_MICS":
+                    radial_shown = False  # Prevent 5s timeout from re-enabling click-through
                     resolve_default_mic()
                     mics = get_available_mics()
                     print(f"\U0001f3a4 GET_MICS: {len(mics)} micros, selected={selected_mic_index}")
@@ -515,8 +516,6 @@ async def ws_handler(websocket):
                     mic_idx = int(data.get("index", -1))
                     if mic_idx >= 0:
                         select_mic(mic_idx)
-                    radial_shown = False
-                    _toggle_click_through(True)
             except Exception as e:
                 print(f"⚠️ [WS] Erreur commande: {e}")
                 import traceback; traceback.print_exc()
