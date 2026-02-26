@@ -806,9 +806,15 @@ async def run_tama_live():
     main_loop = asyncio.get_running_loop()
     
     config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"], # We want voice!
+        response_modalities=["AUDIO"],  # We want voice!
         system_instruction=types.Content(parts=[types.Part(text=SYSTEM_PROMPT)]),
         tools=TOOLS,
+        # ── Hackathon power-ups (native-audio features) ──
+        input_audio_transcription=types.AudioTranscriptionConfig(),    # Transcription of user speech
+        output_audio_transcription=types.AudioTranscriptionConfig(),   # Transcription of Tama's speech
+        session_resumption=types.SessionResumptionConfig(),            # Auto-reconnect without context loss
+        proactivity=types.ProactivityConfig(proactive_audio=True),     # Tama can speak spontaneously
+        enable_affective_dialog=True,                                  # Emotional voice (angry, gentle, etc)
     )
 
     pya = pyaudio.PyAudio()
