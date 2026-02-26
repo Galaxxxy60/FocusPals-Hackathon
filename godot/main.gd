@@ -78,9 +78,9 @@ func _on_radial_action(action_id: String) -> void:
 		ws.send_text(msg)
 
 func _on_radial_hide() -> void:
+	_safe_restore_passthrough()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		var msg := JSON.stringify({"command": "HIDE_RADIAL"})
-		ws.send_text(msg)
+		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
 
 func _on_mic_selected(mic_index: int) -> void:
 	print("🎤 Micro sélectionné: " + str(mic_index))
@@ -88,8 +88,16 @@ func _on_mic_selected(mic_index: int) -> void:
 		ws.send_text(JSON.stringify({"command": "SELECT_MIC", "index": mic_index}))
 
 func _on_mic_panel_closed() -> void:
+	_safe_restore_passthrough()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
+
+func _safe_restore_passthrough() -> void:
+	if radial_menu and radial_menu.is_open:
+		return
+	if mic_panel and mic_panel.is_open:
+		return
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 
 func _position_window() -> void:
 	var screen_size := DisplayServer.screen_get_size()
@@ -153,6 +161,10 @@ func _handle_message(raw: String) -> void:
 			phase = Phase.PEEKING
 		return
 	elif command == "SHOW_RADIAL":
+		# Kill mic panel IMMEDIATELY — no tween, no _input() interference
+		if mic_panel and mic_panel.is_open:
+			mic_panel.is_open = false
+			mic_panel.visible = false
 		if radial_menu:
 			radial_menu.open()
 		return
@@ -165,6 +177,8 @@ func _handle_message(raw: String) -> void:
 		var selected = int(data.get("selected", -1))
 		print("🎤 Reçu %d micros, sélectionné: %d" % [mics.size(), selected])
 		if mic_panel and mics.size() > 0:
+			if radial_menu and radial_menu.is_open:
+				radial_menu.close()
 			mic_panel.show_mics(mics, selected)
 		return
 

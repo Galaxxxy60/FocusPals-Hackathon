@@ -77,7 +77,6 @@ func close() -> void:
 
 func _on_closed() -> void:
 	visible = false
-	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 	request_hide.emit()
 
 func _process(delta: float) -> void:
