@@ -13,7 +13,9 @@ Features:
 import asyncio
 import io
 import logging
+import math
 import os
+import struct
 import sys
 import time
 from datetime import datetime
@@ -66,37 +68,42 @@ CHUNK_SIZE = 1024
 selected_mic_index = None  # None = micro par défaut du système
 
 def get_available_mics():
-    """Liste les vrais micros disponibles (WASAPI uniquement, sans les virtuels)."""
+    """Liste les micros disponibles qui supportent 16kHz (priorité WASAPI, fallback MME)."""
     pya = pyaudio.PyAudio()
     mics = []
-    # Trouver l'index de l'API WASAPI (meilleure qualité sur Windows)
-    wasapi_index = None
-    for i in range(pya.get_host_api_count()):
-        api = pya.get_host_api_info_by_index(i)
-        if "WASAPI" in api["name"]:
-            wasapi_index = i
-            break
+    seen_names = set()  # Avoid duplicates (same physical mic in multiple APIs)
     
     # Mots-clés de devices virtuels/inutiles à exclure
     exclude = ["steam streaming", "vb-audio", "cable output", "mappeur", "wo mic",
                "réseau de microphones", "input (vb", "cable input"]
     
+    # First pass: try WASAPI devices, then others
     for i in range(pya.get_device_count()):
         info = pya.get_device_info_by_index(i)
         if info["maxInputChannels"] <= 0:
             continue
-        # Filtrer par WASAPI si disponible
-        if wasapi_index is not None and info["hostApi"] != wasapi_index:
-            continue
         name_lower = info["name"].lower()
         if any(ex in name_lower for ex in exclude):
             continue
-        mics.append({"index": i, "name": info["name"]})
+        # Skip if we already found a working version of this physical mic
+        name_prefix = name_lower[:15]
+        if name_prefix in seen_names:
+            continue
+        # Test if this device actually supports 16kHz
+        try:
+            test_stream = pya.open(format=pyaudio.paInt16, channels=1, rate=SEND_SAMPLE_RATE,
+                                   input=True, input_device_index=i, frames_per_buffer=512)
+            test_stream.close()
+            mics.append({"index": i, "name": info["name"]})
+            seen_names.add(name_prefix)
+        except OSError:
+            continue  # This device doesn't support 16kHz, skip it
+    
     pya.terminate()
     return mics
 
 def select_mic(index):
-    """Change le micro utilisé (prend effet au prochain redémarrage de session)."""
+    """Change le micro utilisé (hot-swap immédiat, même en cours de session)."""
     global selected_mic_index
     selected_mic_index = index
     mics = get_available_mics()
@@ -109,11 +116,13 @@ def resolve_default_mic():
         return
     mics = get_available_mics()
     if not mics:
+        print("⚠️ Aucun micro compatible trouvé !")
         return
     try:
         pya_tmp = pyaudio.PyAudio()
         default_name = pya_tmp.get_default_input_device_info()["name"].lower()
         pya_tmp.terminate()
+        # Try to find the default mic in our compatible list
         for m in mics:
             if m["name"].lower().startswith(default_name[:15]):
                 selected_mic_index = m["index"]
@@ -122,6 +131,7 @@ def resolve_default_mic():
             selected_mic_index = mics[0]["index"]
     except Exception:
         selected_mic_index = mics[0]["index"]
+    print(f"🎤 Micro auto-sélectionné: [{selected_mic_index}]")
 
 # ─── Tama's States & Display ────────────────────────────────
 
@@ -325,6 +335,22 @@ suspicion_above_6_start = None
 suspicion_at_9_start = None
 force_speech = False
 
+# ─── Voice Activity Detection (VAD) ──────────────────────────
+user_spoke_at = 0.0            # Timestamp of last detected user speech
+USER_SPEECH_TIMEOUT = 12.0     # Seconds to keep Tama unmuzzled after user speaks
+
+def _detect_voice_activity(pcm_data: bytes, threshold: float = 500.0) -> bool:
+    """Simple energy-based Voice Activity Detection on 16-bit PCM mono."""
+    try:
+        n_samples = len(pcm_data) // 2
+        if n_samples == 0:
+            return False
+        samples = struct.unpack(f'<{n_samples}h', pcm_data)
+        rms = math.sqrt(sum(s * s for s in samples) / n_samples)
+        return rms > threshold
+    except Exception:
+        return False
+
 # ─── A.S.C. (Alignment Suspicion Control) ────────────────────
 current_task = None  # Set dynamically by Tama via voice
 current_alignment = 1.0  # 1.0 (aligned), 0.5 (doubt), 0.0 (misaligned)
@@ -377,6 +403,10 @@ def compute_delta_s(alignment: float, category: str) -> float:
 
 connected_ws_clients = set()
 is_session_active = False
+conversation_requested = False   # Set True when user clicks "Parler"
+current_mode = "libre"           # "libre", "conversation", "deep_work"
+CONVERSATION_SILENCE_TIMEOUT = 20.0  # Seconds of silence before ending conversation
+conversation_start_time = None
 window_positioned = False  # True quand Python a repositionné la fenêtre Godot
 godot_hwnd = None           # HWND de la fenêtre Godot (stocké pour toggle click-through)
 radial_shown = False        # True quand le menu radial est affiché
@@ -429,6 +459,15 @@ def _handle_menu_action(action: str):
             start_session("Radial Menu")
         else:
             print("⏸️ Session déjà en cours.")
+    elif action == "talk":
+        global conversation_requested
+        if is_session_active:
+            print("💬 Déjà en session Deep Work — Tama t'écoute déjà !")
+        elif conversation_requested or current_mode == "conversation":
+            print("💬 Conversation déjà en cours.")
+        else:
+            conversation_requested = True
+            print("💬 Mode conversation demandé !")
     elif action == "mic":
         threading.Thread(target=open_settings_popup, daemon=True).start()
     elif action == "task":
@@ -649,7 +688,9 @@ CRITICAL ACTIONS:
 - If S reaches 10.0 and category is ZONE_GRISE: YOU MUST scold the user loudly, but NEVER call `close_distracting_tab`. Messaging apps (Messenger, Discord, WhatsApp) should NOT be closed — just verbally reprimand.
 - NEVER call `close_distracting_tab` for PROCRASTINATION_PRODUCTIVE or SANTE.
 
-RULE OF SILENCE: You are MUZZLED by default. DO NOT speak, DO NOT say "Got it", "Understood". Just call `classify_screen`. Speech is allowed only when explicitly unmuzzled in the [SYSTEM] prompt.
+RULE OF SILENCE: During AUTOMATIC screen scans, you are MUZZLED by default — only call classify_screen, no words.
+However, when the user SPEAKS TO YOU directly (indicated by "UNMUZZLED: L'utilisateur te PARLE"), you MUST respond naturally as Tama in French. Be conversational, warm but strict. Keep it short (1-2 sentences). You can still call classify_screen while chatting.
+Speech is allowed only when explicitly unmuzzled in the [SYSTEM] prompt.
 """
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -773,14 +814,29 @@ async def run_tama_live():
     pya = pyaudio.PyAudio()
 
     async def run_gemini_loop():
+        global current_mode, conversation_start_time, conversation_requested
         # Outer loop to reconnect if Google drops the connection
         while True:
-            # Wait silently until the user clicks "Start Deep Work" on UI
-            update_display(TamaState.CALM, "En attente du lancement dans l'UI (Start Deep Work)...")
-            while not is_session_active:
-                await asyncio.sleep(0.5)
-                
-            update_display(TamaState.CALM, "Connecting to Google WebSocket...")
+            # Wait for either a Deep Work session OR a conversation request
+            update_display(TamaState.CALM, "Mode Libre — Tama est là 🥷")
+            while not is_session_active and not conversation_requested:
+                await asyncio.sleep(0.3)
+            
+            if conversation_requested:
+                current_mode = "conversation"
+                conversation_requested = False
+                conversation_start_time = time.time()
+                # Tell Godot to show Tama
+                msg = json.dumps({"command": "START_CONVERSATION"})
+                for ws_client in list(connected_ws_clients):
+                    try:
+                        await ws_client.send(msg)
+                    except Exception:
+                        pass
+                update_display(TamaState.CALM, "Connecting for conversation...")
+            else:
+                current_mode = "deep_work"
+                update_display(TamaState.CALM, "Connecting to Google WebSocket...")
 
             try:
                 async with client.aio.live.connect(model=MODEL, config=config) as session:
@@ -796,18 +852,88 @@ async def run_tama_live():
             
                     # --- 1. Audio Input (Microphone) ---
                     async def listen_mic():
-                        mic_index = selected_mic_index
-                        if mic_index is None:
-                            mic_info = pya.get_default_input_device_info()
-                            mic_index = mic_info["index"]
-                        print(f"🎤 Micro actif: index {mic_index}")
-                        stream = await asyncio.to_thread(
-                            pya.open, format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
-                            input=True, input_device_index=mic_index, frames_per_buffer=CHUNK_SIZE,
-                        )
+                        global user_spoke_at
+                        
+                        def _resolve_mic_index():
+                            idx = selected_mic_index
+                            if idx is None:
+                                try:
+                                    idx = pya.get_default_input_device_info()["index"]
+                                except Exception:
+                                    idx = 0
+                            return idx
+                        
+                        def _open_mic_stream(mic_idx):
+                            """Try to open a mic stream, with smart fallback by name."""
+                            try:
+                                s = pya.open(format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
+                                             input=True, input_device_index=mic_idx, frames_per_buffer=CHUNK_SIZE)
+                                print(f"🎤 Micro actif: index {mic_idx}")
+                                return s, mic_idx
+                            except OSError as e:
+                                print(f"⚠️ Micro index {mic_idx} incompatible ({e})")
+                                
+                                # Get the name of the failed device to find same physical mic in another API
+                                failed_name = ""
+                                try:
+                                    failed_name = pya.get_device_info_by_index(mic_idx)["name"].lower()
+                                except Exception:
+                                    pass
+                                
+                                # Search for same physical mic name in other host APIs (MME, DirectSound)
+                                if failed_name:
+                                    match_prefix = failed_name[:15]  # First 15 chars usually identify the device
+                                    for i in range(pya.get_device_count()):
+                                        if i == mic_idx:
+                                            continue
+                                        info = pya.get_device_info_by_index(i)
+                                        if info["maxInputChannels"] <= 0:
+                                            continue
+                                        if match_prefix in info["name"].lower():
+                                            try:
+                                                s = pya.open(format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
+                                                             input=True, input_device_index=i, frames_per_buffer=CHUNK_SIZE)
+                                                print(f"🎤 Alternative trouvée: [{i}] {info['name']}")
+                                                return s, i
+                                            except OSError:
+                                                continue
+                                
+                                # Last resort: system default
+                                try:
+                                    s = pya.open(format=FORMAT, channels=CHANNELS, rate=SEND_SAMPLE_RATE,
+                                                 input=True, frames_per_buffer=CHUNK_SIZE)
+                                    default_idx = pya.get_default_input_device_info()["index"]
+                                    print(f"🎤 Fallback micro par défaut: [{default_idx}]")
+                                    return s, default_idx
+                                except OSError as e2:
+                                    print(f"❌ Aucun micro compatible à 16kHz: {e2}")
+                                    raise
+                        
+                        current_mic = _resolve_mic_index()
+                        stream, current_mic = await asyncio.to_thread(_open_mic_stream, current_mic)
+                        _last_failed_mic = None  # Track failed mics to avoid hot-swap loops
                         try:
                             while True:
+                                # ── Hot-swap: detect mic change from Godot UI ──
+                                wanted_mic = _resolve_mic_index()
+                                if wanted_mic != current_mic and wanted_mic != _last_failed_mic:
+                                    print(f"🎤 Hot-swap micro: {current_mic} → {wanted_mic}")
+                                    try:
+                                        stream.close()
+                                    except Exception:
+                                        pass
+                                    stream, actual_mic = await asyncio.to_thread(_open_mic_stream, wanted_mic)
+                                    if actual_mic != wanted_mic:
+                                        # Fallback happened — remember the failed mic
+                                        _last_failed_mic = wanted_mic
+                                    else:
+                                        _last_failed_mic = None
+                                    current_mic = actual_mic
+                                
                                 data = await asyncio.to_thread(stream.read, CHUNK_SIZE, exception_on_overflow=False)
+                                # Voice Activity Detection — unmuzzle Tama when user speaks
+                                if _detect_voice_activity(data):
+                                    user_spoke_at = time.time()
                                 await audio_in_queue.put(types.Blob(data=data, mime_type="audio/pcm"))
                         except asyncio.CancelledError:
                             stream.close()
@@ -821,13 +947,55 @@ async def run_tama_live():
                                 print("⚠️  Audio stream interrompu (session fermée)")
                                 break
 
-                    # --- 2. Video Input (Pulsed Screen) ---
+                    # --- 2. Screen Pulse / Conversation Loop ---
                     async def send_screen_pulse():
-                        """Sends the dual-monitor screenshot every N seconds and prompts analysis."""
+                        """In deep_work: screenshot + analysis. In conversation: lightweight chat context."""
+                        global user_spoke_at, current_mode
+                        
+                        # ── Initial greeting in conversation mode ──
+                        if current_mode == "conversation":
+                            # Ensure Tama's greeting audio passes through the gate
+                            user_spoke_at = time.time()
+                            await asyncio.sleep(2.0)  # Wait for Peek animation
+                            try:
+                                await session.send_realtime_input(
+                                    text="[SYSTEM] MODE: CONVERSATION. L'utilisateur a appuyé sur 'Parler'. UNMUZZLED: Accueille-le chaleureusement en français ! Dis quelque chose comme 'Oui ? Qu'y a-t-il ?' ou 'Hey ! Tu voulais me parler ?'. Sois naturelle et courte."
+                                )
+                            except Exception:
+                                return
+                        
                         while True:
+                            if current_mode == "conversation":
+                                # ── Conversation mode: no screenshot, just monitor silence ──
+                                user_spoke_recently = (time.time() - user_spoke_at) < CONVERSATION_SILENCE_TIMEOUT
+                                time_in_conversation = time.time() - (conversation_start_time or time.time())
+                                
+                                if not user_spoke_recently and time_in_conversation > 10:
+                                    # User hasn't spoken for 20s → end conversation
+                                    print("💬 Silence détecté — fin de la conversation.")
+                                    end_msg = json.dumps({"command": "END_CONVERSATION"})
+                                    for ws_client in list(connected_ws_clients):
+                                        try:
+                                            await ws_client.send(end_msg)
+                                        except Exception:
+                                            pass
+                                    current_mode = "libre"
+                                    raise RuntimeError("Conversation ended")
+                                
+                                # Light context update (no screenshot)
+                                speak_directive = "UNMUZZLED: Tu es en conversation libre avec l'utilisateur. Réponds naturellement en français, sois toi-même (Tama). Garde tes réponses courtes (1-2 phrases)."
+                                try:
+                                    await session.send_realtime_input(
+                                        text=f"[SYSTEM] MODE: CONVERSATION | {speak_directive}"
+                                    )
+                                except Exception:
+                                    break
+                                await asyncio.sleep(5.0)
+                                continue  # Skip deep work logic below
+                            
+                            # ── Deep Work mode: full screen analysis ──
                             jpeg_bytes = await asyncio.to_thread(capture_all_screens)
                             blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
-                            # Send screen
                             try:
                                 await session.send_realtime_input(media=blob)
                             except Exception:
@@ -858,6 +1026,7 @@ async def run_tama_live():
                                 suspicion_above_6_start = None
                                 suspicion_at_9_start = None
                             global just_started_session
+                            user_spoke_recently = (time.time() - user_spoke_at) < USER_SPEECH_TIMEOUT
                             if just_started_session and session_start_time and (time.time() - session_start_time < 30):
                                 speak_directive = "UNMUZZLED: Tu viens tout juste d'arriver avec l'utilisateur ! Dis-lui un grand bonjour motivant et demande-lui sur quoi il compte travailler aujourd'hui. Sois super encourageante et chaleureuse. N'utilise pas de texte, parle directement."
                                 just_started_session = False
@@ -866,6 +1035,8 @@ async def run_tama_live():
                             elif break_reminder_active:
                                 session_min = int((time.time() - session_start_time) / 60) if session_start_time else 0
                                 speak_directive = f"UNMUZZLED: Tu travailles depuis {session_min} min. Suggère gentiment une pause de quelques minutes. Sois bienveillante."
+                            elif user_spoke_recently:
+                                speak_directive = "UNMUZZLED: L'utilisateur te PARLE en ce moment. Réponds-lui naturellement en français, sois toi-même (Tama). Reste courte et conversationnelle (1-2 phrases). Tu peux toujours appeler classify_screen en parallèle si besoin."
                             else:
                                 speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
                                 if suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
@@ -919,6 +1090,9 @@ async def run_tama_live():
                                                     if not speech_allowed and suspicion_at_9_start and (time.time() - suspicion_at_9_start > 15):
                                                         speech_allowed = True
                                                     if not speech_allowed and suspicion_above_6_start and (time.time() - suspicion_above_6_start > 45):
+                                                        speech_allowed = True
+                                                    # User conversation: unmuzzle if user spoke recently
+                                                    if not speech_allowed and (time.time() - user_spoke_at) < USER_SPEECH_TIMEOUT:
                                                         speech_allowed = True
                                                     if speech_allowed:
                                                         is_speaking = True  # Lock: let her finish the whole turn
@@ -1083,7 +1257,8 @@ async def run_tama_live():
                 print(f"\n❌ [ERROR] {e}")
                 traceback.print_exc()
             
-            # Attente avant de reconnecter
+            # Attente avant de reconnecter (seulement en deep work)
+            current_mode = "libre"
             if is_session_active:
                 print("🔄 Reconnexion à l'IA dans 3 secondes...")
                 await asyncio.sleep(3)

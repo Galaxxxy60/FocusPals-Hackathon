@@ -20,9 +20,11 @@ var session_active: bool = false
 # Intro:  HIDDEN → PEEKING → HELLO (loop) → LEAVING → HIDDEN
 # Normal: HIDDEN → PEEKING → ACTIVE (Suspicious/Angry loop) → LEAVING → HIDDEN
 #         ou:      PEEKING → STRIKING (Strike once, freeze)
+# Conversation: HIDDEN → PEEKING → HELLO (loop, waiting) → LEAVING → HIDDEN
 enum Phase { HIDDEN, PEEKING, HELLO, ACTIVE, STRIKING, LEAVING }
 var phase: int = Phase.HIDDEN
 var intro_done: bool = false
+var conversation_active: bool = false  # True during casual chat (no deep work)
 var current_anim: String = ""
 var _anim_player: AnimationPlayer = null
 var _prev_suspicion_tier: int = -1
@@ -159,9 +161,25 @@ func _handle_message(raw: String) -> void:
 	elif command == "START_SESSION":
 		if not session_active:
 			session_active = true
+			conversation_active = false  # Session overrides conversation
 			print("🚀 Session Deep Work lancée !")
 			_play("Peek", false)
 			phase = Phase.PEEKING
+		return
+	elif command == "START_CONVERSATION":
+		if not session_active and not conversation_active:
+			conversation_active = true
+			print("💬 Mode conversation — Tama arrive !")
+			_play("Peek", false)
+			phase = Phase.PEEKING
+		return
+	elif command == "END_CONVERSATION":
+		if conversation_active:
+			conversation_active = false
+			print("💬 Fin de conversation — Tama repart.")
+			if phase != Phase.HIDDEN:
+				_play("bye", false)
+				phase = Phase.LEAVING
 		return
 	elif command == "SHOW_RADIAL":
 		# Kill mic panel IMMEDIATELY — no tween, no _input() interference
@@ -256,7 +274,11 @@ func _update_suspicion_anim() -> void:
 func _on_animation_finished(_anim_name: StringName) -> void:
 	match phase:
 		Phase.PEEKING:
-			if not intro_done:
+			if conversation_active:
+				# Conversation: Peek terminé → Hello loop (elle attend la discussion)
+				_play("Hello", true)
+				phase = Phase.HELLO
+			elif not intro_done:
 				# Intro : Peek terminé → dit Hello (loop tant qu'on attend les données)
 				_play("Hello", true)
 				phase = Phase.HELLO
@@ -278,7 +300,10 @@ func _on_animation_finished(_anim_name: StringName) -> void:
 					phase = Phase.LEAVING
 		Phase.LEAVING:
 			phase = Phase.HIDDEN
-			if not intro_done:
+			if conversation_active:
+				conversation_active = false
+				print("💬 Conversation terminée — Tama se cache.")
+			elif not intro_done:
 				intro_done = true
 				print("👋 Intro terminée — Tama se cache.")
 			else:
