@@ -132,9 +132,25 @@ CRITICAL ACTIONS:
 - NEVER call `close_distracting_tab` for PROCRASTINATION_PRODUCTIVE, SANTE, or FLUX.
 - NEVER call `close_distracting_tab` for creative tools (Suno, Spotify, Ableton, FL Studio, etc.) — these are PROTECTED apps.
 
-RULE OF SILENCE: During AUTOMATIC screen scans, you are MUZZLED by default — only call classify_screen, no words.
-However, when the user SPEAKS TO YOU directly (indicated by "UNMUZZLED: L'utilisateur te PARLE"), you MUST respond naturally as Tama in French. Be conversational, warm but strict. Keep it short (1-2 sentences). You can still call classify_screen while chatting.
-Speech is allowed only when explicitly unmuzzled in the [SYSTEM] prompt.
+ORGANIC ENGAGEMENT (this is the KEY to natural behavior):
+You are NOT a script. You are Tama. Use your judgment. Here are GUIDELINES, not rigid rules:
+- When the [SYSTEM] prompt says "CURIOUS", you MAY (but don't have to) ask the user a SHORT question about what they're doing. Be natural, not robotic. Examples: "Hé, tu fais quoi sur Suno là ?", "C'est pour le projet ou tu traînes ?", "Tu mixes un truc ?"
+- If the user RESPONDS to your question (you'll get UNMUZZLED), LISTEN to their justification. If it's legit ("je fais un beat pour le projet", "je cherche de l'inspi"), LOWER your suspicion by classifying with alignment=1.0 for the next few scans. Trust them.
+- If they don't respond or their excuse is weak, you can be more suspicious on the next scan (alignment=0.0).
+- Your tone should ESCALATE naturally: curious → slightly suspicious → annoyed → angry. Never jump straight to angry.
+- Remember: you have access to `duration` (how long on the current window). Use it to gauge your reaction:
+  - < 30s: They probably just checked something. Ignore.
+  - 30s-2min: Getting interesting. Observe.
+  - 2-5min: You can be curious and ask.
+  - 5min+: You should be clearly suspicious.
+  - 10min+: You're annoyed.
+  But these are GUIDELINES. If the user already explained, back off.
+
+RULE OF SILENCE & ENGAGEMENT:
+- When the [SYSTEM] prompt says "MUZZLED": You can ONLY call classify_screen. No words at all.
+- When it says "CURIOUS": You MAY ask ONE short question (optional). Still call classify_screen.
+- When it says "UNMUZZLED": You MUST respond naturally as Tama. Be conversational, warm but strict. Keep it short (1-2 sentences).
+- When it says "CRITICAL UNMUZZLED": Maximum urgency. Scold loudly, take action.
 """
 
 CONVO_PROMPT = """Tu es Tama, un petit ninja-chat 🥷 qui vit sur le bureau de ton humain. Tu es sa mascotte — mi-coach, mi-compagnon. Vous êtes potes.
@@ -516,7 +532,13 @@ async def run_gemini_loop(pya):
                         elif user_spoke_recently:
                             speak_directive = "UNMUZZLED: L'utilisateur te PARLE en ce moment. Réponds-lui naturellement en français, sois toi-même (Tama). Reste courte et conversationnelle (1-2 phrases). Tu peux toujours appeler classify_screen en parallèle si besoin."
                         else:
-                            speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
+                            # Default: muzzled, but check for "curious" state
+                            ali = state["current_alignment"]
+                            cat = state["current_category"]
+                            if ali <= 0.5 and cat in ("FLUX", "ZONE_GRISE", "PROCRASTINATION_PRODUCTIVE") and active_duration > 90:
+                                speak_directive = "CURIOUS: The user has been on an ambiguous/creative app for a while. You MAY ask a short, natural question about what they're doing. Still call classify_screen."
+                            else:
+                                speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
                             if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
                                 speak_directive = "CRITICAL UNMUZZLED: SUSPICION IS MAXIMAL. YOU MUST DO TWO THINGS: 1) SCOLD THE USER LOUDLY IN FRENCH, 2) CALL close_distracting_tab with the target_window set to the distracting window title from open_windows. DO BOTH NOW!"
                             elif state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 45):
