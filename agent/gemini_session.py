@@ -401,8 +401,43 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             if result.get("status") == "success":
                 send_anim_to_godot("Strike", False)
                 update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
+
+                # ── Post-close reset: prevent "ghost tab" re-trigger ──
+                # Drop S from STRIKE zone to SUSPICIOUS (Tama stays alert, doesn't re-strike)
+                state["current_suspicion_index"] = 3.0
+                # Clear ALL escalation timers so stages don't re-fire immediately
+                state["suspicion_at_9_start"] = None
+                state["suspicion_above_6_start"] = None
+                state["suspicion_above_3_start"] = None
+                # Refresh window cache so the closed tab vanishes from open_windows
+                await asyncio.to_thread(refresh_window_cache)
+                new_active = get_cached_active_title()
+                print(f"  🔄 Post-close reset: S→3.0, new active: '{new_active}'")
+
                 state["force_speech"] = True
-                await asyncio.sleep(6)
+                await asyncio.sleep(4)
+
+                # Tell Gemini the close succeeded — re-evaluate with fresh context
+                try:
+                    new_windows = [w.title for w in get_cached_windows()]
+                    await session.send_client_content(
+                        turns=types.Content(
+                            role="user",
+                            parts=[types.Part(text=(
+                                f"[SYSTEM] close_distracting_tab SUCCEEDED — '{target_window}' "
+                                f"is now CLOSED. S has been reset to 3.0. "
+                                f"New active window: '{new_active}'. "
+                                f"Current open_windows: {new_windows}. "
+                                f"Do NOT try to close '{target_window}' again. "
+                                f"Re-evaluate the NEW screen with classify_screen."
+                            ))]
+                        ),
+                        turn_complete=True
+                    )
+                except Exception:
+                    pass
+
+                await asyncio.sleep(2)
                 state["force_speech"] = False
                 update_display(TamaState.CALM, "Je te surveille toujours.")
             else:
