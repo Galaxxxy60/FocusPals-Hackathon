@@ -637,23 +637,50 @@ async def run_gemini_loop(pya):
                                             elif fc.name == "close_distracting_tab":
                                                 reason = fc.args.get("reason", "Distraction")
                                                 target_window = fc.args.get("target_window", None)
+                                                close_fc_id = fc.id
 
-                                                result = execute_close_tab(reason, target_window)
+                                                # ── Grace period: wait for Tama to finish speaking + user reaction ──
+                                                # 1. Wait for audio queue to drain (Tama finishes her warning)
+                                                drain_start = time.time()
+                                                while not audio_out_queue.empty() and (time.time() - drain_start) < 8:
+                                                    await asyncio.sleep(0.2)
 
-                                                # Only trigger angry animation if close actually worked
-                                                if result.get("status") == "success":
-                                                    update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
-                                                    state["force_speech"] = True
+                                                # 2. Grace period — user can speak to cancel the close
+                                                GRACE_SECONDS = 3.0
+                                                grace_start = time.time()
+                                                user_intervened = False
+                                                print(f"  ⏳ Grace period {GRACE_SECONDS}s — l'utilisateur peut se justifier...")
+
+                                                while (time.time() - grace_start) < GRACE_SECONDS:
+                                                    if (time.time() - state["user_spoke_at"]) < 2.0:
+                                                        # User spoke during grace period!
+                                                        user_intervened = True
+                                                        print(f"  🗣️ L'utilisateur se justifie — fermeture ANNULÉE")
+                                                        break
+                                                    await asyncio.sleep(0.3)
+
+                                                if user_intervened:
+                                                    # Cancel close — tell Gemini the user is justifying
+                                                    result = {
+                                                        "status": "cancelled",
+                                                        "message": "L'utilisateur a pris la parole pour se justifier. Écoute ce qu'il dit avant de décider. Si sa justification est valide, abaisse la suspicion."
+                                                    }
                                                 else:
-                                                    # Protected app or not found — no animation, just log
-                                                    print(f"  ⚠️ close_distracting_tab bloqué: {result.get('message', '?')}")
+                                                    # No intervention — execute close
+                                                    result = execute_close_tab(reason, target_window)
+
+                                                    if result.get("status") == "success":
+                                                        update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
+                                                        state["force_speech"] = True
+                                                    else:
+                                                        print(f"  ⚠️ close_distracting_tab bloqué: {result.get('message', '?')}")
 
                                                 await session.send_tool_response(
                                                     function_responses=[
                                                         types.FunctionResponse(
                                                             name="close_distracting_tab",
                                                             response=result,
-                                                            id=fc.id
+                                                            id=close_fc_id
                                                         )
                                                     ]
                                                 )
