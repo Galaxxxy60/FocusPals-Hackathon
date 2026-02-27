@@ -28,6 +28,8 @@ var conversation_active: bool = false  # True during casual chat (no deep work)
 var current_anim: String = ""
 var _anim_player: AnimationPlayer = null
 var _prev_suspicion_tier: int = -1
+var _last_anim_command_time: float = 0.0  # Timestamp of last Python anim command
+const ANIM_COMMAND_COOLDOWN: float = 5.0  # Don't auto-anim if Python sent one recently
 
 # ─── Radial Settings Menu ─────────────────────────────────
 var radial_menu = null
@@ -151,7 +153,9 @@ func _process(delta: float) -> void:
 				_connect_ws()
 
 	# Gestion des anims selon la suspicion (mode normal uniquement)
-	_update_suspicion_anim()
+	# Only auto-animate if Python hasn't sent a recent animation command
+	if Time.get_unix_time_from_system() - _last_anim_command_time > ANIM_COMMAND_COOLDOWN:
+		_update_suspicion_anim()
 
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
@@ -215,6 +219,35 @@ func _handle_message(raw: String) -> void:
 		print("🔑 API key validation result: %s" % str(valid))
 		if settings_panel:
 			settings_panel.update_key_valid(valid)
+		return
+	elif command == "TAMA_ANIM":
+		# Python tells Godot exactly which animation to play
+		var anim_name = data.get("anim", "")
+		var loop = data.get("loop", false)
+		_last_anim_command_time = Time.get_unix_time_from_system()
+		print("🎬 [ANIM CMD] " + anim_name + (" (loop)" if loop else ""))
+		if anim_name == "bye":
+			if phase != Phase.HIDDEN:
+				_play("bye", false)
+				phase = Phase.LEAVING
+		elif anim_name == "Peek":
+			if phase == Phase.HIDDEN:
+				_play("Peek", false)
+				phase = Phase.PEEKING
+		else:
+			# Suspicious, Angry, Strike, Hello — play directly
+			if phase == Phase.HIDDEN:
+				# Need to peek first, then the animation will be chosen in _on_animation_finished
+				_prev_suspicion_tier = _get_tier()  # Sync tier so peek leads to right anim
+				_play("Peek", false)
+				phase = Phase.PEEKING
+			else:
+				if anim_name == "Strike":
+					_play("Strike", false)
+					phase = Phase.STRIKING
+				else:
+					_play(anim_name, loop)
+					phase = Phase.ACTIVE
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──

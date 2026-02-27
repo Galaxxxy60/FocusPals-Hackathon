@@ -26,7 +26,7 @@ from config import (
     compute_can_be_closed, compute_delta_s,
 )
 from audio import detect_voice_activity
-from ui import TamaState, update_display
+from ui import TamaState, update_display, send_anim_to_godot
 
 
 # ─── Screen Capture & Window Cache ──────────────────────────
@@ -301,6 +301,7 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             # No intervention — execute close
             result = execute_close_tab(reason, target_window)
             if result.get("status") == "success":
+                send_anim_to_godot("Strike", False)
                 update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
                 state["force_speech"] = True
                 await asyncio.sleep(6)
@@ -645,11 +646,28 @@ async def run_gemini_loop(pya):
                                                     speech_allowed = True
                                                 if speech_allowed:
                                                     is_speaking = True
+                                                    # Sync animation with actual speech
+                                                    si = state["current_suspicion_index"]
+                                                    if state["current_mode"] == "conversation":
+                                                        send_anim_to_godot("Hello", True)
+                                                    elif si >= 9:
+                                                        send_anim_to_godot("Angry", True)
+                                                    elif si >= 6:
+                                                        send_anim_to_godot("Angry", True)
+                                                    elif si >= 3:
+                                                        send_anim_to_godot("Suspicious", True)
+                                                    else:
+                                                        send_anim_to_godot("Hello", True)
 
                                             if is_speaking:
                                                 audio_out_queue.put_nowait(part.inline_data.data)
 
                                 if server and server.turn_complete:
+                                    if is_speaking:
+                                        # Gemini finished speaking — return to calm after delay
+                                        si = state["current_suspicion_index"]
+                                        if si < 3:
+                                            send_anim_to_godot("bye", False)
                                     is_speaking = False
 
                                 if response.tool_call:

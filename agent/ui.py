@@ -221,3 +221,15 @@ def update_display(tama_state: TamaState, message: str = ""):
         print(f"  💬 \"{message}\"")
     print("\n  Press Ctrl+C to stop.")
     print("─" * 42)
+
+
+def send_anim_to_godot(anim_name: str, loop: bool = False):
+    """Send an animation command to Godot. Only Python decides when to animate."""
+    msg = json.dumps({"command": "TAMA_ANIM", "anim": anim_name, "loop": loop})
+    main_loop = state["main_loop"]
+    for ws_client in list(state["connected_ws_clients"]):
+        try:
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
+        except Exception:
+            pass
