@@ -73,7 +73,7 @@ def compute_mood_bias() -> float:
 
 # ─── Mood Context for Gemini Prompt ─────────────────────────
 
-def get_mood_context() -> str:
+def get_mood_context(lang: str = "fr") -> str:
     """
     Returns a natural language description of Tama's current mood.
     Injected into the [SYSTEM] prompt at each scan.
@@ -82,18 +82,32 @@ def get_mood_context() -> str:
     bias = compute_mood_bias()
     state["_mood_bias"] = bias  # Store for debug logging
 
-    if bias <= -1.0:
-        return "Tu es de très bonne humeur — Nicolas a bien bossé, tu es détendue et tolérante. Un petit écart ne te dérangera pas."
-    elif bias <= -0.5:
-        return "Tu es de bonne humeur. Nicolas travaille bien. Tu es plus patiente que d'habitude."
-    elif bias <= 0.2:
-        return "Humeur neutre. Rien de spécial, tu observes normalement."
-    elif bias <= 0.7:
-        return "Tu es un peu irritable. Nicolas a fait quelques écarts récemment. Ta patience est un peu entamée."
-    elif bias <= 1.0:
-        return "Tu es irritable. Nicolas a procrastiné plusieurs fois. Ta patience est fine, tu es sur les nerfs."
+    if lang == "en":
+        if bias <= -1.0:
+            return "You're in a great mood — Nicolas has been working well, you're relaxed and tolerant. A small slip won't bother you."
+        elif bias <= -0.5:
+            return "You're in a good mood. Nicolas is working well. You're more patient than usual."
+        elif bias <= 0.2:
+            return "Neutral mood. Nothing special, you're observing normally."
+        elif bias <= 0.7:
+            return "You're a bit irritable. Nicolas has had a few slips recently. Your patience is wearing thin."
+        elif bias <= 1.0:
+            return "You're irritable. Nicolas has procrastinated multiple times. Your patience is razor-thin."
+        else:
+            return "You're on the edge. Nicolas has pushed too far. The slightest slip and you'll explode."
     else:
-        return "Tu es au bord de la crise. Nicolas a trop abusé. Le moindre écart et tu exploses."
+        if bias <= -1.0:
+            return "Tu es de très bonne humeur — Nicolas a bien bossé, tu es détendue et tolérante. Un petit écart ne te dérangera pas."
+        elif bias <= -0.5:
+            return "Tu es de bonne humeur. Nicolas travaille bien. Tu es plus patiente que d'habitude."
+        elif bias <= 0.2:
+            return "Humeur neutre. Rien de spécial, tu observes normalement."
+        elif bias <= 0.7:
+            return "Tu es un peu irritable. Nicolas a fait quelques écarts récemment. Ta patience est un peu entamée."
+        elif bias <= 1.0:
+            return "Tu es irritable. Nicolas a procrastiné plusieurs fois. Ta patience est fine, tu es sur les nerfs."
+        else:
+            return "Tu es au bord de la crise. Nicolas a trop abusé. Le moindre écart et tu exploses."
 
 
 # ─── Tracking Helpers ───────────────────────────────────────

@@ -26,7 +26,8 @@ from config import (
     compute_can_be_closed, compute_delta_s,
 )
 from audio import detect_voice_activity
-from ui import TamaState, update_display, send_anim_to_godot
+from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot
+from mood_engine import get_mood_context, track_infraction, track_compliance
 
 
 # ─── Screen Capture & Window Cache ──────────────────────────
@@ -742,8 +743,7 @@ async def run_gemini_loop(pya):
                         tama_state = state["current_tama_state"]
 
                         # Mood context (Phase 2) — tells Gemini how Tama feels
-                        from mood_engine import get_mood_context
-                        mood_ctx = get_mood_context()
+                        mood_ctx = get_mood_context(state.get("language", "fr"))
 
                         if tama_state == TamaState.CALM and audio_out_queue.empty():
                             await session.send_realtime_input(
@@ -832,7 +832,6 @@ async def run_gemini_loop(pya):
                                                 state["current_suspicion_index"] = max(0.0, min(10.0, state["current_suspicion_index"] + delta))
 
                                                 # Track mood (Phase 2)
-                                                from mood_engine import track_infraction, track_compliance
                                                 if ali <= 0.0:
                                                     track_infraction()
                                                 elif ali >= 1.0:
@@ -883,7 +882,6 @@ async def run_gemini_loop(pya):
                                                 print(f"  🎭 Mood: {mood} ({intensity:.1f})")
 
                                                 # Send mood to Godot → drives animation organically
-                                                from ui import send_mood_to_godot
                                                 send_mood_to_godot(mood, intensity)
 
                                                 await session.send_tool_response(
