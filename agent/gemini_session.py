@@ -620,28 +620,9 @@ async def run_gemini_loop(pya):
                                                 s_int = int(state["current_suspicion_index"])
                                                 print(f"  🔍 S:{s_int}/10 | A:{ali} | Cat:{cat} | ΔS:{delta:+.1f} — {reason}")
 
-                                                # AUTO-CLOSE: S=10 + BANNIE
-                                                if state["current_suspicion_index"] >= 10.0 and cat == "BANNIE":
-                                                    try:
-                                                        distraction_keywords = ["youtube", "netflix", "twitch", "reddit", "tiktok", "instagram", "facebook", "steam"]
-                                                        closed = False
-                                                        for w in get_cached_windows():
-                                                            if w.width < 100:
-                                                                continue
-                                                            t_lower = w.title.lower()
-                                                            if not compute_can_be_closed(t_lower):
-                                                                continue
-                                                            if any(kw in t_lower for kw in distraction_keywords):
-                                                                print(f"  🤖 AUTO-CLOSE: S=10, fermeture de '{w.title[:60]}'")
-                                                                update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({w.title[:30]})")
-                                                                state["force_speech"] = True
-                                                                execute_close_tab("Auto-close S=10", w.title)
-                                                                closed = True
-                                                                break
-                                                        if not closed:
-                                                            print("  ⚠️ AUTO-CLOSE: aucune fenêtre BANNIE trouvée")
-                                                    except Exception as e:
-                                                        print(f"  ❌ AUTO-CLOSE erreur: {e}")
+                                                # NOTE: No auto-close here. Gemini handles all tab closing
+                                                # through CRITICAL UNMUZZLED → speak first → call close_distracting_tab.
+                                                # This ensures Tama ALWAYS warns the user before closing anything.
 
                                                 await session.send_tool_response(
                                                     function_responses=[
