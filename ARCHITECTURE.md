@@ -1,7 +1,7 @@
 # FocusPals — Architecture & Technical Spec 🥷
 
 > **Ce document est la source de vérité unique pour tout agent IA ou développeur qui touche au projet.**
-> Dernière mise à jour : 2026-02-26
+> Dernière mise à jour : 2026-02-27
 
 ---
 
@@ -42,7 +42,7 @@ FocusPals/
     ├── focuspals.exe            # Build exporté (lancé par Python)
     ├── main.gd                  # Contrôleur principal (WebSocket client, animations, état)
     ├── settings_radial.gd       # Menu radial semi-circulaire (bord droit écran)
-    ├── mic_panel.gd             # Panel de sélection micro + VU meter natif
+    ├── settings_panel.gd        # Panel réglages (micro + clé API Gemini)
     └── scenes/main.tscn         # Scène 3D avec Tama.glb
 ```
 
@@ -83,7 +83,7 @@ FocusPals/
 │    ├── WebSocket client (reçoit état, commandes)            │
 │    ├── Animation state machine (HIDDEN→PEEK→ACTIVE→LEAVE)  │
 │    ├── Radial menu (settings_radial.gd) — edge detection    │
-│    └── Mic panel (mic_panel.gd) — sélection + VU meter     │
+│    └── Settings panel (settings_panel.gd) — micro + API key │
 │                                                             │
 │  Fenêtre transparente, always-on-top, click-through         │
 │  (WS_EX_TRANSPARENT + WS_EX_TOOLWINDOW via WinAPI)         │
@@ -178,6 +178,8 @@ Le cœur du système de surveillance. Deux fonctions dans `config.py` :
 | `SHOW_RADIAL` | — | Affiche le menu radial |
 | `HIDE_RADIAL` | — | Cache le menu radial |
 | `MIC_LIST` | `{mics: [...], selected: int}` | Lista des micros disponibles |
+| `SETTINGS_DATA` | `{mics: [...], selected: int, has_api_key: bool}` | Données settings complètes |
+| `API_KEY_UPDATED` | `{success: bool}` | Confirmation MAJ clé API |
 | `QUIT` | — | Fermeture propre |
 
 ### Python → Godot (broadcast d'état, toutes les 0.5s)
@@ -206,7 +208,9 @@ Le cœur du système de surveillance. Deux fonctions dans `config.py` :
 | `HIDE_RADIAL` | — | Menu radial fermé |
 | `MENU_ACTION` | `{action: "talk"}` | Clic menu radial |
 | `GET_MICS` | — | Demande liste micros |
+| `GET_SETTINGS` | — | Demande settings (micros + API key status) |
 | `SELECT_MIC` | `{index: 3}` | Changement de micro |
+| `SET_API_KEY` | `{key: "AIza..."}` | Mettre à jour la clé API Gemini |
 
 ---
 
@@ -234,7 +238,7 @@ Tier mapping :
 Le menu radial s'affiche quand la souris atteint le **bord droit** de l'écran (zone basse, 500px du bas).
 
 **Éléments du menu :**
-- ⚙️ Settings — Réglages (micro, taille Tama)
+- ⚙️ Settings — Réglages (micro, clé API Gemini)
 - 💬 Parler — Mode conversation
 - ⚡ Session — Démarrer Deep Work
 - 🎯 Tâche — Définir la tâche (vocalement)

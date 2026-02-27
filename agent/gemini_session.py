@@ -17,8 +17,9 @@ import pygetwindow as gw
 from PIL import Image
 from google.genai import types
 
+import config as cfg
 from config import (
-    client, MODEL, state, application_path,
+    MODEL, state, application_path,
     FORMAT, CHANNELS, SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE, CHUNK_SIZE,
     BROWSER_KEYWORDS, USER_SPEECH_TIMEOUT, CONVERSATION_SILENCE_TIMEOUT,
     compute_can_be_closed, compute_delta_s,
@@ -280,9 +281,19 @@ async def run_gemini_loop(pya):
             state["current_mode"] = "deep_work"
             update_display(TamaState.CALM, "Connecting to Google WebSocket...")
 
+        # Wait for API key if not yet configured
+        while cfg.client is None:
+            update_display(TamaState.CALM, "⚠️ Clé API manquante — ouvrez ⚙️ Settings")
+            await asyncio.sleep(2.0)
+            if not state["is_session_active"] and not state["conversation_requested"]:
+                state["current_mode"] = "libre"
+                break
+        if cfg.client is None:
+            continue
+
         try:
             active_config = config_conversation if state["current_mode"] == "conversation" else config_deep_work
-            async with client.aio.live.connect(model=MODEL, config=active_config) as session:
+            async with cfg.client.aio.live.connect(model=MODEL, config=active_config) as session:
 
                 update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
 

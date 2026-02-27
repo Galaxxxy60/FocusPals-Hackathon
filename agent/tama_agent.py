@@ -54,6 +54,14 @@ if __name__ == "__main__":
     # 2. Lance le system tray
     setup_tray()
 
+    # 2.5 Validate existing API key in background (non-blocking)
+    import config as _cfg
+    if _cfg._api_key_present_at_start:
+        def _bg_validate():
+            from godot_bridge import _validate_api_key
+            state["_api_key_valid"] = _validate_api_key(_cfg.GEMINI_API_KEY)
+        threading.Thread(target=_bg_validate, daemon=True).start()
+
     # 3. Lance le moniteur de souris (bordure écran → menu radial)
     threading.Thread(target=mouse_edge_monitor, daemon=True).start()
 

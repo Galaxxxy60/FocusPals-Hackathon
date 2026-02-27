@@ -33,9 +33,9 @@ var _prev_suspicion_tier: int = -1
 var radial_menu = null
 const RadialMenuScript = preload("res://settings_radial.gd")
 
-# ─── Mic Selection Panel ─────────────────────────────────
-var mic_panel = null
-const MicPanelScript = preload("res://mic_panel.gd")
+# ─── Settings Panel ──────────────────────────────────────
+var settings_panel = null
+const SettingsPanelScript = preload("res://settings_panel.gd")
 
 func _ready() -> void:
 	_position_window()
@@ -49,13 +49,14 @@ func _setup_radial_menu() -> void:
 	add_child(radial_menu)
 	radial_menu.action_triggered.connect(_on_radial_action)
 	radial_menu.request_hide.connect(_on_radial_hide)
-	# Mic panel
-	mic_panel = CanvasLayer.new()
-	mic_panel.set_script(MicPanelScript)
-	add_child(mic_panel)
-	mic_panel.mic_selected.connect(_on_mic_selected)
-	mic_panel.panel_closed.connect(_on_mic_panel_closed)
-	print("🎛️ Radial menu + Mic panel initialisés OK")
+	# Settings panel (replaces old mic panel)
+	settings_panel = CanvasLayer.new()
+	settings_panel.set_script(SettingsPanelScript)
+	add_child(settings_panel)
+	settings_panel.mic_selected.connect(_on_mic_selected)
+	settings_panel.panel_closed.connect(_on_settings_panel_closed)
+	settings_panel.api_key_submitted.connect(_on_api_key_submitted)
+	print("🎛️ Radial menu + Settings panel initialisés OK")
 
 func _unhandled_input(event: InputEvent) -> void:
 	# F1 = debug toggle du menu radial (fonctionne même sans Python)
@@ -70,18 +71,18 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
-	if action_id == "mic":
-		# Demander la liste des micros à Python
+	if action_id == "settings":
+		# Request settings data from Python (mics + API key status)
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-			ws.send_text(JSON.stringify({"command": "GET_MICS"}))
+			ws.send_text(JSON.stringify({"command": "GET_SETTINGS"}))
 		return
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		var msg := JSON.stringify({"command": "MENU_ACTION", "action": action_id})
 		ws.send_text(msg)
 
 func _on_radial_hide() -> void:
-	# Don't re-enable click-through or send HIDE_RADIAL if mic panel just opened
-	if mic_panel and mic_panel.is_open:
+	# Don't re-enable click-through or send HIDE_RADIAL if settings panel just opened
+	if settings_panel and settings_panel.is_open:
 		return
 	_safe_restore_passthrough()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -92,15 +93,20 @@ func _on_mic_selected(mic_index: int) -> void:
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SELECT_MIC", "index": mic_index}))
 
-func _on_mic_panel_closed() -> void:
+func _on_settings_panel_closed() -> void:
 	_safe_restore_passthrough()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
 
+func _on_api_key_submitted(key: String) -> void:
+	print("🔑 API key submitted")
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "SET_API_KEY", "key": key}))
+
 func _safe_restore_passthrough() -> void:
 	if radial_menu and radial_menu.is_open:
 		return
-	if mic_panel and mic_panel.is_open:
+	if settings_panel and settings_panel.is_open:
 		return
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 
@@ -182,10 +188,10 @@ func _handle_message(raw: String) -> void:
 				phase = Phase.LEAVING
 		return
 	elif command == "SHOW_RADIAL":
-		# Kill mic panel IMMEDIATELY — no tween, no _input() interference
-		if mic_panel and mic_panel.is_open:
-			mic_panel.is_open = false
-			mic_panel.visible = false
+		# Kill settings panel IMMEDIATELY — no tween, no _input() interference
+		if settings_panel and settings_panel.is_open:
+			settings_panel.is_open = false
+			settings_panel.visible = false
 		if radial_menu:
 			radial_menu.open()
 		return
@@ -193,14 +199,22 @@ func _handle_message(raw: String) -> void:
 		if radial_menu:
 			radial_menu.close()
 		return
-	elif command == "MIC_LIST":
+	elif command == "SETTINGS_DATA":
 		var mics = data.get("mics", [])
 		var selected = int(data.get("selected", -1))
-		print("🎤 Reçu %d micros, sélectionné: %d" % [mics.size(), selected])
-		if mic_panel and mics.size() > 0:
+		var has_api_key = data.get("has_api_key", false)
+		var key_valid = data.get("key_valid", false)
+		print("⚙️ Settings: %d micros, selected: %d, API key: %s, valid: %s" % [mics.size(), selected, str(has_api_key), str(key_valid)])
+		if settings_panel:
 			if radial_menu and radial_menu.is_open:
 				radial_menu.close()
-			mic_panel.show_mics(mics, selected)
+			settings_panel.show_settings(mics, selected, has_api_key, key_valid)
+		return
+	elif command == "API_KEY_UPDATED":
+		var valid = data.get("valid", false)
+		print("🔑 API key validation result: %s" % str(valid))
+		if settings_panel:
+			settings_panel.update_key_valid(valid)
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──

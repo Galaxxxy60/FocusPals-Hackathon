@@ -26,11 +26,12 @@ load_dotenv(env_path)
 
 # ─── API ────────────────────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+_api_key_present_at_start = bool(GEMINI_API_KEY)
 if not GEMINI_API_KEY:
-    print("❌ GEMINI_API_KEY missing! Copy agent/.env.example to agent/.env")
-    sys.exit(1)
-
-client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1alpha"})
+    print("⚠️  GEMINI_API_KEY manquante — configurez-la via ⚙️ Settings dans le menu radial")
+    client = None
+else:
+    client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1alpha"})
 MODEL = "gemini-2.5-flash-native-audio-latest"
 
 # ─── Audio Constants ────────────────────────────────────────
@@ -99,6 +100,7 @@ state = {
     "_radial_cooldown_until": 0,
     "_mouse_was_away": True,
     "_mic_panel_pending": False,
+    "_api_key_valid": False,
     "connected_ws_clients": set(),
     "main_loop": None,
     "tray_icon": None,

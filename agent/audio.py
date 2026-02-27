@@ -16,11 +16,17 @@ _mic_cache = None
 _mic_cache_time = 0
 
 
-def get_available_mics(force_refresh=False):
-    """Liste les micros disponibles qui supportent 16kHz (priorité WASAPI, fallback MME)."""
-    global _mic_cache, _mic_cache_time
-    if not force_refresh and _mic_cache is not None and (time.time() - _mic_cache_time) < 30:
+def get_available_mics():
+    """Return cached mic list — NEVER blocks. Call refresh_mic_cache() in a thread for fresh data."""
+    if _mic_cache is not None:
         return _mic_cache
+    return []  # Empty on very first call, background thread fills it
+
+
+def refresh_mic_cache():
+    """Heavy WASAPI mic probing — ONLY call from a background thread.
+    Opens a test stream per device to check 16kHz support. Takes 2-5s."""
+    global _mic_cache, _mic_cache_time
 
     pya = pyaudio.PyAudio()
     mics = []
@@ -63,10 +69,14 @@ def select_mic(index):
 
 
 def resolve_default_mic():
-    """Auto-sélectionne le micro par défaut du système si aucun n'est choisi."""
+    """Auto-sélectionne le micro par défaut du système si aucun n'est choisi.
+    Called at startup from setup_tray() — OK to be slow here."""
     if state["selected_mic_index"] is not None:
         return
     mics = get_available_mics()
+    if not mics:
+        # Cache empty — do the heavy refresh (only at startup)
+        mics = refresh_mic_cache()
     if not mics:
         print("⚠️ Aucun micro compatible trouvé !")
         return

@@ -16,8 +16,8 @@ import threading
 import websockets
 
 from config import application_path, state, BREAK_CHECKPOINTS, BREAK_DURATIONS
-from audio import get_available_mics, select_mic, resolve_default_mic
-from ui import TamaState, start_session, quit_app, open_settings_popup, update_display
+from audio import get_available_mics, refresh_mic_cache, select_mic, resolve_default_mic
+from ui import TamaState, start_session, quit_app, update_display
 
 
 # ─── Click-Through Toggle ───────────────────────────────────
@@ -57,14 +57,97 @@ def _handle_menu_action(action: str):
         else:
             state["conversation_requested"] = True
             print("💬 Mode conversation demandé !")
-    elif action == "mic":
-        threading.Thread(target=open_settings_popup, daemon=True).start()
+    elif action == "settings":
+        # Settings panel is handled via WebSocket GET_SETTINGS, not via menu action
+        # This is a fallback if triggered via menu action instead
+        _send_settings_to_godot()
     elif action == "task":
         print("🎯 Tâche : demandez à Tama par la voix !")
     elif action == "breaks":
         print("⏰ Config pauses : fonctionnalité à venir.")
     elif action == "quit":
         quit_app(state["tray_icon"], None)
+
+
+# ─── Settings Helpers ──────────────────────────────────────
+
+def _validate_api_key(key: str) -> bool:
+    """Test an API key by making a lightweight Gemini API call."""
+    try:
+        from google import genai
+        test_client = genai.Client(api_key=key, http_options={"api_version": "v1alpha"})
+        # Lightweight call — just list models (no tokens consumed)
+        test_client.models.get(model="gemini-2.0-flash")
+        print(f"✅ API key valid (key: {key[:8]}...)")
+        return True
+    except Exception as e:
+        print(f"❌ API key invalid: {e}")
+        return False
+
+
+def _send_settings_to_godot():
+    """Send current settings (mics + cached API key status) to all connected Godot clients."""
+    import config
+    mics = get_available_mics()  # returns cache if <30s old
+    has_api_key = bool(config.GEMINI_API_KEY)
+    response = json.dumps({
+        "command": "SETTINGS_DATA",
+        "mics": mics,
+        "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
+        "has_api_key": has_api_key,
+        "key_valid": state["_api_key_valid"]
+    })
+    main_loop = state["main_loop"]
+    for ws_client in list(state["connected_ws_clients"]):
+        try:
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(ws_client.send(response), main_loop)
+        except Exception:
+            pass
+
+
+def _update_api_key(new_key: str) -> bool:
+    """Update the Gemini API key in .env, validate, and reinitialize the client.
+    Returns True if the key is valid."""
+    import config
+    from google import genai
+
+    # Validate FIRST before saving
+    valid = _validate_api_key(new_key)
+
+    # Save to .env regardless (user might fix network later)
+    env_path = os.path.join(application_path, '.env')
+    lines = []
+    key_found = False
+    if os.path.exists(env_path):
+        with open(env_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+    new_lines = []
+    for line in lines:
+        if line.strip().startswith('GEMINI_API_KEY='):
+            new_lines.append(f'GEMINI_API_KEY={new_key}\n')
+            key_found = True
+        else:
+            new_lines.append(line)
+
+    if not key_found:
+        new_lines.append(f'GEMINI_API_KEY={new_key}\n')
+
+    with open(env_path, 'w', encoding='utf-8') as f:
+        f.writelines(new_lines)
+
+    # Update config module
+    config.GEMINI_API_KEY = new_key
+    os.environ["GEMINI_API_KEY"] = new_key
+
+    # Reinitialize client
+    config.client = genai.Client(api_key=new_key, http_options={"api_version": "v1alpha"})
+
+    status = "✅ valide" if valid else "❌ invalide"
+    print(f"🔑 API key saved to .env ({status}, key: {new_key[:8]}...)")
+    state["_api_key_valid"] = valid
+    return valid
 
 
 # ─── Mouse Edge Monitor ────────────────────────────────────
@@ -152,19 +235,45 @@ async def ws_handler(websocket):
                 elif cmd == "MENU_ACTION":
                     action = data.get("action", "")
                     _handle_menu_action(action)
-                elif cmd == "GET_MICS":
+                elif cmd == "GET_SETTINGS":
                     state["_mic_panel_pending"] = True
                     state["radial_shown"] = False
                     _toggle_click_through(False)
-                    resolve_default_mic()
-                    mics = get_available_mics()
-                    print(f"\U0001f3a4 GET_MICS: {len(mics)} micros, selected={state['selected_mic_index']}")
+                    import config
+                    has_api_key = bool(config.GEMINI_API_KEY)
+                    # Respond IMMEDIATELY with cached mic data
+                    mics = get_available_mics()  # returns cache if <30s old
+                    print(f"\u2699\ufe0f GET_SETTINGS: {len(mics)} micros (cache), selected={state['selected_mic_index']}, has_key={has_api_key}")
                     response = json.dumps({
-                        "command": "MIC_LIST",
+                        "command": "SETTINGS_DATA",
                         "mics": mics,
-                        "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1
+                        "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
+                        "has_api_key": has_api_key,
+                        "key_valid": state["_api_key_valid"]
                     })
                     await websocket.send(response)
+                    # Refresh mics in background (if cache was stale, next open is instant)
+                    async def _bg_refresh_mics(ws):
+                        try:
+                            fresh = await asyncio.to_thread(refresh_mic_cache)
+                            await asyncio.to_thread(resolve_default_mic)
+                            if fresh != mics:
+                                update = json.dumps({
+                                    "command": "SETTINGS_DATA",
+                                    "mics": fresh,
+                                    "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
+                                    "has_api_key": has_api_key,
+                                    "key_valid": state["_api_key_valid"]
+                                })
+                                await ws.send(update)
+                        except Exception:
+                            pass
+                    asyncio.create_task(_bg_refresh_mics(websocket))
+                elif cmd == "SET_API_KEY":
+                    new_key = data.get("key", "").strip()
+                    if new_key:
+                        valid = await asyncio.to_thread(_update_api_key, new_key)
+                        await websocket.send(json.dumps({"command": "API_KEY_UPDATED", "success": True, "valid": valid}))
                 elif cmd == "SELECT_MIC":
                     mic_idx = int(data.get("index", -1))
                     if mic_idx >= 0:
