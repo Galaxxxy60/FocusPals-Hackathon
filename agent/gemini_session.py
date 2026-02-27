@@ -112,10 +112,14 @@ Category definitions:
 
 MULTI-MONITOR MONITORING:
 - You receive a screenshot of ALL screens + `open_windows` list + `active_window`.
-- **Classify based on what you can SEE in the screenshot.** If a distracting app is VISIBLE on any screen, classify BANNIE.
-- If a window is in `open_windows` but NOT visible in the screenshot (hidden behind another window), IGNORE it. The user may keep tabs for breaks.
-- Example: YouTube visible on Screen 2 while coding on Screen 1 → BANNIE (you can see it).
-- Example: YouTube in open_windows but fully hidden behind VS Code → IGNORE (you can't see it, user keeps it for break).
+- **Classify based on `active_window` FIRST.** The active window is the one the user is currently interacting with.
+- If `active_window` is a work tool (SANTE), classify SANTE even if a FLUX/creative app (Suno, Spotify, YT Music) is visible on another screen. Creative tools on a secondary screen are TOLERATED — the user may be passively listening to music while working.
+- Only classify BANNIE if the ACTIVE window is pure entertainment (Netflix, YouTube non-tuto, Steam, Reddit).
+- If a distracting app (BANNIE) is VISIBLE on a secondary screen but the user is actively working on Screen 1, classify as ZONE_GRISE with alignment 0.5 (mild concern, not urgent).
+- If a window is in `open_windows` but NOT visible in the screenshot (hidden behind another window), IGNORE it completely.
+- Example: Active window = VS Code, Screen 2 shows Suno → SANTE alignment=1.0 (creative tool passively open, user is coding).
+- Example: Active window = YouTube (non-tuto), Screen 2 shows VS Code → BANNIE alignment=0.0 (user chose to watch YouTube).
+- Example: Active window = VS Code, Screen 2 shows YouTube running → ZONE_GRISE alignment=0.5 (concerning but not urgent).
 
 FREE SESSION MODE (If current_task is NOT SET):
 - Any SANTE app → alignment = 1.0 (Zero suspicion, you assume they are working).
@@ -125,7 +129,8 @@ FREE SESSION MODE (If current_task is NOT SET):
 CRITICAL ACTIONS:
 - If S reaches 10.0 and category is BANNIE: YOU MUST yell at the user AND call `close_distracting_tab` with the `target_window` title from `open_windows`.
 - If S reaches 10.0 and category is ZONE_GRISE: YOU MUST scold the user loudly, but NEVER call `close_distracting_tab`. Messaging apps (Messenger, Discord, WhatsApp) should NOT be closed — just verbally reprimand.
-- NEVER call `close_distracting_tab` for PROCRASTINATION_PRODUCTIVE or SANTE.
+- NEVER call `close_distracting_tab` for PROCRASTINATION_PRODUCTIVE, SANTE, or FLUX.
+- NEVER call `close_distracting_tab` for creative tools (Suno, Spotify, Ableton, FL Studio, etc.) — these are PROTECTED apps.
 
 RULE OF SILENCE: During AUTOMATIC screen scans, you are MUZZLED by default — only call classify_screen, no words.
 However, when the user SPEAKS TO YOU directly (indicated by "UNMUZZLED: L'utilisateur te PARLE"), you MUST respond naturally as Tama in French. Be conversational, warm but strict. Keep it short (1-2 sentences). You can still call classify_screen while chatting.
@@ -629,11 +634,16 @@ async def run_gemini_loop(pya):
                                             elif fc.name == "close_distracting_tab":
                                                 reason = fc.args.get("reason", "Distraction")
                                                 target_window = fc.args.get("target_window", None)
-                                                update_display(TamaState.ANGRY, f"Action OS : Fermeture d'onglet ! ({reason})")
-
-                                                state["force_speech"] = True
 
                                                 result = execute_close_tab(reason, target_window)
+
+                                                # Only trigger angry animation if close actually worked
+                                                if result.get("status") == "success":
+                                                    update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
+                                                    state["force_speech"] = True
+                                                else:
+                                                    # Protected app or not found — no animation, just log
+                                                    print(f"  ⚠️ close_distracting_tab bloqué: {result.get('message', '?')}")
 
                                                 await session.send_tool_response(
                                                     function_responses=[
@@ -645,11 +655,12 @@ async def run_gemini_loop(pya):
                                                     ]
                                                 )
 
-                                                async def delay_reset():
-                                                    await asyncio.sleep(6)
-                                                    state["force_speech"] = False
-                                                    update_display(TamaState.CALM, "Je te surveille toujours.")
-                                                asyncio.create_task(delay_reset())
+                                                if result.get("status") == "success":
+                                                    async def delay_reset():
+                                                        await asyncio.sleep(6)
+                                                        state["force_speech"] = False
+                                                        update_display(TamaState.CALM, "Je te surveille toujours.")
+                                                    asyncio.create_task(delay_reset())
 
                                             elif fc.name == "set_current_task":
                                                 task = fc.args.get("task", "Unknown")
@@ -677,8 +688,10 @@ async def run_gemini_loop(pya):
                                 if hasattr(response, 'session_resumption_update') and response.session_resumption_update:
                                     sru = response.session_resumption_update
                                     if sru.resumable and sru.new_handle:
+                                        had_handle = state["_session_resume_handle"] is not None
                                         state["_session_resume_handle"] = sru.new_handle
-                                        print(f"  🔄 Session resume handle sauvegardé")
+                                        if not had_handle:
+                                            print(f"  🔄 Session resume handle activé")
 
                                 # ── Feature 8: GoAway — graceful disconnect warning ──
                                 if hasattr(response, 'go_away') and response.go_away:
