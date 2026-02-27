@@ -22,6 +22,7 @@ from config import (
     MODEL, state, application_path,
     FORMAT, CHANNELS, SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE, CHUNK_SIZE,
     BROWSER_KEYWORDS, USER_SPEECH_TIMEOUT, CONVERSATION_SILENCE_TIMEOUT,
+    CURIOUS_DURATION_THRESHOLD,
     compute_can_be_closed, compute_delta_s,
 )
 from audio import detect_voice_activity
@@ -257,6 +258,58 @@ def execute_close_tab(reason: str, target_window: str = None):
         return {"status": "success", "message": f"Closing '{target.title}' via {action}: {reason}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+async def grace_then_close(session, audio_out_queue, reason, target_window):
+    """Wait for audio to finish + 3s grace period. If user speaks, cancel the close."""
+    GRACE_SECONDS = 3.0
+    try:
+        # 1. Wait for audio to finish playing (Tama finishes her warning)
+        drain_start = time.time()
+        while not audio_out_queue.empty() and (time.time() - drain_start) < 8:
+            await asyncio.sleep(0.2)
+
+        # 2. Grace period — user can speak to cancel
+        grace_start = time.time()
+        user_intervened = False
+        print(f"  ⏳ Grace period {GRACE_SECONDS}s — l'utilisateur peut se justifier...")
+
+        while (time.time() - grace_start) < GRACE_SECONDS:
+            if (time.time() - state["user_spoke_at"]) < 2.0:
+                user_intervened = True
+                print(f"  🗣️ L'utilisateur se justifie — fermeture ANNULÉE")
+                break
+            await asyncio.sleep(0.3)
+
+        if user_intervened:
+            # Tell Gemini the close was cancelled — user is justifying
+            try:
+                await session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part(text=(
+                            "[SYSTEM] close_distracting_tab CANCELLED — l'utilisateur parle "
+                            "pour se justifier. Écoute-le et réévalue la situation. "
+                            "Si sa raison est valide, abaisse la suspicion."
+                        ))]
+                    ),
+                    turn_complete=True
+                )
+            except Exception:
+                pass
+        else:
+            # No intervention — execute close
+            result = execute_close_tab(reason, target_window)
+            if result.get("status") == "success":
+                update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
+                state["force_speech"] = True
+                await asyncio.sleep(6)
+                state["force_speech"] = False
+                update_display(TamaState.CALM, "Je te surveille toujours.")
+            else:
+                print(f"  ⚠️ close bloqué: {result.get('message', '?')}")
+    except Exception as e:
+        print(f"  ❌ Grace period error: {e}")
 
 
 # ─── Main Gemini Live Loop ──────────────────────────────────
@@ -535,7 +588,7 @@ async def run_gemini_loop(pya):
                             # Default: muzzled, but check for "curious" state
                             ali = state["current_alignment"]
                             cat = state["current_category"]
-                            if ali <= 0.5 and cat in ("FLUX", "ZONE_GRISE", "PROCRASTINATION_PRODUCTIVE") and active_duration > 90:
+                            if ali <= 0.5 and cat in ("FLUX", "ZONE_GRISE", "PROCRASTINATION_PRODUCTIVE") and active_duration > CURIOUS_DURATION_THRESHOLD:
                                 speak_directive = "CURIOUS: The user has been on an ambiguous/creative app for a while. You MAY ask a short, natural question about what they're doing. Still call classify_screen."
                             else:
                                 speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
@@ -650,54 +703,8 @@ async def run_gemini_loop(pya):
                                                     ]
                                                 )
 
-                                                # Run grace period in background task (non-blocking)
-                                                async def _grace_then_close(reason, target_window):
-                                                    try:
-                                                        # 1. Wait for audio to finish playing
-                                                        drain_start = time.time()
-                                                        while not audio_out_queue.empty() and (time.time() - drain_start) < 8:
-                                                            await asyncio.sleep(0.2)
-
-                                                        # 2. Grace period — user can speak to cancel
-                                                        GRACE_SECONDS = 3.0
-                                                        grace_start = time.time()
-                                                        user_intervened = False
-                                                        print(f"  ⏳ Grace period {GRACE_SECONDS}s — l'utilisateur peut se justifier...")
-
-                                                        while (time.time() - grace_start) < GRACE_SECONDS:
-                                                            if (time.time() - state["user_spoke_at"]) < 2.0:
-                                                                user_intervened = True
-                                                                print(f"  🗣️ L'utilisateur se justifie — fermeture ANNULÉE")
-                                                                break
-                                                            await asyncio.sleep(0.3)
-
-                                                        if user_intervened:
-                                                            # Tell Gemini the close was cancelled
-                                                            try:
-                                                                await session.send_client_content(
-                                                                    turns=types.Content(
-                                                                        role="user",
-                                                                        parts=[types.Part(text="[SYSTEM] close_distracting_tab CANCELLED — l'utilisateur parle pour se justifier. Écoute-le et réévalue la situation. Si sa raison est valide, abaisse la suspicion.")]
-                                                                    ),
-                                                                    turn_complete=True
-                                                                )
-                                                            except Exception:
-                                                                pass
-                                                        else:
-                                                            # No intervention — execute close
-                                                            result = execute_close_tab(reason, target_window)
-                                                            if result.get("status") == "success":
-                                                                update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
-                                                                state["force_speech"] = True
-                                                                await asyncio.sleep(6)
-                                                                state["force_speech"] = False
-                                                                update_display(TamaState.CALM, "Je te surveille toujours.")
-                                                            else:
-                                                                print(f"  ⚠️ close bloqué: {result.get('message', '?')}")
-                                                    except Exception as e:
-                                                        print(f"  ❌ Grace period error: {e}")
-
-                                                asyncio.create_task(_grace_then_close(reason, target_window))
+                                                # Run grace period in background (non-blocking)
+                                                asyncio.create_task(grace_then_close(session, audio_out_queue, reason, target_window))
 
                                             elif fc.name == "set_current_task":
                                                 task = fc.args.get("task", "Unknown")

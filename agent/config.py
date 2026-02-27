@@ -48,6 +48,7 @@ BREAK_CHECKPOINTS = [20, 40, 90, 120]   # Minutes before break suggestion
 BREAK_DURATIONS   = [5,  8,  15, 20]    # Break duration per tier (minutes)
 USER_SPEECH_TIMEOUT = 12.0              # Seconds to keep Tama unmuzzled
 CONVERSATION_SILENCE_TIMEOUT = 20.0     # Seconds of silence before ending convo
+CURIOUS_DURATION_THRESHOLD = 90         # Seconds on ambiguous app before Tama can ask
 
 # Protected windows that should NEVER be closed
 PROTECTED_WINDOWS = ["code", "cursor", "visual studio", "unreal", "blender", "word", "excel",
