@@ -95,7 +95,8 @@ def _send_settings_to_godot():
         "mics": mics,
         "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
         "has_api_key": has_api_key,
-        "key_valid": state["_api_key_valid"]
+        "key_valid": state["_api_key_valid"],
+        "tama_volume": state["tama_volume"]
     })
     main_loop = state["main_loop"]
     for ws_client in list(state["connected_ws_clients"]):
@@ -250,7 +251,8 @@ async def ws_handler(websocket):
                         "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
                         "has_api_key": has_api_key,
                         "key_valid": state["_api_key_valid"],
-                        "language": state["language"]
+                        "language": state["language"],
+                        "tama_volume": state["tama_volume"]
                     })
                     await websocket.send(response)
                     # Refresh mics in background (if cache was stale, next open is instant)
@@ -265,7 +267,8 @@ async def ws_handler(websocket):
                                     "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
                                     "has_api_key": has_api_key,
                                     "key_valid": state["_api_key_valid"],
-                                    "language": state["language"]
+                                    "language": state["language"],
+                                    "tama_volume": state["tama_volume"]
                                 })
                                 await ws.send(update)
                         except Exception:
@@ -285,6 +288,11 @@ async def ws_handler(websocket):
                     if lang in ("fr", "en"):
                         state["language"] = lang
                         print(f"🌐 Langue changée : {lang.upper()}")
+                elif cmd == "SET_TAMA_VOLUME":
+                    vol = float(data.get("volume", 1.0))
+                    state["tama_volume"] = max(0.0, min(1.0, vol))
+                    pct = int(state["tama_volume"] * 100)
+                    print(f"🔊 Volume Tama : {pct}%")
             except Exception as e:
                 print(f"⚠️ [WS] Erreur commande: {e}")
                 import traceback; traceback.print_exc()

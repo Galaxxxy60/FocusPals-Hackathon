@@ -158,6 +158,7 @@ Toutes les features sont configurées dans `gemini_session.py` via `LiveConnectC
 | **Session Resume** | `SessionResumptionConfig(handle=...)` | Deep Work + Convo | Handle persisté dans `state["_session_resume_handle"]`. À chaque reconnexion (~10 min), Tama reprend sans perte de contexte |
 | **GoAway Handler** | dans `receive_responses()` | Deep Work + Convo | Capte le message serveur avant déconnexion → reconnexion transparente |
 | **Proactive Audio** | `proactive_audio=True` | Deep Work + Convo | Gemini décide intelligemment quand répondre vs rester silencieux |
+| **Mood Tagging** | `report_mood` function call | Deep Work + Convo | Gemini s'auto-évalue émotionnellement (mood + intensity) à chaque prise de parole → pilote les animations Godot organiquement |
 
 ---
 
@@ -281,18 +282,79 @@ La langue de Tama est contrôlée par le **system prompt** (FR ou EN, configurab
 
 ---
 
-## 9. Godot Animation State Machine
+## 9. Godot Animation State Machine & Mood System
+
+### State Machine
 
 ```
 Phase.HIDDEN → Phase.PEEKING → Phase.HELLO (intro seul)
-                             → Phase.ACTIVE (suspicion loop)
-                             → Phase.STRIKING (S ≥ 9, freeze)
+                             → Phase.ACTIVE (mood-driven loop)
+                             → Phase.STRIKING (furious, freeze)
               Phase.LEAVING → Phase.HIDDEN
 ```
 
-Animations disponibles : `Peek`, `Hello`, `Suspicious`, `Angry`, `Strike`, `bye`
+### Mood System (`report_mood` tool)
 
-Tier mapping :
+Gemini **s'auto-évalue émotionnellement** à chaque prise de parole via le function call `report_mood({mood, intensity})`. Python traduit le mood en animation et l'envoie à Godot. **C'est Gemini qui pilote les animations**, pas des if/else hardcodés.
+
+```
+Gemini parle → report_mood({mood: "sarcastic", intensity: 0.8})
+  → Python: _MOOD_ANIM_MAP["sarcastic"][high] = "Angry"
+  → WebSocket: TAMA_ANIM {anim: "Angry", loop: true}
+  → WebSocket: TAMA_MOOD {mood: "sarcastic", intensity: 0.8}
+  → Godot joue l'animation
+```
+
+### 9 Moods disponibles
+
+| Mood | Description | Quand |
+|------|------------|-------|
+| `calm` | Tama est tranquille | Nicolas bosse, tout va bien |
+| `curious` | Elle observe, intéressée | App ambiguë, elle regarde |
+| `amused` | Elle trouve ça drôle | Blague, situation cocasse |
+| `proud` | Fierté tsundere discrète | Long streak de bon travail |
+| `disappointed` | Déçue, pas contente | Il a replongé après un warning |
+| `sarcastic` | Mode sarcasme activé | Il procrastine, elle commente |
+| `annoyed` | Visiblement agacée | Il continue malgré les rappels |
+| `angry` | En colère | Procrastination prolongée |
+| `furious` | Furieuse, prête à strike | Juste avant la fermeture |
+
+### Mood → Animation mapping
+
+| Mood | Intensité basse (< 0.4) | Intensité moyenne (0.4-0.7) | Intensité haute (> 0.7) |
+|------|------------------------|---------------------------|----------------------|
+| `calm` | Hello | Hello | Hello |
+| `curious` | Peek | Suspicious | Suspicious |
+| `amused` | Hello | Hello | Hello |
+| `proud` | Hello | Hello | Hello |
+| `disappointed` | Suspicious | Suspicious | Angry |
+| `sarcastic` | Suspicious | Suspicious | Angry |
+| `annoyed` | Suspicious | Angry | Angry |
+| `angry` | Angry | Angry | Angry |
+| `furious` | Angry | Angry | Strike |
+
+### Animations — État actuel & à créer
+
+| Animation | État | Utilisée par |
+|-----------|------|-------------|
+| `Peek` | ✅ Existe | Apparition initiale, curiosité basse |
+| `Hello` | ✅ Existe | Calm, amused, proud, conversation |
+| `Suspicious` | ✅ Existe | Curious, sarcastic, disappointed, annoyed (low) |
+| `Angry` | ✅ Existe | Angry, annoyed (high), furious (low/mid) |
+| `Strike` | ✅ Existe | Furious (high) — fermeture d'onglet |
+| `bye` | ✅ Existe | Tama se cache (fin de turn calme) |
+| `ArmsCrossed` | 🔲 À créer | Pre-action state (Phase 3) — avertissement visuel silencieux |
+| `Sigh` | 🔲 À créer | Disappointed — soupir de déception |
+| `HeadTilt` | 🔲 À créer | Curious — penche la tête, observe |
+| `SmugSmile` | 🔲 À créer | Proud, amused — sourire en coin tsundere |
+| `EyeRoll` | 🔲 À créer | Sarcastic — lève les yeux au ciel |
+| `Facepalm` | 🔲 À créer | Disappointed high — consternation |
+| `TapFoot` | 🔲 À créer | Annoyed — tape du pied, impatiente |
+
+> **Note** : Les animations "à créer" sont optionnelles. Le système fonctionne déjà avec les 6 animations existantes — les nouvelles enrichiront l'expressivité de Tama quand elles seront prêtes.
+
+### Legacy Tier mapping (fallback si report_mood ne fire pas)
+
 - Tier 0 (S < 3) → HIDDEN
 - Tier 1 (S 3-5) → Suspicious loop
 - Tier 2 (S 6-8) → Angry loop

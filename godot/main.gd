@@ -59,6 +59,7 @@ func _setup_radial_menu() -> void:
 	settings_panel.panel_closed.connect(_on_settings_panel_closed)
 	settings_panel.api_key_submitted.connect(_on_api_key_submitted)
 	settings_panel.language_changed.connect(_on_language_changed)
+	settings_panel.volume_changed.connect(_on_volume_changed)
 	print("🎛️ Radial menu + Settings panel initialisés OK")
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -110,6 +111,10 @@ func _on_language_changed(lang: String) -> void:
 	print("🌐 Language changed: " + lang)
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_LANGUAGE", "language": lang}))
+
+func _on_volume_changed(volume: float) -> void:
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "SET_TAMA_VOLUME", "volume": volume}))
 
 func _safe_restore_passthrough() -> void:
 	if radial_menu and radial_menu.is_open:
@@ -215,11 +220,12 @@ func _handle_message(raw: String) -> void:
 		var has_api_key = data.get("has_api_key", false)
 		var key_valid = data.get("key_valid", false)
 		var lang = data.get("language", "fr")
+		var tama_vol = data.get("tama_volume", 1.0)
 		print("⚙️ Settings: %d micros, selected: %d, API key: %s, valid: %s, lang: %s" % [mics.size(), selected, str(has_api_key), str(key_valid), lang])
 		if settings_panel:
 			if radial_menu and radial_menu.is_open:
 				radial_menu.close()
-			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang)
+			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol)
 		return
 	elif command == "API_KEY_UPDATED":
 		var valid = data.get("valid", false)
@@ -255,6 +261,14 @@ func _handle_message(raw: String) -> void:
 				else:
 					_play(anim_name, loop)
 					phase = Phase.ACTIVE
+		return
+	elif command == "TAMA_MOOD":
+		# Gemini's organic mood — stored for future AnimationTree transitions
+		var mood_name = data.get("mood", "calm")
+		var mood_intensity = data.get("intensity", 0.5)
+		# Store for potential use in animation blending / particle effects
+		# For now, the actual animation is handled via TAMA_ANIM sent alongside
+		print("🎭 Mood: " + mood_name + " (" + str(mood_intensity) + ")")
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──

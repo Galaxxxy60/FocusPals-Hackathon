@@ -233,3 +233,54 @@ def send_anim_to_godot(anim_name: str, loop: bool = False):
                 asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
         except Exception:
             pass
+
+
+# ─── Mood → Animation mapping (Gemini drives this) ─────────
+
+_MOOD_ANIM_MAP = {
+    # mood: (low_intensity_anim, mid_intensity_anim, high_intensity_anim)
+    "calm":         ("Hello", "Hello", "Hello"),
+    "curious":      ("Peek",  "Suspicious", "Suspicious"),
+    "amused":       ("Hello", "Hello", "Hello"),
+    "proud":        ("Hello", "Hello", "Hello"),
+    "disappointed": ("Suspicious", "Suspicious", "Angry"),
+    "sarcastic":    ("Suspicious", "Suspicious", "Angry"),
+    "annoyed":      ("Suspicious", "Angry", "Angry"),
+    "angry":        ("Angry", "Angry", "Angry"),
+    "furious":      ("Angry", "Angry", "Strike"),
+}
+
+
+def send_mood_to_godot(mood: str, intensity: float):
+    """
+    Map Gemini's reported mood+intensity to an animation and send to Godot.
+    Also sends a TAMA_MOOD message so Godot can do finer transitions later.
+    """
+    # Pick animation from mood map
+    anims = _MOOD_ANIM_MAP.get(mood, ("Hello", "Suspicious", "Angry"))
+    if intensity < 0.4:
+        anim = anims[0]
+    elif intensity < 0.7:
+        anim = anims[1]
+    else:
+        anim = anims[2]
+
+    # Loop for sustained moods, one-shot for strikes
+    loop = anim not in ("Strike", "bye", "Peek")
+
+    send_anim_to_godot(anim, loop)
+
+    print(f"  🎭 ┌─ MOOD REPORT ────────────────────")
+    print(f"  🎭 │ Mood: {mood} | Intensity: {intensity:.1f}")
+    print(f"  🎭 │ → Animation: {anim} ({'loop' if loop else 'once'})")
+    print(f"  🎭 └────────────────────────────────────")
+
+    # Also send the raw mood data to Godot for future AnimationTree use
+    mood_msg = json.dumps({"command": "TAMA_MOOD", "mood": mood, "intensity": intensity})
+    main_loop = state["main_loop"]
+    for ws_client in list(state["connected_ws_clients"]):
+        try:
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(ws_client.send(mood_msg), main_loop)
+        except Exception:
+            pass

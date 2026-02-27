@@ -108,8 +108,13 @@ state = {
     "tray_icon": None,
     "selected_mic_index": None,
     "language": "fr",  # "fr" or "en" — configurable via Settings panel
+    "tama_volume": 1.0,  # 0.0 (mute) to 1.0 (full) — Tama's voice volume
     "godot_process": None,
     "_session_resume_handle": None,
+    # Mood system (Phase 1)
+    "_current_mood": "calm",
+    "_current_mood_intensity": 0.0,
+    "_mood_anim_set": False,
 }
 
 

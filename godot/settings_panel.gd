@@ -7,6 +7,7 @@ signal mic_selected(mic_index: int)
 signal panel_closed()
 signal api_key_submitted(key: String)
 signal language_changed(lang: String)
+signal volume_changed(volume: float)
 
 var is_open := false
 var _progress := 0.0
@@ -29,6 +30,11 @@ var _api_key_checking := false
 var _language := "fr"
 var _lang_dropdown_open := false
 var _hovered_lang_item: int = -1  # index in LANGUAGES array
+
+# Volume slider
+var _tama_volume := 1.0  # 0.0 to 1.0
+var _volume_dragging := false
+var _hovered_volume := false
 
 # Scroll
 var _scroll_offset := 0.0       # px scrolled (0 = top)
@@ -59,6 +65,9 @@ const LANGUAGES := [
 	{"code": "fr", "label": "Francais"},
 	{"code": "en", "label": "English"},
 ]
+const VOLUME_SECTION_H := 50.0
+const VOLUME_SLIDER_H := 8.0
+const VOLUME_THUMB_R := 8.0
 const TITLE_H := 36.0
 const SCROLL_SPEED := 40.0
 const SCROLLBAR_WIDTH := 4.0
@@ -91,7 +100,7 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr") -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0) -> void:
 	_mics = mics
 	_selected_index = selected
 	_hovered_mic = -1
@@ -110,6 +119,9 @@ func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: boo
 	_language = lang
 	_lang_dropdown_open = false
 	_hovered_lang_item = -1
+	_tama_volume = clampf(volume, 0.0, 1.0)
+	_volume_dragging = false
+	_hovered_volume = false
 
 	is_open = true
 	visible = true
@@ -141,7 +153,7 @@ func close() -> void:
 func _content_height() -> float:
 	## Total height of ALL content (may exceed visible area)
 	var mic_items_h := ITEM_HEIGHT * _mics.size()
-	return SECTION_HEADER_H + mic_items_h + 12 + SECTION_HEADER_H + API_KEY_SECTION_H + 12 + SECTION_HEADER_H + LANG_SECTION_H + PADDING
+	return SECTION_HEADER_H + mic_items_h + 12 + SECTION_HEADER_H + API_KEY_SECTION_H + 12 + SECTION_HEADER_H + LANG_SECTION_H + 12 + SECTION_HEADER_H + VOLUME_SECTION_H + PADDING
 
 func _visible_height() -> float:
 	## Panel height capped to MAX_HEIGHT_RATIO of viewport
@@ -206,6 +218,22 @@ func _lang_dropdown_item_rect(index: int) -> Rect2:
 	var sel_r = _lang_selector_rect()
 	var items_count = LANGUAGES.size()
 	return Rect2(sel_r.position.x, sel_r.position.y - (items_count - index) * LANG_ITEM_H, LANG_DROPDOWN_W, LANG_ITEM_H)
+
+func _volume_section_content_y() -> float:
+	return _lang_section_content_y() + SECTION_HEADER_H + LANG_SECTION_H + 12
+
+func _volume_slider_rect() -> Rect2:
+	## The slider track rect (full width)
+	var pr := _panel_rect()
+	var cy := _volume_section_content_y() + SECTION_HEADER_H + 14
+	var sy := _content_y_to_screen(cy)
+	return Rect2(pr.position.x + PADDING + 30, sy, PANEL_WIDTH - PADDING * 2 - 70, VOLUME_SLIDER_H)
+
+func _volume_thumb_center() -> Vector2:
+	var sr := _volume_slider_rect()
+	var tx := sr.position.x + _tama_volume * sr.size.x
+	var ty := sr.position.y + sr.size.y * 0.5
+	return Vector2(tx, ty)
 
 func _content_area_rect() -> Rect2:
 	## The visible scrollable area (below the title)
@@ -284,6 +312,7 @@ func _update_hover() -> void:
 	var mouse := _canvas.get_local_mouse_position()
 	_hovered_mic = -1
 	_hovered_api_btn = -1
+	_hovered_volume = false
 	if _progress < 0.5:
 		return
 
@@ -298,8 +327,15 @@ func _update_hover() -> void:
 	if btn_r.has_point(mouse) and _is_in_content_area(btn_r.position.y):
 		_hovered_api_btn = 0
 
+	# Volume slider hover detection
+	var vol_sr := _volume_slider_rect()
+	var vol_thumb := _volume_thumb_center()
+	var vol_hover_rect := Rect2(vol_sr.position.x - 10, vol_sr.position.y - 12, vol_sr.size.x + 20, vol_sr.size.y + 24)
+	if vol_hover_rect.has_point(mouse) and _is_in_content_area(vol_sr.position.y):
+		_hovered_volume = true
+
 	# Auto-close if mouse moves far away
-	if is_open and _progress >= 0.9:
+	if is_open and _progress >= 0.9 and not _volume_dragging:
 		var pr := _panel_rect()
 		if mouse.x < pr.position.x - 80 or mouse.y < pr.position.y - 80 or mouse.y > pr.position.y + pr.size.y + 80:
 			close()
@@ -336,6 +372,32 @@ func _input(event: InputEvent) -> void:
 				_scroll_target = clampf(_scroll_target - SCROLL_SPEED, 0.0, _max_scroll)
 				get_viewport().set_input_as_handled()
 				return
+
+	# Volume slider drag
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		var vol_mouse := _canvas.get_local_mouse_position()
+		if event.pressed:
+			var vol_sr := _volume_slider_rect()
+			var vol_hover := Rect2(vol_sr.position.x - 10, vol_sr.position.y - 14, vol_sr.size.x + 20, vol_sr.size.y + 28)
+			if vol_hover.has_point(vol_mouse) and _is_in_content_area(vol_sr.position.y):
+				_volume_dragging = true
+				_tama_volume = clampf((vol_mouse.x - vol_sr.position.x) / vol_sr.size.x, 0.0, 1.0)
+				volume_changed.emit(_tama_volume)
+				get_viewport().set_input_as_handled()
+				return
+		else:
+			if _volume_dragging:
+				_volume_dragging = false
+				get_viewport().set_input_as_handled()
+				return
+
+	if event is InputEventMouseMotion and _volume_dragging:
+		var drag_mouse := _canvas.get_local_mouse_position()
+		var vol_sr := _volume_slider_rect()
+		_tama_volume = clampf((drag_mouse.x - vol_sr.position.x) / vol_sr.size.x, 0.0, 1.0)
+		volume_changed.emit(_tama_volume)
+		get_viewport().set_input_as_handled()
+		return
 
 	# Text input for API key editing
 	if _api_key_editing and event is InputEventKey and event.pressed:
@@ -653,6 +715,68 @@ func _draw_panel() -> void:
 					item_label = item_label + "  >"
 				_canvas.draw_string(font, Vector2(dir.position.x + 10, dir.position.y + dir.size.y * 0.7),
 					item_label, HORIZONTAL_ALIGNMENT_LEFT, int(dir.size.x - 16), 11, item_text_col)
+
+	# ── SECTION: Volume ──
+	var vol_cy := _volume_section_content_y()
+	var vol_sy := _content_y_to_screen(vol_cy)
+
+	# Separator above
+	if _is_in_content_area(vol_sy - 2):
+		_canvas.draw_line(Vector2(pr.position.x + PADDING, vol_sy - 2),
+			Vector2(pr.position.x + PANEL_WIDTH - PADDING, vol_sy - 2),
+			Color(0.3, 0.5, 0.8, 0.2 * alpha), 1.0)
+
+	if _is_in_content_area(vol_sy + 20):
+		_canvas.draw_string(font, Vector2(pr.position.x + PADDING, vol_sy + 20),
+			"\U0001f50a  Volume Tama", HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 13,
+			Color(0.6, 0.8, 1.0, alpha))
+
+	# Volume slider
+	var vol_sr := _volume_slider_rect()
+	if _is_in_content_area(vol_sr.position.y):
+		# Speaker icon (muted vs on)
+		var icon_x := pr.position.x + PADDING + 4
+		var icon_y := vol_sr.position.y + vol_sr.size.y * 0.5 + 4
+		var icon_text := "\U0001f507" if _tama_volume < 0.01 else "\U0001f509" if _tama_volume < 0.5 else "\U0001f50a"
+		_canvas.draw_string(font, Vector2(icon_x, icon_y),
+			icon_text, HORIZONTAL_ALIGNMENT_LEFT, 20, 12, Color(0.6, 0.75, 0.9, alpha))
+
+		# Track background
+		var track_color := Color(0.12, 0.12, 0.2, 0.8 * alpha)
+		_canvas.draw_rect(Rect2(vol_sr.position.x, vol_sr.position.y, vol_sr.size.x, vol_sr.size.y), track_color, true)
+		_canvas.draw_rect(Rect2(vol_sr.position.x, vol_sr.position.y, vol_sr.size.x, vol_sr.size.y),
+			Color(0.25, 0.4, 0.6, 0.3 * alpha), false, 1.0)
+
+		# Filled portion
+		var fill_w := _tama_volume * vol_sr.size.x
+		if fill_w > 1.0:
+			var fill_color := Color(0.3, 0.6, 1.0, 0.8 * alpha)
+			if _hovered_volume or _volume_dragging:
+				fill_color = Color(0.4, 0.7, 1.0, 0.9 * alpha)
+			_canvas.draw_rect(Rect2(vol_sr.position.x, vol_sr.position.y, fill_w, vol_sr.size.y), fill_color, true)
+
+		# Thumb
+		var thumb_c := _volume_thumb_center()
+		var thumb_r := VOLUME_THUMB_R
+		var thumb_color := Color(0.5, 0.75, 1.0, alpha)
+		var thumb_border := Color(0.3, 0.5, 0.8, 0.6 * alpha)
+		if _volume_dragging:
+			thumb_color = Color(0.6, 0.85, 1.0, alpha)
+			thumb_border = Color(0.4, 0.7, 1.0, 0.8 * alpha)
+			thumb_r = VOLUME_THUMB_R + 2
+		elif _hovered_volume:
+			thumb_color = Color(0.55, 0.8, 1.0, alpha)
+			thumb_r = VOLUME_THUMB_R + 1
+		_canvas.draw_circle(thumb_c, thumb_r + 1, thumb_border)
+		_canvas.draw_circle(thumb_c, thumb_r, thumb_color)
+
+		# Percentage text
+		var pct_text := str(int(_tama_volume * 100)) + "%"
+		var pct_x := vol_sr.position.x + vol_sr.size.x + 10
+		var pct_y := vol_sr.position.y + vol_sr.size.y * 0.5 + 5
+		_canvas.draw_string(font, Vector2(pct_x, pct_y),
+			pct_text, HORIZONTAL_ALIGNMENT_LEFT, 40, 11,
+			Color(0.7, 0.8, 0.9, alpha))
 
 	# ═══════════════════════════════════════════════════════
 	#  SCROLLBAR (only if content overflows)
