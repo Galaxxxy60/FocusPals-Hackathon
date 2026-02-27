@@ -243,14 +243,48 @@ def execute_close_tab(reason: str, target_window: str = None):
 async def run_gemini_loop(pya):
     """The core Gemini Live API loop — handles reconnection, mode switching, and all async tasks."""
 
+    # ── Shared VAD + affective config ──
+    _vad_config = types.RealtimeInputConfig(
+        automatic_activity_detection=types.AutomaticActivityDetection(
+            disabled=False,
+            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+            prefix_padding_ms=20,
+            silence_duration_ms=500,
+        )
+    )
+
+    # ── Voice: Kore = dynamique & expressive, colle au perso Tama ──
+    _voice_config = types.SpeechConfig(
+        voice_config=types.VoiceConfig(
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                voice_name="Kore"
+            )
+        )
+    )
+
+    # ── Session resume handle (persisted across reconnections) ──
+    resume_handle = state.get("_session_resume_handle")
+
     config_deep_work = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=types.Content(parts=[types.Part(text=SYSTEM_PROMPT)]),
         tools=TOOLS,
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
-        session_resumption=types.SessionResumptionConfig(),
+        session_resumption=types.SessionResumptionConfig(
+            handle=resume_handle,          # ← Feature 7: reprise seamless
+        ),
         proactivity=types.ProactivityConfig(proactive_audio=True),
+        enable_affective_dialog=True,      # ← Phase 1: dialogue émotionnel
+        speech_config=_voice_config,       # ← Feature 6: voix Tama
+        context_window_compression=types.ContextWindowCompressionConfig(
+            sliding_window=types.SlidingWindow(),  # ← Phase 1: sessions illimitées
+        ),
+        realtime_input_config=_vad_config, # ← Phase 1: VAD serveur
+        thinking_config=types.ThinkingConfig(
+            thinking_budget=512,           # ← Feature 5: raisonnement pour classify_screen
+        ),
     )
 
     config_conversation = types.LiveConnectConfig(
@@ -258,7 +292,14 @@ async def run_gemini_loop(pya):
         system_instruction=types.Content(parts=[types.Part(text=CONVO_PROMPT)]),
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
+        session_resumption=types.SessionResumptionConfig(
+            handle=resume_handle,          # ← Feature 7: reprise seamless
+        ),
         proactivity=types.ProactivityConfig(proactive_audio=True),
+        enable_affective_dialog=True,      # ← Phase 1: dialogue émotionnel
+        speech_config=_voice_config,       # ← Feature 6: voix Tama
+        realtime_input_config=_vad_config, # ← Phase 1: VAD serveur
+        # PAS de ThinkingConfig ici — latence en conversation vocale
     )
 
     while True:
@@ -631,6 +672,21 @@ async def run_gemini_loop(pya):
                                 if server and server.interrupted:
                                     while not audio_out_queue.empty():
                                         audio_out_queue.get_nowait()
+
+                                # ── Feature 7: capture session resume handle ──
+                                if hasattr(response, 'session_resumption_update') and response.session_resumption_update:
+                                    sru = response.session_resumption_update
+                                    if sru.resumable and sru.new_handle:
+                                        state["_session_resume_handle"] = sru.new_handle
+                                        print(f"  🔄 Session resume handle sauvegardé")
+
+                                # ── Feature 8: GoAway — graceful disconnect warning ──
+                                if hasattr(response, 'go_away') and response.go_away:
+                                    ga = response.go_away
+                                    time_left = getattr(ga, 'time_left', '?')
+                                    print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+                                    # Handle is already saved above → reconnection will use it
+
                         except asyncio.CancelledError:
                             break
                         except Exception as e:

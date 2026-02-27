@@ -1,7 +1,7 @@
 # FocusPals — Architecture & Technical Spec 🥷
 
 > **Ce document est la source de vérité unique pour tout agent IA ou développeur qui touche au projet.**
-> Dernière mise à jour : 2026-02-27
+> Dernière mise à jour : 2026-02-27 (Phase 1+2 Gemini features)
 
 ---
 
@@ -12,7 +12,7 @@ FocusPals est un **coach de productivité IA** sous forme de mascotte 3D desktop
 **Stack technique :**
 - **Backend** : Python 3.10+ (agent IA asynchrone)
 - **Frontend** : Godot 4.4 (overlay 3D transparent, ~25 MB RAM)
-- **IA** : Gemini Live API (audio bidirectionnel + vision temps réel)
+- **IA** : Gemini Live API `v1alpha` (audio bidirectionnel + vision + affective dialog + thinking)
 - **Communication** : WebSocket (`ws://localhost:8080`)
 - **OS** : Windows uniquement (WinAPI pour click-through, window management)
 
@@ -63,8 +63,9 @@ FocusPals/
 │              │                                              │
 │              ▼                                              │
 │    ┌─────────────────┐                                      │
-│    │ Gemini Live API  │  Audio bidirectionnel + Vision       │
+│    │ Gemini Live API  │  Audio + Vision + Affective Dialog   │
 │    │ (WebSocket)      │  Model: gemini-2.5-flash-native     │
+│    │  v1alpha         │  VAD serveur + Thinking + Kore voice │
 │    └─────────────────┘                                      │
 │              │                                              │
 │              ▼                                              │
@@ -113,6 +114,7 @@ Toutes les variables globales vivent dans un **dict unique** `state` dans `confi
 | `godot_hwnd` | int/None | Handle Windows de la fenêtre Godot |
 | `radial_shown` | bool | Menu radial actuellement visible |
 | `_mouse_was_away` | bool | Anti-loop : souris a quitté la zone edge |
+| `_session_resume_handle` | str/None | Handle Gemini pour reprise de session transparente |
 
 ---
 
@@ -142,7 +144,24 @@ Le cœur du système de surveillance. Deux fonctions dans `config.py` :
 
 ---
 
-## 6. Modes de fonctionnement
+## 6. Gemini Live API — Features actives
+
+Toutes les features sont configurées dans `gemini_session.py` via `LiveConnectConfig`. L'API version est `v1alpha`.
+
+| Feature | Config | Mode | Description |
+|---------|--------|------|-------------|
+| **Server-side VAD** | `AutomaticActivityDetection` | Deep Work + Convo | VAD native Gemini (remplace le VAD energy-based pour la gestion de tour). Sensitivity LOW, silence 500ms. Le VAD local (`audio.py`) reste pour le flag `user_spoke_at` |
+| **Affective Dialog** | `enable_affective_dialog=True` | Deep Work + Convo | Tama adapte son ton vocal à l'émotion de l'utilisateur (frustré → douce, excité → matche l'énergie) |
+| **Context Compression** | `SlidingWindow()` | Deep Work | Sessions illimitées (sans ça : 2 min max avec vidéo). Compression automatique de la fenêtre de contexte |
+| **Thinking** | `ThinkingConfig(budget=512)` | Deep Work seul | Raisonnement avant `classify_screen` — meilleure distinction YouTube tuto (SANTE) vs Netflix (BANNIE) |
+| **Voice Kore** | `SpeechConfig(voice_name="Kore")` | Deep Work + Convo | Voix dynamique et expressive qui colle au personnage Tama ninja-chat tsundere |
+| **Session Resume** | `SessionResumptionConfig(handle=...)` | Deep Work + Convo | Handle persisté dans `state["_session_resume_handle"]`. À chaque reconnexion (~10 min), Tama reprend sans perte de contexte |
+| **GoAway Handler** | dans `receive_responses()` | Deep Work + Convo | Capte le message serveur avant déconnexion → reconnexion transparente |
+| **Proactive Audio** | `proactive_audio=True` | Deep Work + Convo | Gemini décide intelligemment quand répondre vs rester silencieux |
+
+---
+
+## 7. Modes de fonctionnement
 
 ### Mode Libre (`current_mode = "libre"`)
 - Tama est inactive, attend une action utilisateur
@@ -151,9 +170,11 @@ Le cœur du système de surveillance. Deux fonctions dans `config.py` :
 
 ### Mode Deep Work (`current_mode = "deep_work"`)
 - Surveillance active : screen capture + classify_screen + suspicion
-- Audio bidirectionnel avec Gemini
+- Audio bidirectionnel avec Gemini (voix Kore, affective dialog)
+- **ThinkingConfig** activé (budget 512) pour classify_screen plus précis
+- **Context Window Compression** active (sessions illimitées)
 - Tama est muzzled par défaut, parle uniquement si :
-  - L'utilisateur parle (VAD, timeout 12s)
+  - L'utilisateur parle (VAD serveur + local, timeout 12s)
   - Suspicion > 6 pendant 45s (warning)
   - Suspicion ≥ 9 pendant 15s (critique)
   - Break reminder actif
@@ -162,11 +183,12 @@ Le cœur du système de surveillance. Deux fonctions dans `config.py` :
 ### Mode Conversation (`current_mode = "conversation"`)
 - Pas de surveillance, juste du chat naturel
 - Prompt différent (CONVO_PROMPT) — Tama est en mode pote
+- **Pas de ThinkingConfig** — priorité à la latence vocale faible
 - Auto-termine après 20s de silence
 
 ---
 
-## 7. WebSocket Protocol (Python ↔ Godot)
+## 8. WebSocket Protocol (Python ↔ Godot)
 
 ### Python → Godot (commandes)
 
@@ -214,7 +236,7 @@ Le cœur du système de surveillance. Deux fonctions dans `config.py` :
 
 ---
 
-## 8. Godot Animation State Machine
+## 9. Godot Animation State Machine
 
 ```
 Phase.HIDDEN → Phase.PEEKING → Phase.HELLO (intro seul)
@@ -233,7 +255,7 @@ Tier mapping :
 
 ---
 
-## 9. Radial Menu (Edge Detection)
+## 10. Radial Menu (Edge Detection)
 
 Le menu radial s'affiche quand la souris atteint le **bord droit** de l'écran (zone basse, 500px du bas).
 
@@ -249,7 +271,7 @@ Le menu radial s'affiche quand la souris atteint le **bord droit** de l'écran (
 
 ---
 
-## 10. Séquence de démarrage
+## 11. Séquence de démarrage
 
 ```
 Start_FocusPals.bat
@@ -265,7 +287,7 @@ Start_FocusPals.bat
 
 ---
 
-## 11. Dépendances Python
+## 12. Dépendances Python
 
 ```
 google-genai          # Gemini Live API
@@ -281,7 +303,7 @@ pywinauto             # UIA pour hand_animation.py
 
 ---
 
-## 12. Points d'attention pour les futurs agents
+## 13. Points d'attention pour les futurs agents
 
 > **⚠️ NE PAS casser ces invariants :**
 
@@ -290,5 +312,8 @@ pywinauto             # UIA pour hand_animation.py
 3. **Click-through Windows** — `WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW` sur la fenêtre Godot. Si on désactive click-through (pour le menu), il FAUT le réactiver après.
 4. **Le menu radial est géré par le thread `mouse_edge_monitor`** — c'est un thread Python natif, pas asyncio.
 5. **Build Godot** : exporter via `godot --export-release` (voir workflow `/build`).
-6. **VAD = Voice Activity Detection** — simple threshold energy-based, pas de ML.
+6. **VAD double** — Le VAD serveur Gemini gère les tours de parole et interruptions. Le VAD local (`audio.py`, energy-based 500 RMS) gère uniquement le flag `user_spoke_at` pour le muzzle system. Ne pas supprimer le VAD local.
 7. **`hand_animation.py`** est lancé en **subprocess** séparé (car pywinauto bloque).
+8. **API version `v1alpha`** — Nécessaire pour `enable_affective_dialog`, `proactivity`, et `ThinkingConfig`. Configuré dans `config.py`.
+9. **Session Resume Handle** — `state["_session_resume_handle"]` est mis à jour automatiquement par `receive_responses()`. Ne pas le reset manuellement.
+10. **ThinkingConfig** uniquement en Deep Work — NE PAS l'activer en mode conversation (ajoute de la latence vocale).

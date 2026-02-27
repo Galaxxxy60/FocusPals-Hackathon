@@ -106,6 +106,7 @@ state = {
     "tray_icon": None,
     "selected_mic_index": None,
     "godot_process": None,
+    "_session_resume_handle": None,
 }
 
 
