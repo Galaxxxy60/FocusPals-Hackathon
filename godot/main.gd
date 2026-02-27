@@ -31,13 +31,6 @@ var _prev_suspicion_tier: int = -1
 var _last_anim_command_time: float = 0.0  # Timestamp of last Python anim command
 const ANIM_COMMAND_COOLDOWN: float = 5.0  # Don't auto-anim if Python sent one recently
 
-# ─── Voice-Driven Animation ──────────────────────────────
-var _speaking_volume: float = 0.0         # Current voice volume from Gemini (0-1)
-var _target_speed: float = 1.0            # Target animation speed (smoothed)
-const SPEED_MIN: float = 0.3              # Idle speed when quiet
-const SPEED_MAX: float = 1.8              # Energetic speed when loud
-const SPEED_LERP: float = 8.0             # How fast speed follows volume
-
 # ─── Radial Settings Menu ─────────────────────────────────
 var radial_menu = null
 const RadialMenuScript = preload("res://settings_radial.gd")
@@ -164,13 +157,6 @@ func _process(delta: float) -> void:
 	if Time.get_unix_time_from_system() - _last_anim_command_time > ANIM_COMMAND_COOLDOWN:
 		_update_suspicion_anim()
 
-	# Voice-driven animation speed
-	if _anim_player and _anim_player.is_playing():
-		_target_speed = lerp(SPEED_MIN, SPEED_MAX, _speaking_volume)
-		_anim_player.speed_scale = lerp(_anim_player.speed_scale, _target_speed, SPEED_LERP * delta)
-		# Decay volume if no updates (smooth return to idle)
-		_speaking_volume = move_toward(_speaking_volume, 0.0, delta * 2.0)
-
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if data == null:
@@ -262,10 +248,6 @@ func _handle_message(raw: String) -> void:
 				else:
 					_play(anim_name, loop)
 					phase = Phase.ACTIVE
-		return
-	elif command == "TAMA_SPEAKING":
-		# Voice volume from Gemini — drives animation intensity
-		_speaking_volume = clampf(data.get("volume", 0.0), 0.0, 1.0)
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──

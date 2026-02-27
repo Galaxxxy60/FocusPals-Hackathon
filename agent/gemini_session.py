@@ -26,7 +26,7 @@ from config import (
     compute_can_be_closed, compute_delta_s,
 )
 from audio import detect_voice_activity
-from ui import TamaState, update_display, send_anim_to_godot, send_speaking_volume
+from ui import TamaState, update_display, send_anim_to_godot
 
 
 # ─── Screen Capture & Window Cache ──────────────────────────
@@ -263,11 +263,12 @@ def execute_close_tab(reason: str, target_window: str = None):
 async def grace_then_close(session, audio_out_queue, reason, target_window):
     """Wait for audio to finish + 3s grace period. If user speaks, cancel the close."""
     GRACE_SECONDS = 3.0
+    SPEAK_DELAY = 4.0  # Minimum wait for Tama to finish speaking
     try:
-        # 1. Wait for audio to finish playing (Tama finishes her warning)
-        drain_start = time.time()
-        while not audio_out_queue.empty() and (time.time() - drain_start) < 8:
-            await asyncio.sleep(0.2)
+        # 1. Wait a fixed minimum time for Tama to finish speaking
+        #    (can't rely on audio_out_queue — audio might not be queued yet)
+        print(f"  ⏳ Attente {SPEAK_DELAY}s pour que Tama finisse de parler...")
+        await asyncio.sleep(SPEAK_DELAY)
 
         # 2. Grace period — user can speak to cancel
         grace_start = time.time()
@@ -623,7 +624,6 @@ async def run_gemini_loop(pya):
 
                 async def receive_responses():
                     is_speaking = False
-                    _last_vol_send = 0.0  # throttle volume sends to ~5Hz
                     while True:
                         try:
                             turn = session.receive()
@@ -662,19 +662,9 @@ async def run_gemini_loop(pya):
 
                                             if is_speaking:
                                                 audio_out_queue.put_nowait(part.inline_data.data)
-                                                # Send volume to Godot for animation sync (throttled ~5Hz)
-                                                now = time.time()
-                                                if now - _last_vol_send > 0.2:
-                                                    _last_vol_send = now
-                                                    import struct
-                                                    samples = struct.unpack(f'<{len(part.inline_data.data)//2}h', part.inline_data.data)
-                                                    rms = (sum(s*s for s in samples) / len(samples)) ** 0.5
-                                                    vol = min(1.0, rms / 8000.0)  # normalize to 0-1
-                                                    send_speaking_volume(vol)
 
                                 if server and server.turn_complete:
                                     if is_speaking:
-                                        send_speaking_volume(0.0)  # Signal silence to Godot
                                         si = state["current_suspicion_index"]
                                         if si < 3:
                                             send_anim_to_godot("bye", False)

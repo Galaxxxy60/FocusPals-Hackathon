@@ -233,15 +233,3 @@ def send_anim_to_godot(anim_name: str, loop: bool = False):
                 asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
         except Exception:
             pass
-
-
-def send_speaking_volume(volume: float):
-    """Send Gemini's voice volume level (0.0-1.0) to Godot for animation sync."""
-    msg = json.dumps({"command": "TAMA_SPEAKING", "volume": round(volume, 2)})
-    main_loop = state["main_loop"]
-    for ws_client in list(state["connected_ws_clients"]):
-        try:
-            if main_loop and main_loop.is_running():
-                asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
-        except Exception:
-            pass
