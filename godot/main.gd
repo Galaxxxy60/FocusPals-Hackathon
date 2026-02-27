@@ -221,11 +221,12 @@ func _handle_message(raw: String) -> void:
 		var key_valid = data.get("key_valid", false)
 		var lang = data.get("language", "fr")
 		var tama_vol = data.get("tama_volume", 1.0)
+		var api_usage = data.get("api_usage", {})
 		print("⚙️ Settings: %d micros, selected: %d, API key: %s, valid: %s, lang: %s" % [mics.size(), selected, str(has_api_key), str(key_valid), lang])
 		if settings_panel:
 			if radial_menu and radial_menu.is_open:
 				radial_menu.close()
-			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol)
+			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, api_usage)
 		return
 	elif command == "API_KEY_UPDATED":
 		var valid = data.get("valid", false)

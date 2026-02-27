@@ -42,7 +42,7 @@ FocusPals/
     ├── focuspals.exe            # Build exporté (lancé par Python)
     ├── main.gd                  # Contrôleur principal (WebSocket client, animations, état)
     ├── settings_radial.gd       # Menu radial semi-circulaire (bord droit écran)
-    ├── settings_panel.gd        # Panel réglages (micro + clé API Gemini)
+    ├── settings_panel.gd       # Panel réglages (micro + clé API Gemini + API usage)
     └── scenes/main.tscn         # Scène 3D avec Tama.glb
 ```
 
@@ -246,7 +246,7 @@ La langue de Tama est contrôlée par le **system prompt** (FR ou EN, configurab
 | `SHOW_RADIAL` | — | Affiche le menu radial |
 | `HIDE_RADIAL` | — | Cache le menu radial |
 | `MIC_LIST` | `{mics: [...], selected: int}` | Lista des micros disponibles |
-| `SETTINGS_DATA` | `{mics: [...], selected: int, has_api_key: bool}` | Données settings complètes |
+| `SETTINGS_DATA` | `{mics: [...], selected: int, has_api_key: bool, api_usage: {...}}` | Données settings complètes + stats API |
 | `API_KEY_UPDATED` | `{success: bool}` | Confirmation MAJ clé API |
 | `QUIT` | — | Fermeture propre |
 
@@ -419,7 +419,7 @@ pywinauto             # UIA pour hand_animation.py
 3. **Click-through Windows** — `WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW` sur la fenêtre Godot. Si on désactive click-through (pour le menu), il FAUT le réactiver après.
 4. **Le menu radial est géré par le thread `mouse_edge_monitor`** — c'est un thread Python natif, pas asyncio.
 5. **Build Godot** : exporter via `godot --export-release` (voir workflow `/build`).
-6. **VAD double** — Le VAD serveur Gemini gère les tours de parole et interruptions. Le VAD local (`audio.py`, energy-based 500 RMS) gère uniquement le flag `user_spoke_at` pour le muzzle system. Ne pas supprimer le VAD local.
+6. **VAD double** — Le VAD serveur Gemini gère les tours de parole et interruptions. Le VAD local (`audio.py`, energy-based 500 RMS) gère le flag `user_spoke_at` pour le muzzle system **ET le audio gate** (ne stream que quand il y a de la voix + 500ms pre-buffer + 500ms post-tail). Ne pas supprimer le VAD local.
 7. **`hand_animation.py`** est lancé en **subprocess** séparé (car pywinauto bloque).
 8. **API version `v1alpha`** — Nécessaire pour `enable_affective_dialog`, `proactivity`, et `ThinkingConfig`. Configuré dans `config.py`.
 9. **Session Resume Handle** — `state["_session_resume_handle"]` est mis à jour automatiquement par `receive_responses()`. Ne pas le reset manuellement.

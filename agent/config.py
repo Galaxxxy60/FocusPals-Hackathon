@@ -120,6 +120,14 @@ state = {
     "_mood_recent_infractions": 0,
     "_mood_compliance_streak_start": None,
     "_mood_last_infraction_time": 0,
+    # API Usage tracking
+    "_api_connections": 0,           # Number of Gemini Live connections
+    "_api_screen_pulses": 0,         # Number of screen pulses sent
+    "_api_function_calls": 0,        # Total function calls received
+    "_api_audio_chunks_sent": 0,     # Audio chunks sent to Gemini
+    "_api_audio_chunks_recv": 0,     # Audio chunks received from Gemini
+    "_api_connect_time_start": 0,    # Timestamp of current connection start
+    "_api_total_connect_secs": 0.0,  # Cumulative connection time in seconds
 }
 
 

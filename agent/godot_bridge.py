@@ -85,6 +85,22 @@ def _validate_api_key(key: str) -> bool:
         return False
 
 
+def _get_api_usage_stats() -> dict:
+    """Collect API usage stats from state for display in settings."""
+    total_secs = state["_api_total_connect_secs"]
+    # Add live connection time if currently connected
+    if state["_api_connect_time_start"] > 0:
+        total_secs += time.time() - state["_api_connect_time_start"]
+    return {
+        "connections": state["_api_connections"],
+        "screen_pulses": state["_api_screen_pulses"],
+        "function_calls": state["_api_function_calls"],
+        "audio_sent": state["_api_audio_chunks_sent"],
+        "audio_recv": state["_api_audio_chunks_recv"],
+        "connect_secs": int(total_secs),
+    }
+
+
 def _send_settings_to_godot():
     """Send current settings (mics + cached API key status) to all connected Godot clients."""
     import config
@@ -96,7 +112,8 @@ def _send_settings_to_godot():
         "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
         "has_api_key": has_api_key,
         "key_valid": state["_api_key_valid"],
-        "tama_volume": state["tama_volume"]
+        "tama_volume": state["tama_volume"],
+        "api_usage": _get_api_usage_stats()
     })
     main_loop = state["main_loop"]
     for ws_client in list(state["connected_ws_clients"]):
@@ -252,7 +269,8 @@ async def ws_handler(websocket):
                         "has_api_key": has_api_key,
                         "key_valid": state["_api_key_valid"],
                         "language": state["language"],
-                        "tama_volume": state["tama_volume"]
+                        "tama_volume": state["tama_volume"],
+                        "api_usage": _get_api_usage_stats()
                     })
                     await websocket.send(response)
                     # Refresh mics in background (if cache was stale, next open is instant)
@@ -268,7 +286,8 @@ async def ws_handler(websocket):
                                     "has_api_key": has_api_key,
                                     "key_valid": state["_api_key_valid"],
                                     "language": state["language"],
-                                    "tama_volume": state["tama_volume"]
+                                    "tama_volume": state["tama_volume"],
+                                    "api_usage": _get_api_usage_stats()
                                 })
                                 await ws.send(update)
                         except Exception:

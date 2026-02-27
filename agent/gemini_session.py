@@ -512,6 +512,8 @@ async def run_gemini_loop(pya):
             async with cfg.client.aio.live.connect(model=MODEL, config=active_config) as session:
 
                 _consecutive_failures = 0  # Connection succeeded → reset failure counter
+                state["_api_connections"] += 1
+                state["_api_connect_time_start"] = time.time()
                 update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
 
                 audio_out_queue = asyncio.Queue()
@@ -576,6 +578,19 @@ async def run_gemini_loop(pya):
                     current_mic = _resolve_mic_index()
                     stream, current_mic = await asyncio.to_thread(_open_mic_stream, current_mic)
                     _last_failed_mic = None
+
+                    # ── Client-side audio gate ──
+                    # Only send audio when voice is detected.
+                    # Pre-buffer (ring buffer) captures ~500ms BEFORE voice so the
+                    # first syllable isn't clipped. Post-tail keeps sending ~500ms
+                    # AFTER voice stops to capture sentence endings.
+                    from collections import deque
+                    PRE_BUFFER_CHUNKS = 8    # ~512ms at 16kHz/1024
+                    POST_TAIL_CHUNKS = 8     # ~512ms after silence
+                    pre_buffer = deque(maxlen=PRE_BUFFER_CHUNKS)
+                    is_streaming = False
+                    silence_count = 0
+
                     try:
                         while True:
                             wanted_mic = _resolve_mic_index()
@@ -593,9 +608,32 @@ async def run_gemini_loop(pya):
                                 current_mic = actual_mic
 
                             data = await asyncio.to_thread(stream.read, CHUNK_SIZE, exception_on_overflow=False)
-                            if detect_voice_activity(data):
+                            voice_active = detect_voice_activity(data)
+                            blob = types.Blob(data=data, mime_type="audio/pcm")
+
+                            if voice_active:
                                 state["user_spoke_at"] = time.time()
-                            await audio_in_queue.put(types.Blob(data=data, mime_type="audio/pcm"))
+                                silence_count = 0
+
+                                if not is_streaming:
+                                    # Voice just started → flush pre-buffer first
+                                    is_streaming = True
+                                    for buffered in pre_buffer:
+                                        await audio_in_queue.put(buffered)
+                                    pre_buffer.clear()
+
+                                await audio_in_queue.put(blob)
+                            else:
+                                if is_streaming:
+                                    # Post-tail: keep sending briefly after voice stops
+                                    silence_count += 1
+                                    await audio_in_queue.put(blob)
+                                    if silence_count >= POST_TAIL_CHUNKS:
+                                        is_streaming = False
+                                        silence_count = 0
+                                else:
+                                    # Silent — just buffer, don't send
+                                    pre_buffer.append(blob)
                     except asyncio.CancelledError:
                         try:
                             stream.close()
@@ -607,6 +645,7 @@ async def run_gemini_loop(pya):
                         blob = await audio_in_queue.get()
                         try:
                             await session.send_realtime_input(audio=blob)
+                            state["_api_audio_chunks_sent"] += 1
                         except Exception:
                             print("⚠️  Audio stream interrompu (session fermée)")
                             break
@@ -668,6 +707,7 @@ async def run_gemini_loop(pya):
                         blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
                         try:
                             await session.send_realtime_input(media=blob)
+                            state["_api_screen_pulses"] += 1
                         except Exception:
                             print("⚠️  Video stream interrompu (session fermée)")
                             break
@@ -804,6 +844,7 @@ async def run_gemini_loop(pya):
 
                                             if is_speaking:
                                                 audio_out_queue.put_nowait(part.inline_data.data)
+                                                state["_api_audio_chunks_recv"] += 1
 
                                 if server and server.turn_complete:
                                     if is_speaking:
@@ -816,6 +857,7 @@ async def run_gemini_loop(pya):
                                 if response.tool_call:
                                     try:
                                         for fc in response.tool_call.function_calls:
+                                            state["_api_function_calls"] += 1
                                             if fc.name == "classify_screen":
                                                 cat = fc.args.get("category", "SANTE")
                                                 ali = float(fc.args.get("alignment", 1.0))
@@ -1010,6 +1052,11 @@ async def run_gemini_loop(pya):
                 import traceback
                 print(f"\n❌ [ERROR] {e}")
                 traceback.print_exc()
+        finally:
+            # Accumulate connection time
+            if state["_api_connect_time_start"] > 0:
+                state["_api_total_connect_secs"] += time.time() - state["_api_connect_time_start"]
+                state["_api_connect_time_start"] = 0
 
         # Don't reset to "libre" during active session reconnection
         if not state["is_session_active"] and state["current_mode"] != "conversation":

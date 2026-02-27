@@ -36,6 +36,9 @@ var _tama_volume := 1.0  # 0.0 to 1.0
 var _volume_dragging := false
 var _hovered_volume := false
 
+# API Usage stats
+var _api_usage := {}
+
 # Scroll
 var _scroll_offset := 0.0       # px scrolled (0 = top)
 var _scroll_target := 0.0       # smooth scroll target
@@ -68,6 +71,7 @@ const LANGUAGES := [
 const VOLUME_SECTION_H := 50.0
 const VOLUME_SLIDER_H := 8.0
 const VOLUME_THUMB_R := 8.0
+const API_USAGE_SECTION_H := 130.0
 const TITLE_H := 36.0
 const SCROLL_SPEED := 40.0
 const SCROLLBAR_WIDTH := 4.0
@@ -100,7 +104,7 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0) -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, api_usage: Dictionary = {}) -> void:
 	_mics = mics
 	_selected_index = selected
 	_hovered_mic = -1
@@ -122,6 +126,7 @@ func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: boo
 	_tama_volume = clampf(volume, 0.0, 1.0)
 	_volume_dragging = false
 	_hovered_volume = false
+	_api_usage = api_usage
 
 	is_open = true
 	visible = true
@@ -153,7 +158,7 @@ func close() -> void:
 func _content_height() -> float:
 	## Total height of ALL content (may exceed visible area)
 	var mic_items_h := ITEM_HEIGHT * _mics.size()
-	return SECTION_HEADER_H + mic_items_h + 12 + SECTION_HEADER_H + API_KEY_SECTION_H + 12 + SECTION_HEADER_H + LANG_SECTION_H + 12 + SECTION_HEADER_H + VOLUME_SECTION_H + PADDING
+	return SECTION_HEADER_H + mic_items_h + 12 + SECTION_HEADER_H + API_KEY_SECTION_H + 12 + SECTION_HEADER_H + LANG_SECTION_H + 12 + SECTION_HEADER_H + VOLUME_SECTION_H + 12 + SECTION_HEADER_H + API_USAGE_SECTION_H + PADDING
 
 func _visible_height() -> float:
 	## Panel height capped to MAX_HEIGHT_RATIO of viewport
@@ -221,6 +226,9 @@ func _lang_dropdown_item_rect(index: int) -> Rect2:
 
 func _volume_section_content_y() -> float:
 	return _lang_section_content_y() + SECTION_HEADER_H + LANG_SECTION_H + 12
+
+func _api_usage_section_content_y() -> float:
+	return _volume_section_content_y() + SECTION_HEADER_H + VOLUME_SECTION_H + 12
 
 func _volume_slider_rect() -> Rect2:
 	## The slider track rect (full width)
@@ -778,6 +786,82 @@ func _draw_panel() -> void:
 			pct_text, HORIZONTAL_ALIGNMENT_LEFT, 40, 11,
 			Color(0.7, 0.8, 0.9, alpha))
 
+	# ── SECTION: API Usage ──
+	var usage_cy := _api_usage_section_content_y()
+	var usage_sy := _content_y_to_screen(usage_cy)
+
+	# Separator above
+	if _is_in_content_area(usage_sy - 2):
+		_canvas.draw_line(Vector2(pr.position.x + PADDING, usage_sy - 2),
+			Vector2(pr.position.x + PANEL_WIDTH - PADDING, usage_sy - 2),
+			Color(0.3, 0.5, 0.8, 0.2 * alpha), 1.0)
+
+	if _is_in_content_area(usage_sy + 20):
+		_canvas.draw_string(font, Vector2(pr.position.x + PADDING, usage_sy + 20),
+			"\U0001f4ca  API Usage", HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 13,
+			Color(0.6, 0.8, 1.0, alpha))
+
+	# Stats rows — 2 columns
+	var row_h := 18.0
+	var col1_x := pr.position.x + PADDING + 6
+	var col2_x := pr.position.x + PADDING + PANEL_WIDTH * 0.5
+	var val_offset := 120.0  # distance from label start to value
+	var val2_offset := 100.0
+	var label_color := Color(0.55, 0.65, 0.75, alpha)
+	var value_color := Color(0.85, 0.92, 1.0, alpha)
+	var icon_size := 10
+
+	var row0_cy := usage_cy + SECTION_HEADER_H + 8
+	# Row 0: Connections + Connection time
+	var r0_sy := _content_y_to_screen(row0_cy)
+	if _is_in_content_area(r0_sy):
+		_canvas.draw_string(font, Vector2(col1_x, r0_sy + row_h * 0.7),
+			"\U0001f50c Connexions", HORIZONTAL_ALIGNMENT_LEFT, int(val_offset), icon_size, label_color)
+		var conn_val := str(int(_api_usage.get("connections", 0)))
+		_canvas.draw_string(font, Vector2(col1_x + val_offset, r0_sy + row_h * 0.7),
+			conn_val, HORIZONTAL_ALIGNMENT_LEFT, 60, icon_size, value_color)
+		_canvas.draw_string(font, Vector2(col2_x, r0_sy + row_h * 0.7),
+			"\u23f1 Temps co.", HORIZONTAL_ALIGNMENT_LEFT, int(val2_offset), icon_size, label_color)
+		var secs := int(_api_usage.get("connect_secs", 0))
+		var time_str := _format_duration(secs)
+		_canvas.draw_string(font, Vector2(col2_x + val2_offset, r0_sy + row_h * 0.7),
+			time_str, HORIZONTAL_ALIGNMENT_LEFT, 80, icon_size, value_color)
+
+	# Row 1: Screen pulses + Function calls
+	var r1_sy := _content_y_to_screen(row0_cy + row_h + 4)
+	if _is_in_content_area(r1_sy):
+		_canvas.draw_string(font, Vector2(col1_x, r1_sy + row_h * 0.7),
+			"\U0001f4f8 Scans", HORIZONTAL_ALIGNMENT_LEFT, int(val_offset), icon_size, label_color)
+		var pulses_val := _format_number(int(_api_usage.get("screen_pulses", 0)))
+		_canvas.draw_string(font, Vector2(col1_x + val_offset, r1_sy + row_h * 0.7),
+			pulses_val, HORIZONTAL_ALIGNMENT_LEFT, 60, icon_size, value_color)
+		_canvas.draw_string(font, Vector2(col2_x, r1_sy + row_h * 0.7),
+			"\u2699 Fn calls", HORIZONTAL_ALIGNMENT_LEFT, int(val2_offset), icon_size, label_color)
+		var fc_val := _format_number(int(_api_usage.get("function_calls", 0)))
+		_canvas.draw_string(font, Vector2(col2_x + val2_offset, r1_sy + row_h * 0.7),
+			fc_val, HORIZONTAL_ALIGNMENT_LEFT, 60, icon_size, value_color)
+
+	# Row 2: Audio sent + Audio received
+	var r2_sy := _content_y_to_screen(row0_cy + (row_h + 4) * 2)
+	if _is_in_content_area(r2_sy):
+		_canvas.draw_string(font, Vector2(col1_x, r2_sy + row_h * 0.7),
+			"\U0001f3a4 Audio \u2191", HORIZONTAL_ALIGNMENT_LEFT, int(val_offset), icon_size, label_color)
+		var audio_sent := _format_number(int(_api_usage.get("audio_sent", 0)))
+		_canvas.draw_string(font, Vector2(col1_x + val_offset, r2_sy + row_h * 0.7),
+			audio_sent, HORIZONTAL_ALIGNMENT_LEFT, 60, icon_size, value_color)
+		_canvas.draw_string(font, Vector2(col2_x, r2_sy + row_h * 0.7),
+			"\U0001f50a Audio \u2193", HORIZONTAL_ALIGNMENT_LEFT, int(val2_offset), icon_size, label_color)
+		var audio_recv := _format_number(int(_api_usage.get("audio_recv", 0)))
+		_canvas.draw_string(font, Vector2(col2_x + val2_offset, r2_sy + row_h * 0.7),
+			audio_recv, HORIZONTAL_ALIGNMENT_LEFT, 60, icon_size, value_color)
+
+	# Subtle "since app start" note
+	var note_sy := _content_y_to_screen(row0_cy + (row_h + 4) * 3 + 4)
+	if _is_in_content_area(note_sy):
+		_canvas.draw_string(font, Vector2(col1_x, note_sy + 8),
+			"Depuis le lancement", HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 9,
+			Color(0.4, 0.45, 0.55, 0.6 * alpha))
+
 	# ═══════════════════════════════════════════════════════
 	#  SCROLLBAR (only if content overflows)
 	# ═══════════════════════════════════════════════════════
@@ -894,3 +978,24 @@ func _draw_mic_item(index: int, alpha: float, ca: Rect2) -> void:
 		var by := iy - bs.y * 0.3
 		_canvas.draw_rect(Rect2(bx - 4, by - 2, bs.x + 8, bs.y + 4), Color(0.2, 0.8, 0.4, 0.3 * alpha), true)
 		_canvas.draw_string(font, Vector2(bx, by + bs.y - 1), "ACTIF", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(0.4, 1.0, 0.6, alpha))
+
+# ─── Formatting Helpers ────────────────────────────────────
+
+func _format_duration(total_secs: int) -> String:
+	if total_secs < 60:
+		return str(total_secs) + "s"
+	var mins := total_secs / 60
+	var secs := total_secs % 60
+	if mins < 60:
+		return str(mins) + "m " + str(secs) + "s"
+	var hours := mins / 60
+	mins = mins % 60
+	return str(hours) + "h " + str(mins) + "m"
+
+func _format_number(n: int) -> String:
+	if n < 1000:
+		return str(n)
+	elif n < 10000:
+		return str(n / 1000) + "." + str((n % 1000) / 100) + "k"
+	else:
+		return str(n / 1000) + "k"
