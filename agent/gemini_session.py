@@ -740,9 +740,14 @@ async def run_gemini_loop(pya):
 
                         task_info = f"scheduled_task: {state['current_task']}" if state["current_task"] else "scheduled_task: NOT SET (ask the user!)"
                         tama_state = state["current_tama_state"]
+
+                        # Mood context (Phase 2) — tells Gemini how Tama feels
+                        from mood_engine import get_mood_context
+                        mood_ctx = get_mood_context()
+
                         if tama_state == TamaState.CALM and audio_out_queue.empty():
                             await session.send_realtime_input(
-                                text=f"[SYSTEM] active_window: {active_title} | open_windows: {open_win_titles} | duration: {active_duration}s | S: {state['current_suspicion_index']:.1f} | A: {state['current_alignment']} | {task_info}. Call classify_screen. {speak_directive}"
+                                text=f"[SYSTEM] active_window: {active_title} | open_windows: {open_win_titles} | duration: {active_duration}s | S: {state['current_suspicion_index']:.1f} | A: {state['current_alignment']} | {task_info}. [MOOD] {mood_ctx} — Call classify_screen + report_mood. {speak_directive}"
                             )
 
                         if state["current_suspicion_index"] <= 2:
@@ -826,8 +831,15 @@ async def run_gemini_loop(pya):
                                                 delta = compute_delta_s(ali, cat)
                                                 state["current_suspicion_index"] = max(0.0, min(10.0, state["current_suspicion_index"] + delta))
 
+                                                # Track mood (Phase 2)
+                                                from mood_engine import track_infraction, track_compliance
+                                                if ali <= 0.0:
+                                                    track_infraction()
+                                                elif ali >= 1.0:
+                                                    track_compliance()
+
                                                 s_int = int(state["current_suspicion_index"])
-                                                print(f"  🔍 S:{s_int}/10 | A:{ali} | Cat:{cat} | ΔS:{delta:+.1f} — {reason}")
+                                                print(f"  🔍 S:{s_int}/10 | A:{ali} | Cat:{cat} | ΔS:{delta:+.1f} | Mood bias:{state.get('_mood_bias', 0):.1f} — {reason}")
 
                                                 # NOTE: No auto-close here. Gemini handles all tab closing
                                                 # through CRITICAL UNMUZZLED → speak first → call close_distracting_tab.

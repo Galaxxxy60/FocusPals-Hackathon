@@ -115,6 +115,11 @@ state = {
     "_current_mood": "calm",
     "_current_mood_intensity": 0.0,
     "_mood_anim_set": False,
+    # Mood engine (Phase 2)
+    "_mood_bias": 0.0,
+    "_mood_recent_infractions": 0,
+    "_mood_compliance_streak_start": None,
+    "_mood_last_infraction_time": 0,
 }
 
 
