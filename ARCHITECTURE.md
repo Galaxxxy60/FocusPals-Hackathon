@@ -128,7 +128,7 @@ Le cœur du système de surveillance. Deux fonctions dans `config.py` :
 |-----------|-------|------------|------|--------|---------------------------|
 | 1.0 (Aligné) | -2.0 | -2.0 | -2.0 | +0.2 | -2.0 |
 | 0.5 (Doute)  | +0.2 | +0.2 | +0.2 | +0.2 | +0.2 |
-| 0.0 (Misaligned) | +1.0 | +1.0 | +0.5 | +5.0 | +0.5 |
+| 0.0 (Misaligned) | +1.0 | +1.0 | +0.5 | +2.0 | +0.5 |
 
 ### Seuils de comportement
 
@@ -158,6 +158,51 @@ Toutes les features sont configurées dans `gemini_session.py` via `LiveConnectC
 | **Session Resume** | `SessionResumptionConfig(handle=...)` | Deep Work + Convo | Handle persisté dans `state["_session_resume_handle"]`. À chaque reconnexion (~10 min), Tama reprend sans perte de contexte |
 | **GoAway Handler** | dans `receive_responses()` | Deep Work + Convo | Capte le message serveur avant déconnexion → reconnexion transparente |
 | **Proactive Audio** | `proactive_audio=True` | Deep Work + Convo | Gemini décide intelligemment quand répondre vs rester silencieux |
+
+---
+
+## 6bis. Architecture Audio — Speech-to-Speech Natif
+
+### Modèle
+
+FocusPals utilise **`gemini-2.5-flash-native-audio-latest`** via l'API **Gemini Live** (WebSocket bidirectionnel). C'est du **speech-to-speech natif** : un seul modèle prend de l'audio brut en entrée et génère de l'audio brut en sortie. **Pas de pipeline STT → LLM → TTS** — une seule inférence fait tout.
+
+### Pipeline streaming
+
+```
+ENTRÉE (utilisateur → Gemini) :
+  Microphone → PyAudio (PCM 16-bit, 16kHz, mono)
+    → chunks de 1024 samples (~64ms)
+    → audio_in_queue (maxsize=2, anti-accumulation)
+    → session.send_realtime_input(audio=blob)
+    → WebSocket vers Gemini Live API
+
+SORTIE (Gemini → utilisateur) :
+  Gemini Live API → WebSocket
+    → part.inline_data.data (PCM 24kHz)
+    → audio_out_queue (unbounded)
+    → PyAudio speaker (lecture immédiate chunk par chunk)
+```
+
+### Latence
+
+| Source | Durée estimée | Côté |
+|--------|--------------|------|
+| Micro → chunk buffer | ~64ms (1024/16kHz) | Client |
+| Réseau aller (WebSocket) | ~50-150ms | Réseau |
+| Inférence Gemini (speech-to-speech) | ~300-600ms | Serveur Google |
+| Speaker buffer | ~43ms (1024/24kHz) | Client |
+| **Total perçu** | **~450-850ms** | — |
+
+> **~80% de la latence est côté serveur** (inférence du modèle). Le client est déjà optimisé : pas de buffering, streaming chunk-par-chunk immédiat, queue bornée en entrée.
+
+### Transcriptions
+
+Les options `input_audio_transcription` et `output_audio_transcription` sont activées mais **ne font PAS partie du pipeline principal**. Elles fournissent des transcriptions texte à côté du flux audio pour le debug/logging (affichage dans la console Python et détection de `user_spoke_at`).
+
+### Langue
+
+La langue de Tama est contrôlée par le **system prompt** (FR ou EN, configurable dans Settings). Le modèle native audio adapte automatiquement sa prononciation — pas de changement de voix ou de TTS nécessaire.
 
 ---
 

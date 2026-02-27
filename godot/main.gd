@@ -58,6 +58,7 @@ func _setup_radial_menu() -> void:
 	settings_panel.mic_selected.connect(_on_mic_selected)
 	settings_panel.panel_closed.connect(_on_settings_panel_closed)
 	settings_panel.api_key_submitted.connect(_on_api_key_submitted)
+	settings_panel.language_changed.connect(_on_language_changed)
 	print("🎛️ Radial menu + Settings panel initialisés OK")
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -104,6 +105,11 @@ func _on_api_key_submitted(key: String) -> void:
 	print("🔑 API key submitted")
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_API_KEY", "key": key}))
+
+func _on_language_changed(lang: String) -> void:
+	print("🌐 Language changed: " + lang)
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "SET_LANGUAGE", "language": lang}))
 
 func _safe_restore_passthrough() -> void:
 	if radial_menu and radial_menu.is_open:
@@ -208,11 +214,12 @@ func _handle_message(raw: String) -> void:
 		var selected = int(data.get("selected", -1))
 		var has_api_key = data.get("has_api_key", false)
 		var key_valid = data.get("key_valid", false)
-		print("⚙️ Settings: %d micros, selected: %d, API key: %s, valid: %s" % [mics.size(), selected, str(has_api_key), str(key_valid)])
+		var lang = data.get("language", "fr")
+		print("⚙️ Settings: %d micros, selected: %d, API key: %s, valid: %s, lang: %s" % [mics.size(), selected, str(has_api_key), str(key_valid), lang])
 		if settings_panel:
 			if radial_menu and radial_menu.is_open:
 				radial_menu.close()
-			settings_panel.show_settings(mics, selected, has_api_key, key_valid)
+			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang)
 		return
 	elif command == "API_KEY_UPDATED":
 		var valid = data.get("valid", false)

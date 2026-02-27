@@ -6,6 +6,7 @@ extends CanvasLayer
 signal mic_selected(mic_index: int)
 signal panel_closed()
 signal api_key_submitted(key: String)
+signal language_changed(lang: String)
 
 var is_open := false
 var _progress := 0.0
@@ -23,6 +24,11 @@ var _hovered_api_btn: int = -1
 var _api_key_has_key := false
 var _api_key_valid: int = -1  # -1 = unknown/checking, 0 = invalid, 1 = valid
 var _api_key_checking := false
+
+# Language dropdown
+var _language := "fr"
+var _lang_dropdown_open := false
+var _hovered_lang_item: int = -1  # index in LANGUAGES array
 
 # Scroll
 var _scroll_offset := 0.0       # px scrolled (0 = top)
@@ -46,6 +52,13 @@ const VU_WIDTH := 14.0
 const VU_MARGIN := 28.0
 const SECTION_HEADER_H := 32.0
 const API_KEY_SECTION_H := 80.0
+const LANG_SECTION_H := 44.0
+const LANG_ITEM_H := 28.0
+const LANG_DROPDOWN_W := 200.0
+const LANGUAGES := [
+	{"code": "fr", "label": "Francais"},
+	{"code": "en", "label": "English"},
+]
 const TITLE_H := 36.0
 const SCROLL_SPEED := 40.0
 const SCROLLBAR_WIDTH := 4.0
@@ -78,7 +91,7 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false) -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr") -> void:
 	_mics = mics
 	_selected_index = selected
 	_hovered_mic = -1
@@ -94,6 +107,9 @@ func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: boo
 		_api_key_valid = -1
 	_scroll_offset = 0.0
 	_scroll_target = 0.0
+	_language = lang
+	_lang_dropdown_open = false
+	_hovered_lang_item = -1
 
 	is_open = true
 	visible = true
@@ -125,7 +141,7 @@ func close() -> void:
 func _content_height() -> float:
 	## Total height of ALL content (may exceed visible area)
 	var mic_items_h := ITEM_HEIGHT * _mics.size()
-	return SECTION_HEADER_H + mic_items_h + 12 + SECTION_HEADER_H + API_KEY_SECTION_H + PADDING
+	return SECTION_HEADER_H + mic_items_h + 12 + SECTION_HEADER_H + API_KEY_SECTION_H + 12 + SECTION_HEADER_H + LANG_SECTION_H + PADDING
 
 func _visible_height() -> float:
 	## Panel height capped to MAX_HEIGHT_RATIO of viewport
@@ -174,6 +190,22 @@ func _api_btn_rect() -> Rect2:
 	var cy := _api_section_content_y() + SECTION_HEADER_H + 4
 	var sy := _content_y_to_screen(cy)
 	return Rect2(pr.position.x + PANEL_WIDTH - PADDING - 50, sy, 50, 28)
+
+func _lang_section_content_y() -> float:
+	return _api_section_content_y() + SECTION_HEADER_H + API_KEY_SECTION_H + 12
+
+func _lang_selector_rect() -> Rect2:
+	## The main dropdown button showing current language
+	var pr = _panel_rect()
+	var cy = _lang_section_content_y() + SECTION_HEADER_H + 4
+	var sy = _content_y_to_screen(cy)
+	return Rect2(pr.position.x + PADDING, sy, LANG_DROPDOWN_W, LANG_ITEM_H)
+
+func _lang_dropdown_item_rect(index: int) -> Rect2:
+	## Rect for an individual item in the open dropdown list (opens UPWARD)
+	var sel_r = _lang_selector_rect()
+	var items_count = LANGUAGES.size()
+	return Rect2(sel_r.position.x, sel_r.position.y - (items_count - index) * LANG_ITEM_H, LANG_DROPDOWN_W, LANG_ITEM_H)
 
 func _content_area_rect() -> Rect2:
 	## The visible scrollable area (below the title)
@@ -272,6 +304,19 @@ func _update_hover() -> void:
 		if mouse.x < pr.position.x - 80 or mouse.y < pr.position.y - 80 or mouse.y > pr.position.y + pr.size.y + 80:
 			close()
 
+	# Language dropdown hover
+	_hovered_lang_item = -1
+	if _lang_dropdown_open:
+		for li in LANGUAGES.size():
+			var lr = _lang_dropdown_item_rect(li)
+			if lr.has_point(mouse):
+				_hovered_lang_item = li
+				break
+	else:
+		var sel_r = _lang_selector_rect()
+		if sel_r.has_point(mouse) and _is_in_content_area(sel_r.position.y):
+			_hovered_lang_item = -2  # hovering the selector button itself
+
 # ─── Input ─────────────────────────────────────────────────
 
 func _input(event: InputEvent) -> void:
@@ -352,6 +397,24 @@ func _input(event: InputEvent) -> void:
 				_api_key_buffer = ""
 				_api_key_cursor_blink = 0.0
 			return
+
+		# Language dropdown clicks
+		if _lang_dropdown_open:
+			if _hovered_lang_item >= 0:
+				var picked = LANGUAGES[_hovered_lang_item]
+				if picked["code"] != _language:
+					_language = picked["code"]
+					language_changed.emit(_language)
+				_lang_dropdown_open = false
+				return
+			else:
+				_lang_dropdown_open = false
+				return
+		else:
+			var sel_r = _lang_selector_rect()
+			if sel_r.has_point(_canvas.get_local_mouse_position()) and _is_in_content_area(sel_r.position.y):
+				_lang_dropdown_open = true
+				return
 
 		# Click outside panel → close
 		var pr := _panel_rect()
@@ -530,6 +593,66 @@ func _draw_panel() -> void:
 		
 		_canvas.draw_string(font, Vector2(pr.position.x + PADDING, status_sy),
 			status_text, HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 10, status_color)
+
+	# ── SECTION: Language ──
+	var lang_cy := _lang_section_content_y()
+	var lang_sy := _content_y_to_screen(lang_cy)
+
+	# Separator above
+	if _is_in_content_area(lang_sy - 2):
+		_canvas.draw_line(Vector2(pr.position.x + PADDING, lang_sy - 2),
+			Vector2(pr.position.x + PANEL_WIDTH - PADDING, lang_sy - 2),
+			Color(0.3, 0.5, 0.8, 0.2 * alpha), 1.0)
+
+	if _is_in_content_area(lang_sy + 20):
+		_canvas.draw_string(font, Vector2(pr.position.x + PADDING, lang_sy + 20),
+			"🌐  Langue / Language", HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 13,
+			Color(0.6, 0.8, 1.0, alpha))
+
+	# Language dropdown selector
+	var sel_r = _lang_selector_rect()
+	if _is_in_content_area(sel_r.position.y):
+		# Find current language label
+		var cur_label = _language.to_upper()
+		for ld in LANGUAGES:
+			if ld["code"] == _language:
+				cur_label = ld["label"]
+				break
+
+		# Selector button
+		var sel_bg = Color(0.08, 0.08, 0.15, 0.9 * alpha)
+		var sel_border = Color(0.3, 0.5, 0.8, 0.4 * alpha)
+		if _hovered_lang_item == -2 or _lang_dropdown_open:
+			sel_bg = Color(0.12, 0.12, 0.2, 0.95 * alpha)
+			sel_border = Color(0.4, 0.7, 1.0, 0.6 * alpha)
+		_canvas.draw_rect(sel_r, sel_bg, true)
+		_canvas.draw_rect(sel_r, sel_border, false, 1.0)
+		_canvas.draw_string(font, Vector2(sel_r.position.x + 10, sel_r.position.y + sel_r.size.y * 0.7),
+			cur_label, HORIZONTAL_ALIGNMENT_LEFT, int(sel_r.size.x - 30), 11, Color(0.9, 0.95, 1.0, alpha))
+		# Arrow indicator
+		var arrow_text = "v" if not _lang_dropdown_open else "^"
+		_canvas.draw_string(font, Vector2(sel_r.position.x + sel_r.size.x - 18, sel_r.position.y + sel_r.size.y * 0.7),
+			arrow_text, HORIZONTAL_ALIGNMENT_LEFT, 20, 11, Color(0.5, 0.6, 0.8, alpha))
+
+		# Dropdown items (only when open)
+		if _lang_dropdown_open:
+			for di in LANGUAGES.size():
+				var dir = _lang_dropdown_item_rect(di)
+				var item_bg = Color(0.06, 0.06, 0.12, 0.95 * alpha)
+				var item_text_col = Color(0.7, 0.75, 0.8, alpha)
+				if LANGUAGES[di]["code"] == _language:
+					item_bg = Color(0.12, 0.35, 0.2, 0.9 * alpha)
+					item_text_col = Color(0.4, 1.0, 0.6, alpha)
+				elif _hovered_lang_item == di:
+					item_bg = Color(0.15, 0.25, 0.4, 0.9 * alpha)
+					item_text_col = Color(0.9, 0.95, 1.0, alpha)
+				_canvas.draw_rect(dir, item_bg, true)
+				_canvas.draw_rect(dir, Color(0.2, 0.35, 0.6, 0.3 * alpha), false, 1.0)
+				var item_label = LANGUAGES[di]["label"]
+				if LANGUAGES[di]["code"] == _language:
+					item_label = item_label + "  >"
+				_canvas.draw_string(font, Vector2(dir.position.x + 10, dir.position.y + dir.size.y * 0.7),
+					item_label, HORIZONTAL_ALIGNMENT_LEFT, int(dir.size.x - 16), 11, item_text_col)
 
 	# ═══════════════════════════════════════════════════════
 	#  SCROLLBAR (only if content overflows)

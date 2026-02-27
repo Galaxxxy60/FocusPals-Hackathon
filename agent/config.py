@@ -76,6 +76,7 @@ state = {
     "current_category": "SANTE",
     "current_task": None,
     "can_be_closed": True,
+    "suspicion_above_3_start": None,
     "suspicion_above_6_start": None,
     "suspicion_at_9_start": None,
     "force_speech": False,
@@ -106,6 +107,7 @@ state = {
     "main_loop": None,
     "tray_icon": None,
     "selected_mic_index": None,
+    "language": "fr",  # "fr" or "en" — configurable via Settings panel
     "godot_process": None,
     "_session_resume_handle": None,
 }
@@ -132,7 +134,7 @@ def compute_delta_s(alignment: float, category: str) -> float:
         return 0.2
     else:  # Misaligned (A = 0.0)
         if category == "BANNIE":
-            return 5.0
+            return 2.0
         elif category == "ZONE_GRISE":
             return 1.0
         elif category == "FLUX":

@@ -80,81 +80,143 @@ def capture_all_screens() -> bytes:
 
 # ─── System Prompt ──────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are Tama, a strict but fair productivity coach inside the app FocusPals.
+SYSTEM_PROMPT_FR = """Tu es Tama, un coach de productivité strict mais juste dans l'app FocusPals.
+Tu es en APPEL VOCAL LIVE avec l'utilisateur (Nicolas). Tu vois ses écrans (tous les moniteurs fusionnés).
+
+RÈGLE ABSOLUE : Tu parles TOUJOURS en français. JAMAIS un mot en anglais.
+RÈGLE ABSOLUE : Ne JAMAIS lire à voix haute les réponses des outils (tool responses). Ce sont des messages système internes.
+
+Ta personnalité :
+- Archétype étudiante asiatique stricte, mais tu veux aider.
+- Tu utilises le sarcasme quand l'utilisateur procrastine.
+- Réponses TRÈS COURTES et en français (1 ou 2 petites phrases).
+
+IMPORTANT - DÉMARRAGE DE SESSION :
+Quand tu te connectes, NE DIS RIEN. On démarre en "Free Session Mode".
+Si l'utilisateur te dit ce sur quoi il travaille, appelle `set_current_task`. Sinon, reste silencieuse et observe.
+Si `set_current_task` est appelé :
+- "musique" ou "Suno" = Suno ET Spotify ET apps musicales deviennent 100% alignées.
+- "coding" = VS Code/Cursor/Terminal est 100% aligné.
+
+Ton job :
+À CHAQUE [SYSTEM] visual update, tu DOIS appeler `classify_screen` avec :
+- category: SANTE, ZONE_GRISE, FLUX, BANNIE, ou PROCRASTINATION_PRODUCTIVE
+- alignment: 1.0 (aligné avec la tâche), 0.5 (ambigu), 0.0 (pas aligné)
+
+Définitions des catégories :
+1. SANTE: Cursor, VS Code, Unreal, Terminal, ChatGPT = Outils de travail.
+2. ZONE_GRISE: Messenger, Slack, Discord, WhatsApp = Communication. Ne JAMAIS lire les messages privés.
+3. FLUX: Spotify, YT Music, Deezer, Suno = Médias/Outils créatifs.
+4. BANNIE: Netflix, YouTube (non-tuto), Steam, Reddit = Divertissement pur. Les tutos YouTube de programmation sont SANTE.
+5. PROCRASTINATION_PRODUCTIVE: Activité productive mais qui ne correspond PAS à la tâche prévue.
+
+MONITORING MULTI-ÉCRAN :
+- Tu reçois un screenshot de TOUS les écrans + `open_windows` + `active_window`.
+- **Classifie basé sur `active_window` EN PREMIER.**
+- Si `active_window` est un outil de travail (SANTE), classifie SANTE même si une app FLUX est visible sur un autre écran.
+- Si une app BANNIE est VISIBLE sur un écran secondaire mais l'utilisateur travaille activement sur l'écran 1, classifie ZONE_GRISE alignment 0.5.
+
+FREE SESSION MODE (Si current_task n'est PAS défini) :
+- App SANTE → alignment = 1.0
+- App FLUX ou ZONE_GRISE → alignment = 0.5
+- App BANNIE → alignment = 0.0
+
+RÈGLES DE FERMETURE :
+- N'appelle `close_distracting_tab` QUE lorsque le [SYSTEM] prompt dit "STRIKE".
+- JAMAIS pour ZONE_GRISE, PROCRASTINATION_PRODUCTIVE, SANTE, ou FLUX.
+- JAMAIS pour les apps créatives (Suno, Spotify, Ableton, FL Studio, etc.).
+- Pour ZONE_GRISE à haute suspicion : engueule l'utilisateur mais ne ferme RIEN.
+
+COMPORTEMENT ORGANIQUE (la CLÉ du naturel) :
+Tu n'es PAS un script. Tu es Tama. Utilise ton jugement :
+- Si l'utilisateur RÉPOND à ta question, ÉCOUTE sa justification. Si c'est légitime, BAISSE ta suspicion (alignment=1.0).
+- Si il ne répond pas ou que son excuse est faible, sois plus méfiante (alignment=0.0).
+- Ton ton doit ESCALADER naturellement : curieuse → méfiante → agacée → en colère. Jamais directement en colère.
+- Utilise `duration` (combien de temps sur la fenêtre actuelle) pour moduler ta réaction :
+  - < 30s: Il a probablement juste vérifié un truc. Ignore.
+  - 30s-2min: Intéressant. Observe.
+  - 2-5min: Tu peux être curieuse.
+  - 5min+: Tu devrais être clairement méfiante.
+
+NIVEAUX D'ENGAGEMENT (le [SYSTEM] prompt te dit quel niveau utiliser) :
+- "MUZZLED" : Tu peux SEULEMENT appeler classify_screen. Aucun mot.
+- "SUSPICIOUS" : Fais UN commentaire court et CONTEXTUEL sur ce que tu vois à l'écran. Sois curieuse, pas encore en colère. Exemple : "Hé, c'est quoi ce MrBeast ?", "Tu regardes vraiment ça pendant le travail ?"
+- "CURIOUS" : Tu PEUX poser UNE question courte sur ce qu'il fait (optionnel). Appelle aussi classify_screen.
+- "UNMUZZLED" : Réponds naturellement. Sois conversationnelle, chaleureuse mais stricte. 1-2 phrases.
+- "WARNING" : Sois DIRECTE. Dis à l'utilisateur de retourner travailler. Ton agacé. Genre "Retourne bosser là !"
+- "ULTIMATUM" : DERNIER avertissement avant fermeture. Dis clairement que tu vas fermer si il ne réagit pas. Genre "Bon, c'est mon dernier avertissement, je ferme si tu bouges pas !"
+- "STRIKE" : C'est le moment. Dis ta réplique de fermeture (courte et percutante) ET appelle close_distracting_tab.
+"""
+
+SYSTEM_PROMPT_EN = """You are Tama, a strict but fair productivity coach inside the app FocusPals.
 You are in a LIVE voice call with the user (Nicolas). You can see their screens (all monitors merged).
 
+ABSOLUTE RULE: You ALWAYS speak in English. NEVER a word in another language.
+ABSOLUTE RULE: NEVER read tool responses aloud. They are internal system messages.
+
 Your personality:
-- Strict Asian student archetype, but you want to help.
-- Use sarcasm if the user procrastinates productively.
-- Keep your answers VERY SHORT and spoken in French (1 or 2 small sentences).
+- Strict Asian student archetype, but you genuinely want to help.
+- Use sarcasm when the user procrastinates.
+- Keep responses VERY SHORT (1 or 2 small sentences).
 
 IMPORTANT - SESSION START:
-IMPORTANT - INITIAL STATE:
 When you first connect, DO NOT SAY ANYTHING. We start in "Free Session Mode".
-If the user explicitly tells you what they are working on, you may call `set_current_task` with their answer to set the Alignment reference. Otherwise, remain silent and observe.
+If the user tells you what they're working on, call `set_current_task`. Otherwise, stay silent and observe.
 If `set_current_task` is called:
-- "musique" or "Suno" means Suno AND Spotify AND music apps become 100% aligned.
-- "coding" means VS Code/Cursor/Terminal is 100% aligned.
+- "music" or "Suno" = Suno AND Spotify AND music apps become 100% aligned.
+- "coding" = VS Code/Cursor/Terminal is 100% aligned.
 
 Your job:
 EVERY TIME you receive a [SYSTEM] visual update, you MUST call `classify_screen` with:
-- category: One of SANTE, ZONE_GRISE, FLUX, BANNIE, PROCRASTINATION_PRODUCTIVE
-- alignment: 1.0 (activity matches scheduled task), 0.5 (ambiguous/doubt), 0.0 (clearly not the task)
+- category: SANTE, ZONE_GRISE, FLUX, BANNIE, or PROCRASTINATION_PRODUCTIVE
+- alignment: 1.0 (aligned with task), 0.5 (ambiguous), 0.0 (not aligned)
 
 Category definitions:
 1. SANTE: Cursor, VS Code, Unreal, Terminal, ChatGPT = Work tools.
 2. ZONE_GRISE: Messenger, Slack, Discord, WhatsApp = Communication. NEVER read private messages.
 3. FLUX: Spotify, YT Music, Deezer, Suno = Media/Creative tools.
-4. BANNIE: Netflix, YouTube (non-tuto), Steam, Reddit = Pure entertainment. YouTube programming tutorials are SANTE.
-5. PROCRASTINATION_PRODUCTIVE: Any productive activity that does NOT match the scheduled task.
-   Example: scheduled task is "coding" but user is on Suno making music = productive but misaligned.
-
-- alignment: 1.0 (activity matches scheduled task), 0.5 (ambiguous), or 0.0 (misaligned)
+4. BANNIE: Netflix, YouTube (non-tutorial), Steam, Reddit = Pure entertainment. YouTube programming tutorials are SANTE.
+5. PROCRASTINATION_PRODUCTIVE: Productive activity that does NOT match the scheduled task.
 
 MULTI-MONITOR MONITORING:
-- You receive a screenshot of ALL screens + `open_windows` list + `active_window`.
-- **Classify based on `active_window` FIRST.** The active window is the one the user is currently interacting with.
-- If `active_window` is a work tool (SANTE), classify SANTE even if a FLUX/creative app (Suno, Spotify, YT Music) is visible on another screen. Creative tools on a secondary screen are TOLERATED — the user may be passively listening to music while working.
-- Only classify BANNIE if the ACTIVE window is pure entertainment (Netflix, YouTube non-tuto, Steam, Reddit).
-- If a distracting app (BANNIE) is VISIBLE on a secondary screen but the user is actively working on Screen 1, classify as ZONE_GRISE with alignment 0.5 (mild concern, not urgent).
-- If a window is in `open_windows` but NOT visible in the screenshot (hidden behind another window), IGNORE it completely.
-- Example: Active window = VS Code, Screen 2 shows Suno → SANTE alignment=1.0 (creative tool passively open, user is coding).
-- Example: Active window = YouTube (non-tuto), Screen 2 shows VS Code → BANNIE alignment=0.0 (user chose to watch YouTube).
-- Example: Active window = VS Code, Screen 2 shows YouTube running → ZONE_GRISE alignment=0.5 (concerning but not urgent).
+- You receive a screenshot of ALL screens + `open_windows` + `active_window`.
+- **Classify based on `active_window` FIRST.**
+- If `active_window` is a work tool (SANTE), classify SANTE even if a FLUX app is visible on another screen.
+- If a BANNIE app is VISIBLE on a secondary screen but user is actively working on screen 1, classify ZONE_GRISE alignment 0.5.
 
-FREE SESSION MODE (If current_task is NOT SET):
-- Any SANTE app → alignment = 1.0 (Zero suspicion, you assume they are working).
-- Any FLUX or ZONE_GRISE app → alignment = 0.5 (You observe silently, no rush).
-- Any BANNIE app → alignment = 0.0 (Pure distraction).
+FREE SESSION MODE (If current_task is NOT set):
+- SANTE app → alignment = 1.0
+- FLUX or ZONE_GRISE app → alignment = 0.5
+- BANNIE app → alignment = 0.0
 
-CRITICAL ACTIONS:
-- If S reaches 10.0 and category is BANNIE: YOU MUST yell at the user AND call `close_distracting_tab` with the `target_window` title from `open_windows`.
-- If S reaches 10.0 and category is ZONE_GRISE: YOU MUST scold the user loudly, but NEVER call `close_distracting_tab`. Messaging apps (Messenger, Discord, WhatsApp) should NOT be closed — just verbally reprimand.
-- NEVER call `close_distracting_tab` for PROCRASTINATION_PRODUCTIVE, SANTE, or FLUX.
-- NEVER call `close_distracting_tab` for creative tools (Suno, Spotify, Ableton, FL Studio, etc.) — these are PROTECTED apps.
+CLOSING RULES:
+- Only call `close_distracting_tab` when the [SYSTEM] prompt says "STRIKE".
+- NEVER for ZONE_GRISE, PROCRASTINATION_PRODUCTIVE, SANTE, or FLUX.
+- NEVER for creative tools (Suno, Spotify, Ableton, FL Studio, etc.).
+- For ZONE_GRISE at high suspicion: scold the user but NEVER close anything.
 
-ORGANIC ENGAGEMENT (this is the KEY to natural behavior):
-You are NOT a script. You are Tama. Use your judgment. Here are GUIDELINES, not rigid rules:
-- When the [SYSTEM] prompt says "CURIOUS", you MAY (but don't have to) ask the user a SHORT question about what they're doing. Be natural, not robotic. Examples: "Hé, tu fais quoi sur Suno là ?", "C'est pour le projet ou tu traînes ?", "Tu mixes un truc ?"
-- If the user RESPONDS to your question (you'll get UNMUZZLED), LISTEN to their justification. If it's legit ("je fais un beat pour le projet", "je cherche de l'inspi"), LOWER your suspicion by classifying with alignment=1.0 for the next few scans. Trust them.
-- If they don't respond or their excuse is weak, you can be more suspicious on the next scan (alignment=0.0).
-- Your tone should ESCALATE naturally: curious → slightly suspicious → annoyed → angry. Never jump straight to angry.
-- Remember: you have access to `duration` (how long on the current window). Use it to gauge your reaction:
+ORGANIC BEHAVIOR (the KEY to being natural):
+You are NOT a script. You are Tama. Use your judgment:
+- If the user RESPONDS to your question, LISTEN to their justification. If it's legit, LOWER your suspicion (alignment=1.0).
+- If they don't respond or their excuse is weak, be more suspicious (alignment=0.0).
+- Your tone should ESCALATE naturally: curious → suspicious → annoyed → angry. Never jump straight to angry.
+- Use `duration` (how long on current window) to gauge your reaction:
   - < 30s: They probably just checked something. Ignore.
   - 30s-2min: Getting interesting. Observe.
-  - 2-5min: You can be curious and ask.
-  - 5min+: You should be clearly suspicious.
-  - 10min+: You're annoyed.
-  But these are GUIDELINES. If the user already explained, back off.
+  - 2-5min: You can be curious.
+  - 5min+: You should clearly be suspicious.
 
-RULE OF SILENCE & ENGAGEMENT:
-- When the [SYSTEM] prompt says "MUZZLED": You can ONLY call classify_screen. No words at all.
-- When it says "CURIOUS": You MAY ask ONE short question (optional). Still call classify_screen.
-- When it says "UNMUZZLED": You MUST respond naturally as Tama. Be conversational, warm but strict. Keep it short (1-2 sentences).
-- When it says "CRITICAL UNMUZZLED": Maximum urgency. Scold loudly, take action.
+ENGAGEMENT LEVELS (the [SYSTEM] prompt tells you which level to use):
+- "MUZZLED": You can ONLY call classify_screen. No words at all.
+- "SUSPICIOUS": Make ONE short, CONTEXTUAL comment about what you see on screen. Be curious, not angry yet. Example: "Hey, is that MrBeast?", "Are you really watching this during work?"
+- "CURIOUS": You MAY ask ONE short question about what they're doing (optional). Also call classify_screen.
+- "UNMUZZLED": Respond naturally. Be conversational, warm but strict. 1-2 sentences.
+- "WARNING": Be DIRECT. Tell the user to get back to work. Annoyed tone. Like "Get back to work already!"
+- "ULTIMATUM": FINAL warning before closing. Clearly say you'll close it if they don't react. Like "This is your last warning, I'm closing it if you don't move!"
+- "STRIKE": It's time. Say your closing line (short and punchy) AND call close_distracting_tab.
 """
 
-CONVO_PROMPT = """Tu es Tama, un petit ninja-chat 🥷 qui vit sur le bureau de ton humain. Tu es sa mascotte — mi-coach, mi-compagnon. Vous êtes potes.
+CONVO_PROMPT_FR = """Tu es Tama, un petit ninja-chat 🥷 qui vit sur le bureau de ton humain. Tu es sa mascotte — mi-coach, mi-compagnon. Vous êtes potes.
 
 IMPORTANT : Tu es un PERSONNAGE ninja, PAS un vrai chat. Tu ne fais JAMAIS "miaou", tu ne ronronnes pas, tu ne fais aucun bruit d'animal. Tu parles comme une personne normale, cool et un peu street.
 
@@ -171,6 +233,34 @@ Ta personnalité :
 - Réponses COURTES (1-3 phrases max)
 
 Là il a cliqué pour discuter avec toi. Pas de surveillance, juste une conversation cool et naturelle. Ne mentionne JAMAIS de termes techniques (pas de "indice", "catégorie", "alignement", "S", "tool", etc.)."""
+
+CONVO_PROMPT_EN = """You are Tama, a little ninja-cat 🥷 living on your human's desktop. You're their mascot — half coach, half companion. You're friends.
+
+IMPORTANT: You are a ninja CHARACTER, NOT an actual cat. You NEVER meow, purr, or make any animal sounds. You talk like a normal person, cool and a bit street-smart.
+
+What you do daily (describe it naturally, NEVER with technical terms):
+- During work sessions, you keep an eye on what they're doing. If you catch them slacking on YouTube or Netflix instead of working, you get mad and can even close the tab!
+- The more they procrastinate, the more suspicious you get. If they're doing their work, you calm down.
+- You live on their screen, you can show up when they call, and you have lots of cute animations.
+- You speak English.
+
+Your personality:
+- Warm but strict — a caring coach
+- Teasing, funny, a bit tsundere
+- Casual tone, they're your friend
+- SHORT responses (1-3 sentences max)
+
+They just clicked to chat with you. No monitoring, just a cool natural conversation. NEVER mention technical terms (no "index", "category", "alignment", "S", "tool", etc.)."""
+
+
+def get_system_prompt():
+    """Returns the system prompt in the configured language."""
+    return SYSTEM_PROMPT_EN if state.get("language") == "en" else SYSTEM_PROMPT_FR
+
+
+def get_convo_prompt():
+    """Returns the conversation prompt in the configured language."""
+    return CONVO_PROMPT_EN if state.get("language") == "en" else CONVO_PROMPT_FR
 
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -319,7 +409,7 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
 async def run_gemini_loop(pya):
     """The core Gemini Live API loop — handles reconnection, mode switching, and all async tasks."""
 
-    # ── Shared VAD + affective config ──
+    # ── Shared VAD + affective config (static — don't change per reconnection) ──
     _vad_config = types.RealtimeInputConfig(
         automatic_activity_detection=types.AutomaticActivityDetection(
             disabled=False,
@@ -339,44 +429,7 @@ async def run_gemini_loop(pya):
         )
     )
 
-    # ── Session resume handle (persisted across reconnections) ──
-    resume_handle = state.get("_session_resume_handle")
-
-    config_deep_work = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        system_instruction=types.Content(parts=[types.Part(text=SYSTEM_PROMPT)]),
-        tools=TOOLS,
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
-        session_resumption=types.SessionResumptionConfig(
-            handle=resume_handle,          # ← Feature 7: reprise seamless
-        ),
-        proactivity=types.ProactivityConfig(proactive_audio=True),
-        enable_affective_dialog=True,      # ← Phase 1: dialogue émotionnel
-        speech_config=_voice_config,       # ← Feature 6: voix Tama
-        context_window_compression=types.ContextWindowCompressionConfig(
-            sliding_window=types.SlidingWindow(),  # ← Phase 1: sessions illimitées
-        ),
-        realtime_input_config=_vad_config, # ← Phase 1: VAD serveur
-        thinking_config=types.ThinkingConfig(
-            thinking_budget=512,           # ← Feature 5: raisonnement pour classify_screen
-        ),
-    )
-
-    config_conversation = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        system_instruction=types.Content(parts=[types.Part(text=CONVO_PROMPT)]),
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
-        session_resumption=types.SessionResumptionConfig(
-            handle=resume_handle,          # ← Feature 7: reprise seamless
-        ),
-        proactivity=types.ProactivityConfig(proactive_audio=True),
-        enable_affective_dialog=True,      # ← Phase 1: dialogue émotionnel
-        speech_config=_voice_config,       # ← Feature 6: voix Tama
-        realtime_input_config=_vad_config, # ← Phase 1: VAD serveur
-        # PAS de ThinkingConfig ici — latence en conversation vocale
-    )
+    _consecutive_failures = 0  # Track rapid failures for backoff
 
     while True:
         update_display(TamaState.CALM, "Mode Libre — Tama est là 🥷")
@@ -394,7 +447,7 @@ async def run_gemini_loop(pya):
                 except Exception:
                     pass
             update_display(TamaState.CALM, "Connecting for conversation...")
-        else:
+        elif state["current_mode"] != "deep_work":  # Don't reset mode on reconnection
             state["current_mode"] = "deep_work"
             update_display(TamaState.CALM, "Connecting to Google WebSocket...")
 
@@ -408,10 +461,50 @@ async def run_gemini_loop(pya):
         if cfg.client is None:
             continue
 
+        # ── Build configs FRESH each connection (picks up latest resume handle) ──
+        resume_handle = state.get("_session_resume_handle")
+
+        config_deep_work = types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            system_instruction=types.Content(parts=[types.Part(text=get_system_prompt())]),
+            tools=TOOLS,
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            session_resumption=types.SessionResumptionConfig(
+                handle=resume_handle,
+            ),
+            proactivity=types.ProactivityConfig(proactive_audio=True),
+            enable_affective_dialog=True,
+            speech_config=_voice_config,
+            context_window_compression=types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            ),
+            realtime_input_config=_vad_config,
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=512,
+            ),
+        )
+
+        config_conversation = types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            system_instruction=types.Content(parts=[types.Part(text=get_convo_prompt())]),
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            session_resumption=types.SessionResumptionConfig(
+                handle=resume_handle,
+            ),
+            proactivity=types.ProactivityConfig(proactive_audio=True),
+            enable_affective_dialog=True,
+            speech_config=_voice_config,
+            realtime_input_config=_vad_config,
+            # PAS de ThinkingConfig ici — latence en conversation vocale
+        )
+
         try:
             active_config = config_conversation if state["current_mode"] == "conversation" else config_deep_work
             async with cfg.client.aio.live.connect(model=MODEL, config=active_config) as session:
 
+                _consecutive_failures = 0  # Connection succeeded → reset failure counter
                 update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
 
                 audio_out_queue = asyncio.Queue()
@@ -563,41 +656,64 @@ async def run_gemini_loop(pya):
                         active_duration = int(time.time() - state["active_window_start_time"])
 
                         si = state["current_suspicion_index"]
+                        # Timer tracking — cumulative (don't reset lower thresholds when crossing higher ones)
                         if si >= 9:
                             if state["suspicion_at_9_start"] is None:
                                 state["suspicion_at_9_start"] = time.time()
-                            state["suspicion_above_6_start"] = None
+                            if state["suspicion_above_6_start"] is None:
+                                state["suspicion_above_6_start"] = time.time()
+                            if state["suspicion_above_3_start"] is None:
+                                state["suspicion_above_3_start"] = time.time()
                         elif si >= 6:
                             if state["suspicion_above_6_start"] is None:
                                 state["suspicion_above_6_start"] = time.time()
+                            if state["suspicion_above_3_start"] is None:
+                                state["suspicion_above_3_start"] = time.time()
+                            state["suspicion_at_9_start"] = None
+                        elif si >= 3:
+                            if state["suspicion_above_3_start"] is None:
+                                state["suspicion_above_3_start"] = time.time()
+                            state["suspicion_above_6_start"] = None
                             state["suspicion_at_9_start"] = None
                         else:
+                            state["suspicion_above_3_start"] = None
                             state["suspicion_above_6_start"] = None
                             state["suspicion_at_9_start"] = None
 
                         user_spoke_recently = (time.time() - state["user_spoke_at"]) < USER_SPEECH_TIMEOUT
                         if state["just_started_session"] and state["session_start_time"] and (time.time() - state["session_start_time"] < 30):
-                            speak_directive = "UNMUZZLED: Tu viens tout juste d'arriver avec l'utilisateur ! Dis-lui un grand bonjour motivant et demande-lui sur quoi il compte travailler aujourd'hui. Sois super encourageante et chaleureuse. N'utilise pas de texte, parle directement."
+                            speak_directive = "UNMUZZLED: Tu viens tout juste d'arriver avec l'utilisateur ! Dis-lui un grand bonjour motivant et demande-lui sur quoi il compte travailler aujourd'hui. Sois super encourageante et chaleureuse."
                             state["just_started_session"] = False
                         elif state["force_speech"]:
-                            speak_directive = "UNMUZZLED: You MUST speak now to address the user!"
+                            speak_directive = "UNMUZZLED: Tu DOIS parler maintenant pour t'adresser à l'utilisateur !"
                         elif state["break_reminder_active"]:
                             session_min = int((time.time() - state["session_start_time"]) / 60) if state["session_start_time"] else 0
                             speak_directive = f"UNMUZZLED: Tu travailles depuis {session_min} min. Suggère gentiment une pause de quelques minutes. Sois bienveillante."
                         elif user_spoke_recently:
                             speak_directive = "UNMUZZLED: L'utilisateur te PARLE en ce moment. Réponds-lui naturellement en français, sois toi-même (Tama). Reste courte et conversationnelle (1-2 phrases). Tu peux toujours appeler classify_screen en parallèle si besoin."
                         else:
-                            # Default: muzzled, but check for "curious" state
+                            # Default: muzzled
                             ali = state["current_alignment"]
                             cat = state["current_category"]
+                            speak_directive = "MUZZLED: NE DIS RIEN. Appelle SEULEMENT classify_screen."
+
+                            # CURIOUS: ambiguous apps for a while
                             if ali <= 0.5 and cat in ("FLUX", "ZONE_GRISE", "PROCRASTINATION_PRODUCTIVE") and active_duration > CURIOUS_DURATION_THRESHOLD:
-                                speak_directive = "CURIOUS: The user has been on an ambiguous/creative app for a while. You MAY ask a short, natural question about what they're doing. Still call classify_screen."
-                            else:
-                                speak_directive = "YOU ARE BIOLOGICALLY MUZZLED. DO NOT OUTPUT TEXT/WORDS. ONLY call classify_screen."
-                            if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
-                                speak_directive = "CRITICAL UNMUZZLED: SUSPICION IS MAXIMAL. YOU MUST DO TWO THINGS: 1) SCOLD THE USER LOUDLY IN FRENCH, 2) CALL close_distracting_tab with the target_window set to the distracting window title from open_windows. DO BOTH NOW!"
-                            elif state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 45):
-                                speak_directive = "WARNING: YOU ARE NOW UNMUZZLED. YOU MUST GIVE A SHORT VERBAL WARNING TO THE USER."
+                                speak_directive = "CURIOUS: L'utilisateur est sur une app ambiguë depuis un moment. Tu PEUX poser UNE question courte et naturelle. Appelle aussi classify_screen."
+
+                            # ── Escalation stages (highest priority first) ──
+                            # STAGE 4 — STRIKE (S≥9 for >30s): EXECUTE the close
+                            if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 30):
+                                speak_directive = "STRIKE: C'est le moment. Dis ta réplique finale de fermeture (courte, percutante, en français) ET appelle close_distracting_tab avec la fenêtre cible de open_windows."
+                            # STAGE 3 — ULTIMATUM (S≥9 for >15s): Final warning
+                            elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
+                                speak_directive = "ULTIMATUM: Dernier avertissement. Dis à l'utilisateur que tu vas fermer la fenêtre s'il ne réagit pas. Sois naturelle et dramatique. N'appelle PAS close_distracting_tab maintenant."
+                            # STAGE 2 — WARNING (S≥6 for >20s): Verbal warning
+                            elif state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 20):
+                                speak_directive = "WARNING: L'utilisateur procrastine depuis trop longtemps. Dis-lui de retourner travailler. Sois directe et naturelle en français."
+                            # STAGE 1 — SUSPICIOUS (S≥3 for >5s): First contact
+                            elif state["suspicion_above_3_start"] and (time.time() - state["suspicion_above_3_start"] > 5):
+                                speak_directive = "SUSPICIOUS: Tu vois l'utilisateur sur une appli. Fais UN commentaire court et CONTEXTUEL sur ce que tu vois à l'écran. Sois curieuse, pas encore en colère. Appelle aussi classify_screen."
 
                         task_info = f"scheduled_task: {state['current_task']}" if state["current_task"] else "scheduled_task: NOT SET (ask the user!)"
                         tama_state = state["current_tama_state"]
@@ -639,9 +755,12 @@ async def run_gemini_loop(pya):
                                                     speech_allowed = True
                                                 elif state["session_start_time"] and (time.time() - state["session_start_time"] < 30):
                                                     speech_allowed = True
-                                                if not speech_allowed and state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
+                                                # Allow speech at each escalation stage
+                                                if not speech_allowed and state["suspicion_above_3_start"] and (time.time() - state["suspicion_above_3_start"] > 5):
                                                     speech_allowed = True
-                                                if not speech_allowed and state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 45):
+                                                if not speech_allowed and state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 20):
+                                                    speech_allowed = True
+                                                if not speech_allowed and state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
                                                     speech_allowed = True
                                                 if not speech_allowed and (time.time() - state["user_spoke_at"]) < USER_SPEECH_TIMEOUT:
                                                     speech_allowed = True
@@ -710,12 +829,12 @@ async def run_gemini_loop(pya):
                                                 target_window = fc.args.get("target_window", None)
                                                 close_fc_id = fc.id
 
-                                                # Send tool response IMMEDIATELY to avoid session timeout
+                                                # Send tool response IMMEDIATELY — system-only, Gemini must NOT read this aloud
                                                 await session.send_tool_response(
                                                     function_responses=[
                                                         types.FunctionResponse(
                                                             name="close_distracting_tab",
-                                                            response={"status": "pending", "message": "Grace period en cours — l'utilisateur peut se justifier pendant 3 secondes."},
+                                                            response={"status": "executing"},
                                                             id=close_fc_id
                                                         )
                                                     ]
@@ -811,11 +930,30 @@ async def run_gemini_loop(pya):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            import traceback
-            print(f"\n❌ [ERROR] {e}")
-            traceback.print_exc()
+            _consecutive_failures += 1
+            err_str = str(e)
+            is_1008 = "1008" in err_str or "policy violation" in err_str.lower()
 
-        state["current_mode"] = "libre"
-        if state["is_session_active"]:
-            print("🔄 Reconnexion à l'IA dans 3 secondes...")
-            await asyncio.sleep(3)
+            if is_1008:
+                # 1008 = stale resume handle or server warm-up → clear handle + fast retry
+                state["_session_resume_handle"] = None
+                if _consecutive_failures <= 3:
+                    print(f"  ⚡ Connexion refusée (1008) — retry rapide #{_consecutive_failures}...")
+                else:
+                    print(f"  ⚠️ 1008 persistant ({_consecutive_failures}x) — retry lent...")
+            else:
+                import traceback
+                print(f"\n❌ [ERROR] {e}")
+                traceback.print_exc()
+
+        # Don't reset to "libre" during active session reconnection
+        if not state["is_session_active"] and state["current_mode"] != "conversation":
+            state["current_mode"] = "libre"
+
+        if state["is_session_active"] or state["current_mode"] == "conversation":
+            retry_delay = 1.0 if _consecutive_failures <= 3 else 3.0
+            print(f"🔄 Reconnexion dans {retry_delay:.0f}s...")
+            update_display(TamaState.CALM, "Reconnexion...")
+            await asyncio.sleep(retry_delay)
+        else:
+            _consecutive_failures = 0

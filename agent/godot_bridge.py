@@ -249,7 +249,8 @@ async def ws_handler(websocket):
                         "mics": mics,
                         "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
                         "has_api_key": has_api_key,
-                        "key_valid": state["_api_key_valid"]
+                        "key_valid": state["_api_key_valid"],
+                        "language": state["language"]
                     })
                     await websocket.send(response)
                     # Refresh mics in background (if cache was stale, next open is instant)
@@ -263,7 +264,8 @@ async def ws_handler(websocket):
                                     "mics": fresh,
                                     "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
                                     "has_api_key": has_api_key,
-                                    "key_valid": state["_api_key_valid"]
+                                    "key_valid": state["_api_key_valid"],
+                                    "language": state["language"]
                                 })
                                 await ws.send(update)
                         except Exception:
@@ -278,6 +280,11 @@ async def ws_handler(websocket):
                     mic_idx = int(data.get("index", -1))
                     if mic_idx >= 0:
                         select_mic(mic_idx)
+                elif cmd == "SET_LANGUAGE":
+                    lang = data.get("language", "fr")
+                    if lang in ("fr", "en"):
+                        state["language"] = lang
+                        print(f"🌐 Langue changée : {lang.upper()}")
             except Exception as e:
                 print(f"⚠️ [WS] Erreur commande: {e}")
                 import traceback; traceback.print_exc()
