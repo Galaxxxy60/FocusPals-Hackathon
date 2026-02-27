@@ -203,10 +203,9 @@ func _handle_message(raw: String) -> void:
 				phase = Phase.LEAVING
 		return
 	elif command == "SHOW_RADIAL":
-		# Kill settings panel IMMEDIATELY — no tween, no _input() interference
+		# Don't open radial menu while settings panel is open (e.g. during scrollbar drag)
 		if settings_panel and settings_panel.is_open:
-			settings_panel.is_open = false
-			settings_panel.visible = false
+			return
 		if radial_menu:
 			radial_menu.open()
 		return
