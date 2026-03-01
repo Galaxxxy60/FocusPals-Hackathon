@@ -113,6 +113,7 @@ def _send_settings_to_godot():
         "has_api_key": has_api_key,
         "key_valid": state["_api_key_valid"],
         "tama_volume": state["tama_volume"],
+        "session_duration": state.get("session_duration_minutes", 50),
         "api_usage": _get_api_usage_stats()
     })
     main_loop = state["main_loop"]
@@ -270,6 +271,7 @@ async def ws_handler(websocket):
                         "key_valid": state["_api_key_valid"],
                         "language": state["language"],
                         "tama_volume": state["tama_volume"],
+                        "session_duration": state.get("session_duration_minutes", 50),
                         "api_usage": _get_api_usage_stats()
                     })
                     await websocket.send(response)
@@ -287,6 +289,7 @@ async def ws_handler(websocket):
                                     "key_valid": state["_api_key_valid"],
                                     "language": state["language"],
                                     "tama_volume": state["tama_volume"],
+                                    "session_duration": state.get("session_duration_minutes", 50),
                                     "api_usage": _get_api_usage_stats()
                                 })
                                 await ws.send(update)
@@ -312,6 +315,10 @@ async def ws_handler(websocket):
                     state["tama_volume"] = max(0.0, min(1.0, vol))
                     pct = int(state["tama_volume"] * 100)
                     print(f"🔊 Volume Tama : {pct}%")
+                elif cmd == "SET_SESSION_DURATION":
+                    duration = int(data.get("duration", 50))
+                    state["session_duration_minutes"] = max(5, min(180, duration))
+                    print(f"⏱️ Durée de session réglée sur : {state['session_duration_minutes']} min")
             except Exception as e:
                 print(f"⚠️ [WS] Erreur commande: {e}")
                 import traceback; traceback.print_exc()

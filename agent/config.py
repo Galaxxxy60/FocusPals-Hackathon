@@ -59,10 +59,10 @@ PROTECTED_WINDOWS = ["code", "cursor", "visual studio", "unreal", "blender", "wo
 # Browser keywords for close-tab mode detection
 BROWSER_KEYWORDS = ["chrome", "firefox", "edge", "opera", "brave", "vivaldi", "chromium"]
 
-# ─── Shared Mutable State ───────────────────────────────────
 # Single dict replaces all scattered globals. Every module reads/writes here.
 state = {
     # Session
+    "session_duration_minutes": 50,     # User-configurable session length
     "is_session_active": False,
     "session_start_time": None,
     "just_started_session": False,

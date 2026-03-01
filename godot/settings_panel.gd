@@ -8,6 +8,7 @@ signal panel_closed()
 signal api_key_submitted(key: String)
 signal language_changed(lang: String)
 signal volume_changed(volume: float)
+signal session_duration_changed(duration: int)
 
 var is_open := false
 var _progress := 0.0
@@ -35,6 +36,11 @@ var _hovered_lang_item: int = -1  # index in LANGUAGES array
 var _tama_volume := 1.0  # 0.0 to 1.0
 var _volume_dragging := false
 var _hovered_volume := false
+
+# Session Duration
+var _session_duration := 50
+var _duration_dragging := false
+var _hovered_duration := false
 
 # API Usage stats
 var _api_usage := {}
@@ -75,6 +81,8 @@ const LANGUAGES := [
 const VOLUME_SECTION_H := 50.0
 const VOLUME_SLIDER_H := 8.0
 const VOLUME_THUMB_R := 8.0
+const SESSION_SECTION_H := 50.0
+const SESSION_SLIDER_H := 8.0
 const API_USAGE_SECTION_H := 130.0
 const TITLE_H := 36.0
 const SCROLL_SPEED := 40.0
@@ -120,7 +128,7 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, api_usage: Dictionary = {}) -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}) -> void:
 	_mics = mics
 	_selected_index = selected
 	_hovered_mic = -1
@@ -142,6 +150,9 @@ func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: boo
 	_tama_volume = clampf(volume, 0.0, 1.0)
 	_volume_dragging = false
 	_hovered_volume = false
+	_session_duration = clamp(session_duration, 5, 180)
+	_duration_dragging = false
+	_hovered_duration = false
 	_api_usage = api_usage
 
 	is_open = true
@@ -174,7 +185,7 @@ func close() -> void:
 func _content_height() -> float:
 	## Total height of ALL content (may exceed visible area)
 	var mic_items_h := ITEM_HEIGHT * _mics.size()
-	return SECTION_HEADER_H + mic_items_h + 12 + SECTION_HEADER_H + API_KEY_SECTION_H + 12 + SECTION_HEADER_H + LANG_SECTION_H + 12 + SECTION_HEADER_H + VOLUME_SECTION_H + 12 + SECTION_HEADER_H + API_USAGE_SECTION_H + PADDING
+	return SECTION_HEADER_H + SESSION_SECTION_H + 12 + SECTION_HEADER_H + mic_items_h + 12 + SECTION_HEADER_H + API_KEY_SECTION_H + 12 + SECTION_HEADER_H + LANG_SECTION_H + 12 + SECTION_HEADER_H + VOLUME_SECTION_H + 12 + SECTION_HEADER_H + API_USAGE_SECTION_H + PADDING
 
 func _visible_height() -> float:
 	## Panel height capped to MAX_HEIGHT_RATIO of viewport
@@ -206,8 +217,26 @@ func _scrollbar_gutter() -> float:
 		return SCROLLBAR_WIDTH + SCROLLBAR_MARGIN
 	return 0.0
 
+func _session_section_content_y() -> float:
+	return 0.0
+
+func _session_slider_rect() -> Rect2:
+	## The slider track rect (full width)
+	var pr := _panel_rect()
+	var cy := _session_section_content_y() + SECTION_HEADER_H + 14
+	var sy := _content_y_to_screen(cy)
+	return Rect2(pr.position.x + PADDING + 30, sy, PANEL_WIDTH - PADDING * 2 - 70 - _scrollbar_gutter(), SESSION_SLIDER_H)
+
+func _session_thumb_center() -> Vector2:
+	var sr := _session_slider_rect()
+	# Range is 5 to 180 min
+	var ratio = clampf(float(_session_duration - 5) / 175.0, 0.0, 1.0)
+	var tx := sr.position.x + ratio * sr.size.x
+	var ty := sr.position.y + sr.size.y * 0.5
+	return Vector2(tx, ty)
+
 func _mic_section_content_y() -> float:
-	return 0.0  # First section starts at top of content area
+	return _session_section_content_y() + SECTION_HEADER_H + SESSION_SECTION_H + 12
 
 func _mic_item_rect(index: int) -> Rect2:
 	var pr := _panel_rect()
@@ -352,6 +381,7 @@ func _update_hover() -> void:
 	_hovered_mic = -1
 	_hovered_api_btn = -1
 	_hovered_volume = false
+	_hovered_duration = false
 	if _progress < 0.5:
 		return
 
@@ -373,6 +403,12 @@ func _update_hover() -> void:
 	if vol_hover_rect.has_point(mouse) and _is_in_content_area(vol_sr.position.y):
 		_hovered_volume = true
 
+	# Session Duration slider hover detection
+	var sess_sr := _session_slider_rect()
+	var sess_hover_rect := Rect2(sess_sr.position.x - 10, sess_sr.position.y - 12, sess_sr.size.x + 20, sess_sr.size.y + 24)
+	if sess_hover_rect.has_point(mouse) and _is_in_content_area(sess_sr.position.y):
+		_hovered_duration = true
+
 	# Scrollbar hover detection
 	_scrollbar_hovered = false
 	if _max_scroll > 0.01:
@@ -383,7 +419,7 @@ func _update_hover() -> void:
 			_scrollbar_hovered = true
 
 	# Auto-close if mouse moves far away
-	if is_open and _progress >= 0.9 and not _volume_dragging and not _scrollbar_dragging:
+	if is_open and _progress >= 0.9 and not _volume_dragging and not _duration_dragging and not _scrollbar_dragging:
 		var pr := _panel_rect()
 		if mouse.x < pr.position.x - 80 or mouse.y < pr.position.y - 80 or mouse.y > pr.position.y + pr.size.y + 80:
 			close()
@@ -498,6 +534,34 @@ func _input(event: InputEvent) -> void:
 		var vol_sr := _volume_slider_rect()
 		_tama_volume = clampf((drag_mouse.x - vol_sr.position.x) / vol_sr.size.x, 0.0, 1.0)
 		volume_changed.emit(_tama_volume)
+		get_viewport().set_input_as_handled()
+		return
+
+	# Session Duration slider drag
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		var sess_mouse := _canvas.get_local_mouse_position()
+		if event.pressed:
+			var sess_sr := _session_slider_rect()
+			var sess_hover := Rect2(sess_sr.position.x - 10, sess_sr.position.y - 14, sess_sr.size.x + 20, sess_sr.size.y + 28)
+			if sess_hover.has_point(sess_mouse) and _is_in_content_area(sess_sr.position.y):
+				_duration_dragging = true
+				var ratio = clampf((sess_mouse.x - sess_sr.position.x) / sess_sr.size.x, 0.0, 1.0)
+				_session_duration = roundi(lerp(5.0, 180.0, ratio) / 5.0) * 5
+				session_duration_changed.emit(_session_duration)
+				get_viewport().set_input_as_handled()
+				return
+		else:
+			if _duration_dragging:
+				_duration_dragging = false
+				get_viewport().set_input_as_handled()
+				return
+
+	if event is InputEventMouseMotion and _duration_dragging:
+		var drag_mouse := _canvas.get_local_mouse_position()
+		var sess_sr := _session_slider_rect()
+		var ratio = clampf((drag_mouse.x - sess_sr.position.x) / sess_sr.size.x, 0.0, 1.0)
+		_session_duration = roundi(lerp(5.0, 180.0, ratio) / 5.0) * 5
+		session_duration_changed.emit(_session_duration)
 		get_viewport().set_input_as_handled()
 		return
 
@@ -640,6 +704,47 @@ func _draw_content() -> void:
 	var pr := _panel_rect()
 	var font := ThemeDB.fallback_font
 	var cc := _content_canvas  # shorthand — all draw calls on clipped canvas
+
+	# ── SECTION: Session Duration ──
+	var sess_cy := _session_section_content_y()
+	var sess_sy := _content_y_to_screen(sess_cy)
+	cc.draw_string(font, Vector2(pr.position.x + PADDING, sess_sy + 20),
+		"⏱️  Durée de Session (Deep Work)", HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 13,
+		Color(0.6, 0.8, 1.0, alpha))
+	
+	# Value text
+	var str_dur := str(_session_duration) + " min"
+	cc.draw_string(font, Vector2(pr.position.x + PANEL_WIDTH - PADDING - 60 - _scrollbar_gutter(), sess_sy + 20),
+		str_dur, HORIZONTAL_ALIGNMENT_RIGHT, 60, 13,
+		Color(1.0, 0.8, 0.4, alpha) if _hovered_duration or _duration_dragging else Color(0.8, 0.8, 0.8, alpha))
+	
+	# Track
+	var sess_sr := _session_slider_rect()
+	var sess_track_c := Color(0.1, 0.15, 0.2, alpha)
+	cc.draw_rect(sess_sr, sess_track_c, true)
+	
+	# Fill
+	var sess_fill_w := (_session_duration - 5) / 175.0 * sess_sr.size.x
+	var sess_fill_r := Rect2(sess_sr.position.x, sess_sr.position.y, sess_fill_w, sess_sr.size.y)
+	var sess_fill_c := Color(0.4, 0.6, 0.9, alpha)
+	if _duration_dragging:
+		sess_fill_c = Color(0.6, 0.8, 1.0, alpha)
+	elif _hovered_duration:
+		sess_fill_c = Color(0.5, 0.7, 1.0, alpha)
+	cc.draw_rect(sess_fill_r, sess_fill_c, true)
+	
+	# Thumb
+	var sess_thumb := _session_thumb_center()
+	var sess_thumb_c := Color(0.8, 0.9, 1.0, alpha)
+	if _duration_dragging:
+		sess_thumb_c = Color(1.0, 1.0, 1.0, alpha)
+	cc.draw_circle(sess_thumb, VOLUME_THUMB_R, sess_thumb_c)
+
+	var sess_sep_sy := _content_y_to_screen(sess_cy + SESSION_SECTION_H - 6)
+	cc.draw_line(Vector2(pr.position.x + PADDING, sess_sep_sy),
+		Vector2(pr.position.x + PANEL_WIDTH - PADDING, sess_sep_sy),
+		Color(0.3, 0.5, 0.8, 0.2 * alpha), 1.0)
+
 
 	# ── SECTION: Microphone ──
 	var mic_cy := _mic_section_content_y()
