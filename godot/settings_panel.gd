@@ -230,7 +230,7 @@ func _session_slider_rect() -> Rect2:
 func _session_thumb_center() -> Vector2:
 	var sr := _session_slider_rect()
 	# Range is 5 to 180 min
-	var ratio = clampf(float(_session_duration - 5) / 175.0, 0.0, 1.0)
+	var ratio := clampf(float(_session_duration - 5) / 175.0, 0.0, 1.0)
 	var tx := sr.position.x + ratio * sr.size.x
 	var ty := sr.position.y + sr.size.y * 0.5
 	return Vector2(tx, ty)
@@ -545,7 +545,7 @@ func _input(event: InputEvent) -> void:
 			var sess_hover := Rect2(sess_sr.position.x - 10, sess_sr.position.y - 14, sess_sr.size.x + 20, sess_sr.size.y + 28)
 			if sess_hover.has_point(sess_mouse) and _is_in_content_area(sess_sr.position.y):
 				_duration_dragging = true
-				var ratio = clampf((sess_mouse.x - sess_sr.position.x) / sess_sr.size.x, 0.0, 1.0)
+				var ratio := clampf((sess_mouse.x - sess_sr.position.x) / sess_sr.size.x, 0.0, 1.0)
 				_session_duration = roundi(lerp(5.0, 180.0, ratio) / 5.0) * 5
 				session_duration_changed.emit(_session_duration)
 				get_viewport().set_input_as_handled()
@@ -559,7 +559,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and _duration_dragging:
 		var drag_mouse := _canvas.get_local_mouse_position()
 		var sess_sr := _session_slider_rect()
-		var ratio = clampf((drag_mouse.x - sess_sr.position.x) / sess_sr.size.x, 0.0, 1.0)
+		var ratio := clampf((drag_mouse.x - sess_sr.position.x) / sess_sr.size.x, 0.0, 1.0)
 		_session_duration = roundi(lerp(5.0, 180.0, ratio) / 5.0) * 5
 		session_duration_changed.emit(_session_duration)
 		get_viewport().set_input_as_handled()
