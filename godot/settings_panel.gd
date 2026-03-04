@@ -253,12 +253,37 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	root_vbox.add_theme_constant_override("separation", 0)
 	_panel_container.add_child(root_vbox)
 
-	# ── Title ──
+	# ── Title bar ──
+	var title_bar := HBoxContainer.new()
+	title_bar.add_theme_constant_override("separation", 0)
+	root_vbox.add_child(title_bar)
+
 	var title := Label.new()
 	title.text = "⚙️  Réglages"
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
-	root_vbox.add_child(title)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_bar.add_child(title)
+
+	var close_btn := Button.new()
+	close_btn.text = "✕"
+	close_btn.custom_minimum_size = Vector2(28, 28)
+	var close_style := StyleBoxFlat.new()
+	close_style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	close_style.set_content_margin_all(2)
+	var close_hover := StyleBoxFlat.new()
+	close_hover.bg_color = Color(1.0, 0.3, 0.3, 0.25)
+	close_hover.set_corner_radius_all(4)
+	close_hover.set_content_margin_all(2)
+	close_btn.add_theme_stylebox_override("normal", close_style)
+	close_btn.add_theme_stylebox_override("hover", close_hover)
+	close_btn.add_theme_stylebox_override("pressed", close_hover)
+	close_btn.add_theme_font_size_override("font_size", 14)
+	close_btn.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+	close_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.4, 0.4))
+	close_btn.pressed.connect(close)
+	title_bar.add_child(close_btn)
+
 	root_vbox.add_child(_make_sep())
 
 	# ── ScrollContainer (all settings inside) ──
@@ -277,10 +302,16 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.add_child(_vbox)
 
-	# ══════ SECTION: Session Duration ══════
-	var sess_section := _make_collapsible_section("⏱️  Durée de Session", true)
+	# ══════ SECTION: Session ══════
+	var sess_section := _make_collapsible_section("⏱️  Session", false)
 	_vbox.add_child(sess_section["root"])
 	var sess_content: VBoxContainer = sess_section["content"]
+
+	var sess_lbl := Label.new()
+	sess_lbl.text = "Durée du Deep Work"
+	sess_lbl.add_theme_font_size_override("font_size", 10)
+	sess_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	sess_content.add_child(sess_lbl)
 
 	var sess_row := HBoxContainer.new()
 	sess_row.add_theme_constant_override("separation", 8)
@@ -307,10 +338,17 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	_session_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	sess_row.add_child(_session_label)
 
-	# ══════ SECTION: Microphone ══════
-	var mic_section := _make_collapsible_section("🎤  Microphone", true)
-	_vbox.add_child(mic_section["root"])
-	var mic_content: VBoxContainer = mic_section["content"]
+	# ══════ SECTION: Audio (Mic + Volume) ══════
+	var audio_section := _make_collapsible_section("🎤  Audio", false)
+	_vbox.add_child(audio_section["root"])
+	var audio_content: VBoxContainer = audio_section["content"]
+
+	# ── Sub: Microphone ──
+	var mic_lbl := Label.new()
+	mic_lbl.text = "Microphone"
+	mic_lbl.add_theme_font_size_override("font_size", 10)
+	mic_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	audio_content.add_child(mic_lbl)
 
 	# VU meter
 	_vu_bar = ProgressBar.new()
@@ -327,19 +365,60 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	vu_fill.bg_color = Color(0.1, 0.9, 0.3, 0.9)
 	vu_fill.set_corner_radius_all(3)
 	_vu_bar.add_theme_stylebox_override("fill", vu_fill)
-	mic_content.add_child(_vu_bar)
+	audio_content.add_child(_vu_bar)
 
 	# Mic items
 	_mic_container = VBoxContainer.new()
 	_mic_container.add_theme_constant_override("separation", 3)
-	mic_content.add_child(_mic_container)
+	audio_content.add_child(_mic_container)
 	for i in _mics.size():
 		_add_mic_button(i)
 
-	# ══════ SECTION: API Key ══════
-	var api_section := _make_collapsible_section("🔑  Clé API Gemini", false)
+	# ── Sub: Volume ──
+	audio_content.add_child(_make_sub_sep())
+
+	var vol_lbl := Label.new()
+	vol_lbl.text = "Volume Tama"
+	vol_lbl.add_theme_font_size_override("font_size", 10)
+	vol_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	audio_content.add_child(vol_lbl)
+
+	var vol_row := HBoxContainer.new()
+	vol_row.add_theme_constant_override("separation", 8)
+	audio_content.add_child(vol_row)
+
+	_volume_slider = HSlider.new()
+	_volume_slider.min_value = 0.0
+	_volume_slider.max_value = 1.0
+	_volume_slider.step = 0.01
+	_volume_slider.value = volume
+	_volume_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_volume_slider.custom_minimum_size.y = 24
+	_volume_slider.add_theme_stylebox_override("slider", _make_slider_style())
+	_volume_slider.add_theme_stylebox_override("grabber_area", _make_slider_fill_style())
+	_volume_slider.add_theme_stylebox_override("grabber_area_highlight", _make_slider_fill_style())
+	_volume_slider.value_changed.connect(_on_volume_value_changed)
+	vol_row.add_child(_volume_slider)
+
+	_volume_label = Label.new()
+	_volume_label.text = str(int(volume * 100)) + "%"
+	_volume_label.add_theme_font_size_override("font_size", 12)
+	_volume_label.add_theme_color_override("font_color", Color(0.7, 0.85, 0.95))
+	_volume_label.custom_minimum_size.x = 40
+	_volume_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	vol_row.add_child(_volume_label)
+
+	# ══════ SECTION: API (Key + Usage) ══════
+	var api_section := _make_collapsible_section("🔑  API", false)
 	_vbox.add_child(api_section["root"])
 	var api_content: VBoxContainer = api_section["content"]
+
+	# ── Sub: API Key ──
+	var key_lbl := Label.new()
+	key_lbl.text = "Clé API Gemini"
+	key_lbl.add_theme_font_size_override("font_size", 10)
+	key_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	api_content.add_child(key_lbl)
 
 	var api_row := HBoxContainer.new()
 	api_row.add_theme_constant_override("separation", 6)
@@ -376,10 +455,41 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	_update_api_status()
 	api_content.add_child(_api_status_label)
 
-	# ══════ SECTION: Language ══════
-	var lang_section := _make_collapsible_section("🌐  Langue / Language", false)
-	_vbox.add_child(lang_section["root"])
-	var lang_content: VBoxContainer = lang_section["content"]
+	# ── Sub: Usage ──
+	api_content.add_child(_make_sub_sep())
+
+	var usage_lbl := Label.new()
+	usage_lbl.text = "Utilisation"
+	usage_lbl.add_theme_font_size_override("font_size", 10)
+	usage_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	api_content.add_child(usage_lbl)
+
+	_usage_label = RichTextLabel.new()
+	_usage_label.bbcode_enabled = true
+	_usage_label.fit_content = true
+	_usage_label.scroll_active = false
+	_usage_label.custom_minimum_size.y = 80
+	_usage_label.add_theme_font_size_override("normal_font_size", 10)
+	_usage_label.add_theme_color_override("default_color", Color(0.6, 0.7, 0.8))
+	_update_usage_text()
+	api_content.add_child(_usage_label)
+
+	var note := Label.new()
+	note.text = "Depuis le lancement"
+	note.add_theme_font_size_override("font_size", 9)
+	note.add_theme_color_override("font_color", Color(0.4, 0.45, 0.55, 0.6))
+	api_content.add_child(note)
+
+	# ══════ SECTION: General (Language) ══════
+	var gen_section := _make_collapsible_section("🌐  Général", false)
+	_vbox.add_child(gen_section["root"])
+	var gen_content: VBoxContainer = gen_section["content"]
+
+	var lang_lbl := Label.new()
+	lang_lbl.text = "Langue / Language"
+	lang_lbl.add_theme_font_size_override("font_size", 10)
+	lang_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	gen_content.add_child(lang_lbl)
 
 	_lang_btn = OptionButton.new()
 	_lang_btn.add_theme_stylebox_override("normal", _make_optionbtn_style())
@@ -394,59 +504,7 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 			selected_lang_idx = i
 	_lang_btn.selected = selected_lang_idx
 	_lang_btn.item_selected.connect(_on_language_selected)
-	lang_content.add_child(_lang_btn)
-
-	# ══════ SECTION: Volume ══════
-	var vol_section := _make_collapsible_section("🔊  Volume Tama", false)
-	_vbox.add_child(vol_section["root"])
-	var vol_content: VBoxContainer = vol_section["content"]
-
-	var vol_row := HBoxContainer.new()
-	vol_row.add_theme_constant_override("separation", 8)
-	vol_content.add_child(vol_row)
-
-	_volume_slider = HSlider.new()
-	_volume_slider.min_value = 0.0
-	_volume_slider.max_value = 1.0
-	_volume_slider.step = 0.01
-	_volume_slider.value = volume
-	_volume_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_volume_slider.custom_minimum_size.y = 24
-	_volume_slider.add_theme_stylebox_override("slider", _make_slider_style())
-	_volume_slider.add_theme_stylebox_override("grabber_area", _make_slider_fill_style())
-	_volume_slider.add_theme_stylebox_override("grabber_area_highlight", _make_slider_fill_style())
-	_volume_slider.value_changed.connect(_on_volume_value_changed)
-	vol_row.add_child(_volume_slider)
-
-	_volume_label = Label.new()
-	_volume_label.text = str(int(volume * 100)) + "%"
-	_volume_label.add_theme_font_size_override("font_size", 12)
-	_volume_label.add_theme_color_override("font_color", Color(0.7, 0.85, 0.95))
-	_volume_label.custom_minimum_size.x = 40
-	_volume_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	vol_row.add_child(_volume_label)
-
-	# ══════ SECTION: API Usage ══════
-	var usage_section := _make_collapsible_section("📊  API Usage", false)
-	_vbox.add_child(usage_section["root"])
-	var usage_content: VBoxContainer = usage_section["content"]
-
-	_usage_label = RichTextLabel.new()
-	_usage_label.bbcode_enabled = true
-	_usage_label.fit_content = true
-	_usage_label.scroll_active = false
-	_usage_label.custom_minimum_size.y = 80
-	_usage_label.add_theme_font_size_override("normal_font_size", 10)
-	_usage_label.add_theme_color_override("default_color", Color(0.6, 0.7, 0.8))
-	_update_usage_text()
-	usage_content.add_child(_usage_label)
-
-	# Subtle note
-	var note := Label.new()
-	note.text = "Depuis le lancement"
-	note.add_theme_font_size_override("font_size", 9)
-	note.add_theme_color_override("font_color", Color(0.4, 0.45, 0.55, 0.6))
-	usage_content.add_child(note)
+	gen_content.add_child(_lang_btn)
 
 # ─── Helper: Collapsible Section ──────────────────────────
 
@@ -508,6 +566,18 @@ func _make_sep() -> HSeparator:
 	var sep := HSeparator.new()
 	sep.add_theme_stylebox_override("separator", _make_separator_style())
 	sep.add_theme_constant_override("separation", 4)
+	return sep
+
+func _make_sub_sep() -> HSeparator:
+	## Lighter separator for sub-sections within a collapsible section
+	var sep := HSeparator.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.2, 0.3, 0.5, 0.1)
+	style.set_content_margin_all(0)
+	style.content_margin_top = 3
+	style.content_margin_bottom = 3
+	sep.add_theme_stylebox_override("separator", style)
+	sep.add_theme_constant_override("separation", 2)
 	return sep
 
 # ─── Mic Buttons ───────────────────────────────────────────
@@ -616,6 +686,10 @@ func _update_usage_text() -> void:
 	var function_calls := int(_api_usage.get("function_calls", 0))
 	var audio_sent := int(_api_usage.get("audio_sent", 0))
 	var audio_recv := int(_api_usage.get("audio_recv", 0))
+	var lite_calls := int(_api_usage.get("lite_calls", 0))
+	var lite_in := int(_api_usage.get("lite_input_tokens", 0))
+	var lite_out := int(_api_usage.get("lite_output_tokens", 0))
+	var lite_errors := int(_api_usage.get("lite_errors", 0))
 
 	var time_str := _format_duration(connect_secs)
 	_usage_label.text = ""
@@ -624,7 +698,14 @@ func _update_usage_text() -> void:
 	_usage_label.append_text("[color=#8899bb]📸 Scans[/color]  [color=#ccddf4]" + _format_number(screen_pulses) + "[/color]")
 	_usage_label.append_text("      [color=#8899bb]⚙ Fn calls[/color]  [color=#ccddf4]" + _format_number(function_calls) + "[/color]\n")
 	_usage_label.append_text("[color=#8899bb]🎤 Audio ↑[/color]  [color=#ccddf4]" + _format_number(audio_sent) + "[/color]")
-	_usage_label.append_text("      [color=#8899bb]🔊 Audio ↓[/color]  [color=#ccddf4]" + _format_number(audio_recv) + "[/color]")
+	_usage_label.append_text("      [color=#8899bb]🔊 Audio ↓[/color]  [color=#ccddf4]" + _format_number(audio_recv) + "[/color]\n")
+	# Flash-Lite 3.1 secondary agent stats
+	if lite_calls > 0:
+		_usage_label.append_text("[color=#66bbcc]⚡ Lite[/color]  [color=#9de0ec]" + _format_number(lite_calls) + " calls[/color]")
+		_usage_label.append_text("  [color=#66bbcc]↑[/color] [color=#9de0ec]" + _format_number(lite_in) + "[/color]")
+		_usage_label.append_text("  [color=#66bbcc]↓[/color] [color=#9de0ec]" + _format_number(lite_out) + " tok[/color]")
+		if lite_errors > 0:
+			_usage_label.append_text("  [color=#e06666]⚠ " + str(lite_errors) + "[/color]")
 
 # ─── Process ──────────────────────────────────────────────
 

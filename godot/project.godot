@@ -16,6 +16,10 @@ config/features=PackedStringArray("4.6", "GL Compatibility")
 run/max_fps=60
 config/icon="res://icon.svg"
 
+[audio]
+
+driver/enable_input=true
+
 [display]
 
 window/size/viewport_width=400
@@ -26,10 +30,6 @@ window/size/transparent=true
 window/subwindows/embed_subwindows=false
 window/per_pixel_transparency/allowed=true
 
-[audio]
-
-driver/enable_input=true
-
 [physics]
 
 3d/physics_engine="Jolt Physics"
@@ -39,5 +39,6 @@ driver/enable_input=true
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=1
 environment/defaults/default_clear_color=Color(0, 0, 0, 0)
 viewport/transparent_background=true

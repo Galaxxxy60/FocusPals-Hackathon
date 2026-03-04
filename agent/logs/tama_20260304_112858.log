@@ -1,0 +1,1206 @@
+============================================================
+🥷 FocusPals / Tama — Session Log
+Started: 2026-03-04 11:28:58
+Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
+PID: 16296
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_112858.log
+============================================================
+
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_112858.log
+🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
+🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 1440px, zone Y: 352-852
+11:29:01 [INFO] server listening on 127.0.0.1:8080
+11:29:01 [INFO] server listening on [::1]:8080
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+11:29:01 [INFO] connection open
+📐 Fenêtre repositionnée: (1240, 602) — taille 200x250
+✅ Click-through + position OK (handle: 2099850)
+11:29:02 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ API key valid (key: AIzaSyBR...)
+🖱️ [EdgeMonitor] SHOW_RADIAL (1438, 821) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 686) screen_w=1440
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "🚀 SESSION COMMENCÉE via Radial Menu !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connecting to Google WebSocket..."
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+⚠️ [EdgeMonitor] DPI DRIFT! screen_w changed: 1440 → 2880
+11:29:12 [INFO] AFC is enabled with max remote calls: 10.
+  🔄 Session resume handle activé
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=foculpal, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1191, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 0min, S=0.0)
+11:29:23 [INFO] AFC is enabled with max remote calls: 10.
+  🎭 Mood: calm (0.5)
+  🎭 ┌─ MOOD REPORT ────────────────────
+  🎭 │ Mood: calm | Intensity: 0.5
+  🎭 │ → Animation: Hello (loop)
+  🎭 └────────────────────────────────────
+  🔍 S:0/10 | A:0.5 | Cat:ZONE_GRISE | ΔS:+0.5 | C:1.00 | Mood:-0.1 — foculpal is ambiguous, assuming ZONE_GRISE in free session.
+11:29:32 [INFO] AFC is enabled with max remote calls: 10.
+11:29:34 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=FocusPals Launcher, S=0.5
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1191, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 0min, S=0.5)
+  🔍 S:0/10 | A:0.5 | Cat:PROCRASTINATION_PRODUCTIVE | ΔS:+0.4 | C:1.00 | Mood:-0.1 — Reprise après crash, pas de tâche définie, dernière fenêtre 'FocusPals Launcher' (productif ?)
+11:29:42 [INFO] AFC is enabled with max remote calls: 10.
+11:29:44 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:29:51 [INFO] AFC is enabled with max remote calls: 10.
+11:29:52 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:29:59 [INFO] AFC is enabled with max remote calls: 10.
+11:30:01 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:30:09 [INFO] AFC is enabled with max remote calls: 10.
+11:30:10 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:30:17 [INFO] AFC is enabled with max remote calls: 10.
+11:30:26 [INFO] AFC is enabled with max remote calls: 10.
+11:30:28 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:30:35 [INFO] AFC is enabled with max remote calls: 10.
+11:30:37 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:30:44 [INFO] AFC is enabled with max remote calls: 10.
+11:30:46 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:30:53 [INFO] AFC is enabled with max remote calls: 10.
+11:30:55 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:31:02 [INFO] AFC is enabled with max remote calls: 10.
+11:31:03 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:31:11 [INFO] AFC is enabled with max remote calls: 10.
+11:31:12 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:31:19 [INFO] AFC is enabled with max remote calls: 10.
+11:31:21 [WARNING] Flash-Lite JSON parse error: Expecting value: line 2 column 14 (char 15)
+11:31:28 [INFO] AFC is enabled with max remote calls: 10.
+11:31:30 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:31:37 [INFO] AFC is enabled with max remote calls: 10.
+11:31:38 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:31:46 [INFO] AFC is enabled with max remote calls: 10.
+11:31:47 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:31:54 [INFO] AFC is enabled with max remote calls: 10.
+11:31:56 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:32:03 [INFO] AFC is enabled with max remote calls: 10.
+11:32:05 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:32:12 [INFO] AFC is enabled with max remote calls: 10.
+11:32:14 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:32:21 [INFO] AFC is enabled with max remote calls: 10.
+11:32:30 [INFO] AFC is enabled with max remote calls: 10.
+11:32:39 [INFO] AFC is enabled with max remote calls: 10.
+11:32:41 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:32:48 [INFO] AFC is enabled with max remote calls: 10.
+11:32:50 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+11:32:57 [INFO] AFC is enabled with max remote calls: 10.
+11:33:06 [INFO] AFC is enabled with max remote calls: 10.
+11:33:08 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:33:15 [INFO] AFC is enabled with max remote calls: 10.
+11:33:17 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:33:24 [INFO] AFC is enabled with max remote calls: 10.
+11:33:25 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:33:33 [INFO] AFC is enabled with max remote calls: 10.
+11:33:34 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:33:41 [INFO] AFC is enabled with max remote calls: 10.
+11:33:43 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:33:50 [INFO] AFC is enabled with max remote calls: 10.
+11:33:51 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:33:59 [INFO] AFC is enabled with max remote calls: 10.
+11:34:08 [INFO] AFC is enabled with max remote calls: 10.
+11:34:09 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:34:16 [INFO] AFC is enabled with max remote calls: 10.
+11:34:26 [INFO] AFC is enabled with max remote calls: 10.
+11:34:27 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:34:35 [INFO] AFC is enabled with max remote calls: 10.
+11:34:44 [INFO] AFC is enabled with max remote calls: 10.
+11:34:53 [INFO] AFC is enabled with max remote calls: 10.
+11:34:55 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:35:02 [INFO] AFC is enabled with max remote calls: 10.
+11:35:04 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:35:11 [INFO] AFC is enabled with max remote calls: 10.
+11:35:20 [INFO] AFC is enabled with max remote calls: 10.
+11:35:29 [INFO] AFC is enabled with max remote calls: 10.
+11:35:31 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+11:35:38 [INFO] AFC is enabled with max remote calls: 10.
+11:35:39 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:35:47 [INFO] AFC is enabled with max remote calls: 10.
+11:35:48 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:35:55 [INFO] AFC is enabled with max remote calls: 10.
+11:35:57 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:36:04 [INFO] AFC is enabled with max remote calls: 10.
+11:36:13 [INFO] AFC is enabled with max remote calls: 10.
+11:36:22 [INFO] AFC is enabled with max remote calls: 10.
+11:36:32 [INFO] AFC is enabled with max remote calls: 10.
+11:36:41 [INFO] AFC is enabled with max remote calls: 10.
+11:36:42 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:36:50 [INFO] AFC is enabled with max remote calls: 10.
+11:36:51 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:36:58 [INFO] AFC is enabled with max remote calls: 10.
+11:37:00 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:37:07 [INFO] AFC is enabled with max remote calls: 10.
+11:37:09 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:37:16 [INFO] AFC is enabled with max remote calls: 10.
+11:37:25 [INFO] AFC is enabled with max remote calls: 10.
+11:37:27 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:37:34 [INFO] AFC is enabled with max remote calls: 10.
+11:37:43 [INFO] AFC is enabled with max remote calls: 10.
+11:37:45 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:37:52 [INFO] AFC is enabled with max remote calls: 10.
+11:38:01 [INFO] AFC is enabled with max remote calls: 10.
+11:38:11 [INFO] AFC is enabled with max remote calls: 10.
+11:38:20 [INFO] AFC is enabled with max remote calls: 10.
+11:38:29 [INFO] AFC is enabled with max remote calls: 10.
+  ⚠️ [GoAway] Gemini va déconnecter dans 50s. Reconnexion préparée...
+11:38:38 [INFO] AFC is enabled with max remote calls: 10.
+11:38:47 [INFO] AFC is enabled with max remote calls: 10.
+11:38:49 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:38:56 [INFO] AFC is enabled with max remote calls: 10.
+11:38:58 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:39:05 [INFO] AFC is enabled with max remote calls: 10.
+11:39:14 [INFO] AFC is enabled with max remote calls: 10.
+11:39:23 [INFO] AFC is enabled with max remote calls: 10.
+11:39:25 [WARNING] Flash-Lite pre-classify error: list index out of range
+11:39:32 [INFO] AFC is enabled with max remote calls: 10.
+11:39:34 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Deadline expired before operation could complete.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Deadline expired before operation could complete.; then sent 1011 (internal error) Deadline expired before operation could complete.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Deadline expired before operation could complete.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=blender.psd @ 139% (Calque 11, RVB/8) *, S=0.9
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1191, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Deadline expired before operation could complete.; then sent 1011 (internal error) Deadline expired before operation could complete.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Deadline expired before operation could complete.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 10min, S=0.9)
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:0.2 — Reprise après crash, 10 min de deep work, dernière fenêtre blender.psd (travail créatif)
+11:39:44 [INFO] AFC is enabled with max remote calls: 10.
+11:39:45 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:0.2 — blender.psd actif, travail créatif en cours
+  🎭 Mood: calm (0.7)
+11:39:57 [INFO] AFC is enabled with max remote calls: 10.
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:0.2 — Référence visuelle pour le travail en cours.
+11:40:11 [INFO] AFC is enabled with max remote calls: 10.
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:0.2 — Référence visuelle pour le travail. Retour rapide sur Photoshop.
+11:40:26 [INFO] AFC is enabled with max remote calls: 10.
+11:40:40 [INFO] AFC is enabled with max remote calls: 10.
+11:40:41 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:40:54 [INFO] AFC is enabled with max remote calls: 10.
+11:40:55 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:41:08 [INFO] AFC is enabled with max remote calls: 10.
+11:41:09 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:41:22 [INFO] AFC is enabled with max remote calls: 10.
+11:41:23 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+11:41:35 [INFO] AFC is enabled with max remote calls: 10.
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1401) screen_w=2880
+11:41:49 [INFO] AFC is enabled with max remote calls: 10.
+11:41:51 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:42:04 [INFO] AFC is enabled with max remote calls: 10.
+11:42:05 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:42:17 [INFO] AFC is enabled with max remote calls: 10.
+11:42:19 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:42:31 [INFO] AFC is enabled with max remote calls: 10.
+11:42:45 [INFO] AFC is enabled with max remote calls: 10.
+11:43:00 [INFO] AFC is enabled with max remote calls: 10.
+11:43:14 [INFO] AFC is enabled with max remote calls: 10.
+11:43:28 [INFO] AFC is enabled with max remote calls: 10.
+11:43:42 [INFO] AFC is enabled with max remote calls: 10.
+11:43:44 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:43:56 [INFO] AFC is enabled with max remote calls: 10.
+11:44:10 [INFO] AFC is enabled with max remote calls: 10.
+🖱️ [EdgeMonitor] SHOW_RADIAL (2877, 1549) screen_w=2880
+11:44:24 [INFO] AFC is enabled with max remote calls: 10.
+11:44:26 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:44:39 [INFO] AFC is enabled with max remote calls: 10.
+11:44:53 [INFO] AFC is enabled with max remote calls: 10.
+11:45:07 [INFO] AFC is enabled with max remote calls: 10.
+11:45:08 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+11:45:21 [INFO] AFC is enabled with max remote calls: 10.
+11:45:22 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:45:35 [INFO] AFC is enabled with max remote calls: 10.
+11:45:49 [INFO] AFC is enabled with max remote calls: 10.
+11:45:51 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:46:03 [INFO] AFC is enabled with max remote calls: 10.
+11:46:04 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:46:16 [INFO] AFC is enabled with max remote calls: 10.
+11:46:18 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+11:46:31 [INFO] AFC is enabled with max remote calls: 10.
+11:46:45 [INFO] AFC is enabled with max remote calls: 10.
+11:46:46 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:46:59 [INFO] AFC is enabled with max remote calls: 10.
+11:47:00 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:47:13 [INFO] AFC is enabled with max remote calls: 10.
+11:47:27 [INFO] AFC is enabled with max remote calls: 10.
+11:47:29 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:47:41 [INFO] AFC is enabled with max remote calls: 10.
+11:47:42 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:47:55 [INFO] AFC is enabled with max remote calls: 10.
+11:48:09 [INFO] AFC is enabled with max remote calls: 10.
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1399) screen_w=2880
+11:48:23 [INFO] AFC is enabled with max remote calls: 10.
+11:48:37 [INFO] AFC is enabled with max remote calls: 10.
+  ⚠️ [GoAway] Gemini va déconnecter dans 50s. Reconnexion préparée...
+11:48:39 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+11:48:51 [INFO] AFC is enabled with max remote calls: 10.
+11:48:53 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:49:05 [INFO] AFC is enabled with max remote calls: 10.
+☕ Tama suggère une pause ! (20 min de travail)
+11:49:20 [INFO] AFC is enabled with max remote calls: 10.
+11:49:21 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 690) screen_w=2880
+11:49:33 [INFO] AFC is enabled with max remote calls: 10.
+11:49:35 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Deadline expired before operation could complete.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Deadline expired before operation could complete.; then sent 1011 (internal error) Deadline expired before operation could complete.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Deadline expired before operation could complete.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=blender.psd @ 1670% (Calque 13, RVB/8) *, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1191, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Deadline expired before operation could complete.; then sent 1011 (internal error) Deadline expired before operation could complete.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Deadline expired before operation could complete.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 20min, S=0.0)
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:0.0 — Reprise après crash, 20 min de deep work sur Photoshop (blender.psd).
+11:49:46 [INFO] AFC is enabled with max remote calls: 10.
+  🎭 Mood: calm (0.3)
+  🎭 ┌─ MOOD REPORT ────────────────────
+  🎭 │ Mood: calm | Intensity: 0.3
+  🎭 │ → Animation: Hello (loop)
+  🎭 └────────────────────────────────────
+11:49:47 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:49:59 [INFO] AFC is enabled with max remote calls: 10.
+11:50:01 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:0.0 — Travail continu sur Photoshop.
+  🎭 Mood: calm (0.4)
+  🎭 ┌─ MOOD REPORT ────────────────────
+  🎭 │ Mood: calm | Intensity: 0.4
+  🎭 │ → Animation: Hello (loop)
+  🎭 └────────────────────────────────────
+11:50:13 [INFO] AFC is enabled with max remote calls: 10.
+11:50:15 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:0.0 — L'utilisateur continue de travailler malgré la suggestion de pause.
+  🎭 Mood: amused (0.3)
+  🎭 ┌─ MOOD REPORT ────────────────────
+  🎭 │ Mood: amused | Intensity: 0.3
+  🎭 │ → Animation: Hello (loop)
+  🎭 └────────────────────────────────────
+11:50:27 [INFO] AFC is enabled with max remote calls: 10.
+11:50:28 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:0.0 — Travail continu sur Photoshop.
+  🎭 Mood: amused (0.3)
+  🎭 ┌─ MOOD REPORT ────────────────────
+  🎭 │ Mood: amused | Intensity: 0.3
+  🎭 │ → Animation: Hello (loop)
+  🎭 └────────────────────────────────────
+11:50:40 [INFO] AFC is enabled with max remote calls: 10.
+11:50:42 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:50:54 [INFO] AFC is enabled with max remote calls: 10.
+11:50:56 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:51:08 [INFO] AFC is enabled with max remote calls: 10.
+11:51:10 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:51:22 [INFO] AFC is enabled with max remote calls: 10.
+11:51:36 [INFO] AFC is enabled with max remote calls: 10.
+11:51:38 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:51:50 [INFO] AFC is enabled with max remote calls: 10.
+11:51:52 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:52:04 [INFO] AFC is enabled with max remote calls: 10.
+11:52:06 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:52:18 [INFO] AFC is enabled with max remote calls: 10.
+11:52:20 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:52:32 [INFO] AFC is enabled with max remote calls: 10.
+11:52:34 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:52:46 [INFO] AFC is enabled with max remote calls: 10.
+11:52:48 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+11:53:00 [INFO] AFC is enabled with max remote calls: 10.
+11:53:14 [INFO] AFC is enabled with max remote calls: 10.
+11:53:28 [INFO] AFC is enabled with max remote calls: 10.
+11:53:42 [INFO] AFC is enabled with max remote calls: 10.
+11:53:57 [INFO] AFC is enabled with max remote calls: 10.
+11:54:11 [INFO] AFC is enabled with max remote calls: 10.
+11:54:25 [INFO] AFC is enabled with max remote calls: 10.
+11:54:27 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:54:39 [INFO] AFC is enabled with max remote calls: 10.
+11:54:40 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:54:53 [INFO] AFC is enabled with max remote calls: 10.
+11:55:07 [INFO] AFC is enabled with max remote calls: 10.
+11:55:08 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:55:21 [INFO] AFC is enabled with max remote calls: 10.
+11:55:23 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:55:35 [INFO] AFC is enabled with max remote calls: 10.
+11:55:37 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:55:49 [INFO] AFC is enabled with max remote calls: 10.
+11:55:50 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:56:03 [INFO] AFC is enabled with max remote calls: 10.
+11:56:04 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:56:16 [INFO] AFC is enabled with max remote calls: 10.
+🖱️ [EdgeMonitor] SHOW_RADIAL (2878, 1480) screen_w=2880
+11:56:31 [INFO] AFC is enabled with max remote calls: 10.
+11:56:45 [INFO] AFC is enabled with max remote calls: 10.
+11:56:47 [WARNING] Flash-Lite pre-classify error: 'NoneType' object has no attribute 'strip'
+11:56:59 [INFO] AFC is enabled with max remote calls: 10.
+11:57:13 [INFO] AFC is enabled with max remote calls: 10.
+11:57:15 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:57:27 [INFO] AFC is enabled with max remote calls: 10.
+11:57:29 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:57:41 [INFO] AFC is enabled with max remote calls: 10.
+11:57:42 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:57:55 [INFO] AFC is enabled with max remote calls: 10.
+11:57:56 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:58:08 [INFO] AFC is enabled with max remote calls: 10.
+11:58:10 [WARNING] Flash-Lite JSON parse error: Unterminated string starting at: line 2 column 3 (char 4)
+11:58:22 [INFO] AFC is enabled with max remote calls: 10.
+11:58:37 [INFO] AFC is enabled with max remote calls: 10.
+  ⚠️ [GoAway] Gemini va déconnecter dans 50s. Reconnexion préparée...
+11:58:51 [INFO] AFC is enabled with max remote calls: 10.
+11:59:05 [INFO] AFC is enabled with max remote calls: 10.
+11:59:07 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+11:59:19 [INFO] AFC is enabled with max remote calls: 10.
+11:59:33 [INFO] AFC is enabled with max remote calls: 10.
+11:59:35 [WARNING] Flash-Lite JSON parse error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Deadline expired before operation could complete.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Deadline expired before operation could complete.; then sent 1011 (internal error) Deadline expired before operation could complete.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Deadline expired before operation could complete.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=FocusPals - Antigravity - blenderOne.png, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1191, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Deadline expired before operation could complete.; then sent 1011 (internal error) Deadline expired before operation could complete.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Deadline expired before operation could complete.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1182, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 30min, S=0.0)
+11:59:47 [INFO] AFC is enabled with max remote calls: 10.
+  🔍 S:0/10 | A:1.0 | Cat:PROCRASTINATION_PRODUCTIVE | ΔS:-2.0 | C:1.00 | Mood:-0.2 — Reprise après crash, 30 min de deep work, dernière fenêtre FocusPals (productif/ambigu mais alignement 1.0)
+  🎭 Mood: calm (0.4)
+  🎭 ┌─ MOOD REPORT ────────────────────
+  🎭 │ Mood: calm | Intensity: 0.4
+  🎭 │ → Animation: Hello (loop)
+  🎭 └────────────────────────────────────
+
+👋 Tama: Fermeture propre...
+11:59:55 [ERROR] connection handler failed
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 376, in conn_handler
+    await self.handler(connection)
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\godot_bridge.py", line 242, in ws_handler
+    async for message in websocket:
+    ...<84 lines>...
+            import traceback; traceback.print_exc()
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 242, in __aiter__
+    yield await self.recv()
+          ^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: no close frame received or sent

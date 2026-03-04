@@ -18,6 +18,7 @@ import websockets
 from config import application_path, state, BREAK_CHECKPOINTS, BREAK_DURATIONS
 from audio import get_available_mics, refresh_mic_cache, select_mic, resolve_default_mic
 from ui import TamaState, start_session, quit_app, update_display
+from flash_lite import get_lite_stats, clear_classification_history, generate_session_summary
 
 
 # ─── Click-Through Toggle ───────────────────────────────────
@@ -91,6 +92,7 @@ def _get_api_usage_stats() -> dict:
     # Add live connection time if currently connected
     if state["_api_connect_time_start"] > 0:
         total_secs += time.time() - state["_api_connect_time_start"]
+    lite = get_lite_stats()
     return {
         "connections": state["_api_connections"],
         "screen_pulses": state["_api_screen_pulses"],
@@ -98,6 +100,11 @@ def _get_api_usage_stats() -> dict:
         "audio_sent": state["_api_audio_chunks_sent"],
         "audio_recv": state["_api_audio_chunks_recv"],
         "connect_secs": int(total_secs),
+        # Flash-Lite (3.1) secondary agent stats
+        "lite_calls": lite["lite_calls"],
+        "lite_input_tokens": lite["lite_input_tokens"],
+        "lite_output_tokens": lite["lite_output_tokens"],
+        "lite_errors": lite["lite_errors"],
     }
 
 
@@ -186,7 +193,6 @@ def mouse_edge_monitor():
     print(f"🖱️ [EdgeMonitor] Démarré — écran: {screen_w}px, zone Y: {detect_y_min}-{work_area.bottom}")
 
     radial_shown_time = 0
-    _last_diag = 0
 
     while True:
         pt = POINT()
@@ -196,10 +202,6 @@ def mouse_edge_monitor():
         if live_screen_w != screen_w:
             print(f"⚠️ [EdgeMonitor] DPI DRIFT! screen_w changed: {screen_w} → {live_screen_w}")
             screen_w = live_screen_w
-
-        if state["is_session_active"] and time.time() - _last_diag > 5.0:
-            _last_diag = time.time()
-            print(f"🖱️ [EdgeMonitor] DEBUG pos=({pt.x},{pt.y}) screen_w={screen_w} near={pt.x >= screen_w - 5} zone={pt.y >= detect_y_min} shown={state['radial_shown']} away={state['_mouse_was_away']}")
 
         near_edge = (screen_w - 5) <= pt.x <= screen_w
         in_zone = pt.y >= detect_y_min
@@ -242,6 +244,7 @@ async def ws_handler(websocket):
                 data = json.loads(message)
                 cmd = data.get("command", "")
                 if cmd == "START_SESSION":
+                    clear_classification_history()  # Fresh history for new session
                     start_session("Interface Godot 3D")
                 elif cmd == "HIDE_RADIAL":
                     state["radial_shown"] = False
@@ -330,10 +333,15 @@ async def ws_handler(websocket):
 
 async def broadcast_ws_state():
     """Continuously broadcast agent state to Godot via WebSocket."""
+    _session_ended = False  # Track session end to generate summary once
     while True:
         if state["connected_ws_clients"]:
             try:
                 if not state["is_session_active"]:
+                    # Check if session just ended → generate summary
+                    if _session_ended:
+                        _session_ended = False
+                        asyncio.create_task(_generate_end_summary())
                     state_data = {
                         "session_active": False,
                         "suspicion_index": 0.0,
@@ -343,6 +351,8 @@ async def broadcast_ws_state():
                     websockets.broadcast(state["connected_ws_clients"], json.dumps(state_data))
                     await asyncio.sleep(2.0)
                     continue
+                else:
+                    _session_ended = True  # Session is active → flag for end detection
 
                 session_minutes = 0
                 if state["session_start_time"]:
@@ -375,6 +385,8 @@ async def broadcast_ws_state():
                     "category": state["current_category"],
                     "can_be_closed": state["can_be_closed"],
                     "session_minutes": session_minutes,
+                    "session_elapsed_secs": int(time.time() - state["session_start_time"]) if state["session_start_time"] else 0,
+                    "session_duration_secs": state.get("session_duration_minutes", 50) * 60,
                     "break_reminder": state["break_reminder_active"],
                     "is_on_break": state["is_on_break"],
                     "next_break_at": BREAK_CHECKPOINTS[state["current_break_index"]] if state["current_break_index"] < len(BREAK_CHECKPOINTS) else None,
@@ -384,6 +396,26 @@ async def broadcast_ws_state():
             except Exception:
                 pass
         await asyncio.sleep(0.5)
+
+
+async def _generate_end_summary():
+    """Generate a session summary via Flash-Lite when a session ends."""
+    try:
+        lang = state.get("language", "fr")
+        summary = await generate_session_summary(lang)
+        if summary:
+            state["_session_summary"] = summary
+            print("\n" + "=" * 50)
+            print("📊 SESSION SUMMARY (Flash-Lite 3.1)")
+            print("=" * 50)
+            print(summary)
+            print("=" * 50 + "\n")
+        else:
+            print("📊 Session summary: no data (too short or Flash-Lite unavailable)")
+    except Exception as e:
+        print(f"⚠️ Session summary error: {e}")
+    finally:
+        clear_classification_history()
 
 
 # ─── Godot Launcher ─────────────────────────────────────────

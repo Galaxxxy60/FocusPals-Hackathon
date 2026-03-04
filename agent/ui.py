@@ -253,8 +253,8 @@ _MOOD_ANIM_MAP = {
 
 def send_mood_to_godot(mood: str, intensity: float):
     """
-    Map Gemini's reported mood+intensity to an animation and send to Godot.
-    Also sends a TAMA_MOOD message so Godot can do finer transitions later.
+    Map Gemini's reported mood+intensity to a BODY animation and send to Godot.
+    NOTE: TAMA_MOOD (facial expressions) is now sent directly in gemini_session.py.
     """
     # Pick animation from mood map
     anims = _MOOD_ANIM_MAP.get(mood, ("Hello", "Suspicious", "Angry"))
@@ -274,13 +274,3 @@ def send_mood_to_godot(mood: str, intensity: float):
     print(f"  🎭 │ Mood: {mood} | Intensity: {intensity:.1f}")
     print(f"  🎭 │ → Animation: {anim} ({'loop' if loop else 'once'})")
     print(f"  🎭 └────────────────────────────────────")
-
-    # Also send the raw mood data to Godot for future AnimationTree use
-    mood_msg = json.dumps({"command": "TAMA_MOOD", "mood": mood, "intensity": intensity})
-    main_loop = state["main_loop"]
-    for ws_client in list(state["connected_ws_clients"]):
-        try:
-            if main_loop and main_loop.is_running():
-                asyncio.run_coroutine_threadsafe(ws_client.send(mood_msg), main_loop)
-        except Exception:
-            pass

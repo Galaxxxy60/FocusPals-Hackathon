@@ -115,6 +115,7 @@ Toutes les variables globales vivent dans un **dict unique** `state` dans `confi
 | `radial_shown` | bool | Menu radial actuellement visible |
 | `_mouse_was_away` | bool | Anti-loop : souris a quitté la zone edge |
 | `_session_resume_handle` | str/None | Handle Gemini pour reprise de session transparente |
+| `_confidence` | float | Confiance C (0.1 → 1.0) — module la vitesse de déclin de S |
 
 ---
 
@@ -127,20 +128,70 @@ Le cœur du système de surveillance. Deux fonctions dans `config.py` :
 | Alignment | SANTE | ZONE_GRISE | FLUX | BANNIE | PROCRASTINATION_PRODUCTIVE |
 |-----------|-------|------------|------|--------|---------------------------|
 | 1.0 (Aligné) | -2.0 | -2.0 | -2.0 | +0.2 | -2.0 |
-| 0.5 (Doute)  | +0.2 | +0.2 | +0.2 | +0.2 | +0.2 |
+| 0.5 (Doute)  | +0.2 | +0.5 | +0.5 | +0.8 | +0.4 |
 | 0.0 (Misaligned) | +1.0 | +1.0 | +0.5 | +2.0 | +0.5 |
+
+> **Note** : Le ΔS négatif (decay) est multiplié par la Confiance C : `ΔS_réel = ΔS_base × C`
 
 ### Seuils de comportement
 
 | S | Pulse interval | Comportement |
 |---|---------------|-------------|
-| 0-2 | 8s | Calme, Tama cachée |
-| 3-5 | 5s | Suspicious (Tama apparaît) |
-| 6-8 | 4s | Warning verbal à 45s |
+| 0 | 12s | Calme, Tama cachée |
+| 1-5 | 7s | Suspicious (scans accélérés) |
+| 6-8 | 5s | Warning verbal à 20s |
 | 9-10 | 3s | Cri + auto-close BANNIE à 15s |
+
+### Confiance C — "L'Inertie de la Méfiance"
+
+Variable invisible qui module **la nervosité de Tama**. Empêche la triche par quick-switch.
+
+**Formules** :
+- **Gain (S monte)** : `ΔS = base × (1 + (1 - C))` — plus C est bas, plus S monte vite
+- **Decay (S descend)** : `ΔS = base × C` — plus C est bas, plus S descend lentement
+
+| Événement | Effet sur C |
+|-----------|------------|
+| Quick switch SANTE (< 30s sur app, S > 1) | C -= 0.15 (min 0.1) |
+| Travail soutenu SANTE (> 60s) | C += 0.02 (max 1.0) |
+| Non-SANTE (S monte) | C inchangé |
+
+**Impact de C sur les vitesses** :
+
+| C | Multiplicateur Gain | Multiplicateur Decay | Comportement |
+|---|-------|-------|------|
+| 1.0 | ×1.0 | ×1.0 | Normal — pleine confiance |
+| 0.5 | ×1.5 | ×0.5 | Méfiante — monte 50% plus vite, descend 2× plus lent |
+| 0.1 | ×1.9 | ×0.1 | Hyper-nerveuse — le moindre écart explose S |
+
+> **Principe** : La confiance se perd en secondes, se regagne en minutes.
 
 ### Protected Windows (jamais fermées)
 `code, cursor, visual studio, unreal, blender, word, excel, figma, photoshop, premiere, davinci, ableton, fl studio, suno, notion, obsidian, terminal, powershell, godot, focuspals, tama`
+
+### Symbiose Maths ↔ LLM
+
+Les maths (S, C) et le LLM (Gemini) forment une boucle :
+
+```
+Gemini → A + Catégorie → compute_delta_s → S, C (maths)
+                                              ↓
+                                    mood_engine traduit S + C
+                                    en langage naturel
+                                              ↓
+                                    Prompt Gemini : "Tu ne lui
+                                    fais plus confiance, il a
+                                    esquivé ta surveillance"
+                                              ↓
+                                    Gemini parle organiquement
+                                    avec le bon ton et contexte
+```
+
+- **LLM → Maths** : Gemini fait UN jugement (A + Cat), les maths font le reste
+- **Maths → LLM** : `mood_engine.get_mood_context()` traduit C en émotion naturelle
+- **Le LLM ne contrôle PAS les maths** — il les nourrit (A) et les interprète (mood), rien de plus
+
+> **⚠️ À simplifier** : le mood_engine actuel est un peu tarabiscoté (bias + C + infractions + streak + heure + chaos). Trouver un truc plus élégant.
 
 ---
 

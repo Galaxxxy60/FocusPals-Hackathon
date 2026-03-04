@@ -15,6 +15,8 @@ var active_duration: int = 0
 
 # ─── Session ───────────────────────────────────────────────
 var session_active: bool = false
+var session_elapsed_secs: int = 0
+var session_duration_secs: int = 3000  # 50 min default
 
 # ─── Animation State Machine ──────────────────────────────
 # Intro:  HIDDEN → PEEKING → HELLO (loop) → LEAVING → HIDDEN
@@ -31,6 +33,95 @@ var _prev_suspicion_tier: int = -1
 var _last_anim_command_time: float = 0.0  # Timestamp of last Python anim command
 const ANIM_COMMAND_COOLDOWN: float = 5.0  # Don't auto-anim if Python sent one recently
 
+# ─── Expression System (UV Swap) ─────────────────────────
+var _eyes_material: StandardMaterial3D = null
+var _mouth_material: StandardMaterial3D = null
+var _expression_ready: bool = false
+# ⚠️ Set to true ONLY after expression variants are painted in the texture atlas
+# When false: materials are found but NO UV offsets are applied (prevents white eyes)
+var _expressions_painted: bool = true
+
+# ─── Pupil Hide & Jaw (Blend Shapes) ─────────────────────
+var _body_mesh: MeshInstance3D = null
+var _bs_hide_left_eye: int = -1
+var _bs_hide_right_eye: int = -1
+var _bs_mouth_open: int = -1
+
+# Jaw open amount per viseme (base values, modulated by amplitude)
+const JAW_OPEN_MAP = {
+	"REST": 0.0,
+	"EE_TEETH": 0.2,
+	"OH": 0.6,
+	"AH": 1.0,
+}
+
+# UV offsets from neutral (A1) to each expression cell
+# Texture is 512×512. Expressions are in the RIGHT HALF:
+#   Column C = x: 0.50-0.75 | Column D = x: 0.75-1.00
+#   Row 1 = y: 0.00-0.25   | Row 2 = y: 0.25-0.50
+#   Row 3 = y: 0.50-0.75   | Row 4 = y: 0.75-1.00
+# Neutral face is in A1 (x: 0.00-0.25, y: 0.00-0.25)
+# Offset = target_cell_origin - neutral_cell_origin
+const EYE_OFFSETS = {
+	"E0": Vector3(0, 0, 0),           # Neutral (body default) — no offset
+	"E1": Vector3(0.5, 0, 0),         # C1: Plissés fort suspicieux
+	"E2": Vector3(0.75, 0, 0),        # D1: Fermés
+	"E3": Vector3(0.5, 0.25, 0),      # C2: Wide/grands ouverts
+	"E4": Vector3(0.75, 0.25, 0),     # D2: Happy
+	"E5": Vector3(0.5, 0.5, 0),       # C3: Angry
+	"E6": Vector3(0.75, 0.5, 0),      # D3: Semi-closed (blink frame)
+	"E7": Vector3(0.5, 0.75, 0),      # C4: Plissés léger malicieux
+	"E8": Vector3(0.75, 0.75, 0),     # D4: Furieux
+}
+
+const MOUTH_OFFSETS = {
+	"M0": Vector3(0, 0, 0),           # Neutral (body default) — no offset
+	"M1": Vector3(0.5, 0, 0),         # C1: Ronde "O" (grand)
+	"M2": Vector3(0.75, 0, 0),        # D1: Large "A" (grand)
+	"M3": Vector3(0.5, 0.25, 0),      # C2: Dents "I/E/F/S"
+	"M4": Vector3(0.75, 0.25, 0),     # D2: Happy sourire
+	"M5": Vector3(0.5, 0.5, 0),       # C3: Unhappy grimace
+	"M6": Vector3(0.75, 0.5, 0),      # D3: "Huh" méchant
+	"M7": Vector3(0.5, 0.75, 0),      # C4: Sourire malicieux
+	"M8": Vector3(0.75, 0.75, 0),     # D4: Furieuse
+	"M9": Vector3(0.25, 0.5, 0),      # B3 haut: "A" ouvert moyen
+	"M10": Vector3(0.25, 0.625, 0),   # B3 bas: "A" ouvert petit
+	"M11": Vector3(0.25, 0.75, 0),    # B4 haut: "O" ouvert moyen
+	"M12": Vector3(0.25, 0.875, 0),   # B4 bas: "O" ouvert petit
+}
+
+# Viseme → mouth slot mapping (lip sync)
+const VISEME_MAP = {
+	"REST": "M0",
+	"OH": "M1",
+	"AH": "M2",
+	"EE_TEETH": "M3",
+}
+
+# Mood → expression mapping
+const MOOD_EYES = {
+	"calm": "E4", "curious": "E0", "amused": "E4", "proud": "E4",
+	"suspicious": "E7", "disappointed": "E7", "sarcastic": "E7",
+	"annoyed": "E5", "angry": "E5", "furious": "E8",
+}
+const MOOD_MOUTH = {
+	"calm": "M4", "curious": "M0", "amused": "M4", "proud": "M4",
+	"suspicious": "M7", "disappointed": "M5", "sarcastic": "M6",
+	"annoyed": "M5", "angry": "M5", "furious": "M8",
+}
+
+var _current_eye_slot: String = "E0"
+var _current_mouth_slot: String = "M0"
+var _current_mood: String = "calm"
+var _is_speaking: bool = false  # True when visemes are active (lip sync overrides mouth)
+
+# ─── Blink System ────────────────────────────────────────
+var _blink_timer: float = 0.0
+var _blink_next: float = 4.0  # seconds until next blink
+var _blink_phase: int = 0     # 0=idle, 1=closing, 2=closed, 3=opening
+var _blink_frame_timer: float = 0.0
+const BLINK_FRAME_DURATION: float = 0.03
+
 # ─── Radial Settings Menu ─────────────────────────────────
 var radial_menu = null
 const RadialMenuScript = preload("res://settings_radial.gd")
@@ -39,10 +130,24 @@ const RadialMenuScript = preload("res://settings_radial.gd")
 var settings_panel = null
 const SettingsPanelScript = preload("res://settings_panel.gd")
 
+# ─── Session Progress Arc ─────────────────────────────
+var _arc_canvas: CanvasLayer
+var _arc_control: Control
+
+# ─── Reconnection Indicator ──────────────────────────
+var _reconnect_label: Label
+var _reconnect_canvas: CanvasLayer
+var _reconnect_visible: bool = false
+var _reconnect_dots: int = 0
+var _reconnect_timer: float = 0.0
+
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
 	_setup_radial_menu()
+	_setup_arc()
+	_setup_expression_system()
+	_setup_reconnect_indicator()
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _setup_radial_menu() -> void:
@@ -62,6 +167,77 @@ func _setup_radial_menu() -> void:
 	settings_panel.volume_changed.connect(_on_volume_changed)
 	settings_panel.session_duration_changed.connect(_on_session_duration_changed)
 	print("🎛️ Radial menu + Settings panel initialisés OK")
+
+func _setup_arc() -> void:
+	_arc_canvas = CanvasLayer.new()
+	_arc_canvas.layer = 50  # Behind menus (100+), above 3D
+	add_child(_arc_canvas)
+	_arc_control = Control.new()
+	_arc_control.name = "SessionArc"
+	_arc_control.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_arc_control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_arc_control.connect("draw", _draw_session_arc)
+	_arc_canvas.add_child(_arc_control)
+
+func _draw_session_arc() -> void:
+	if not session_active or session_duration_secs <= 0:
+		return
+
+	var vp := get_viewport().get_visible_rect().size
+	# Same center as radial menu (right edge, 70% down)
+	var center := Vector2(vp.x, vp.y * 0.7)
+	var radius := 36.0
+	var thickness := 4.0
+	var progress := clampf(float(session_elapsed_secs) / float(session_duration_secs), 0.0, 1.0)
+
+	# Semicircle opening LEFT: from top (PI/2) down to bottom (-PI/2)
+	# In Godot's coordinate system: PI/2 = down, -PI/2 = up
+	# We want the arc to open to the left, so angles go from PI/2 to 3*PI/2
+	var segments := 48
+	var start_angle := PI * 0.5    # bottom (6 o'clock on right edge)
+	var end_angle := PI * 1.5      # top (12 o'clock on right edge)
+	var arc_span := end_angle - start_angle  # PI — semicircle
+
+	# Track (dark, subtle)
+	for i in range(segments):
+		var a1 := start_angle + arc_span * (float(i) / float(segments))
+		var a2 := start_angle + arc_span * (float(i + 1) / float(segments))
+		var p1 := center + Vector2(cos(a1), sin(a1)) * radius
+		var p2 := center + Vector2(cos(a2), sin(a2)) * radius
+		_arc_control.draw_line(p1, p2, Color(0.15, 0.2, 0.3, 0.4), thickness, true)
+
+	# Fill (bright, based on progress)
+	if progress > 0.005:
+		var fill_segments := int(segments * progress)
+		var fill_color := Color(0.3, 0.7, 1.0, 0.85)
+		if progress > 0.9:
+			fill_color = Color(0.3, 1.0, 0.5, 0.9)
+		elif progress > 0.75:
+			fill_color = Color(0.4, 0.85, 0.6, 0.85)
+		for i in range(fill_segments):
+			var a1 := start_angle + arc_span * (float(i) / float(segments))
+			var a2 := start_angle + arc_span * (float(i + 1) / float(segments))
+			var p1 := center + Vector2(cos(a1), sin(a1)) * radius
+			var p2 := center + Vector2(cos(a2), sin(a2)) * radius
+			_arc_control.draw_line(p1, p2, fill_color, thickness + 1.5, true)
+
+		# Glow dot at tip
+		var tip_angle := start_angle + arc_span * progress
+		var tip := center + Vector2(cos(tip_angle), sin(tip_angle)) * radius
+		_arc_control.draw_circle(tip, 3.5, fill_color)
+		_arc_control.draw_circle(tip, 6.0, Color(fill_color.r, fill_color.g, fill_color.b, 0.25))
+
+	# Time remaining text, offset left of center
+	var remaining := maxi(session_duration_secs - session_elapsed_secs, 0)
+	var mins := remaining / 60
+	var secs := remaining % 60
+	var time_str := "%d:%02d" % [mins, secs]
+	var font := ThemeDB.fallback_font
+	var ts := font.get_string_size(time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 10)
+	_arc_control.draw_string(font,
+		Vector2(center.x - radius - ts.x - 6, center.y + ts.y * 0.3),
+		time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 10,
+		Color(0.6, 0.75, 0.9, 0.7))
 
 func _unhandled_input(event: InputEvent) -> void:
 	# F1 = debug toggle du menu radial (fonctionne même sans Python)
@@ -174,6 +350,16 @@ func _process(delta: float) -> void:
 	if Time.get_unix_time_from_system() - _last_anim_command_time > ANIM_COMMAND_COOLDOWN:
 		_update_suspicion_anim()
 
+	# Blink system
+	_update_blink(delta)
+
+	# Session progress arc redraw (only when session active)
+	if _arc_control and session_active:
+		_arc_control.queue_redraw()
+
+	# Reconnection indicator
+	_update_reconnect_indicator(delta)
+
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if data == null:
@@ -209,9 +395,9 @@ func _handle_message(raw: String) -> void:
 				phase = Phase.LEAVING
 		return
 	elif command == "SHOW_RADIAL":
-		# Don't open radial menu while settings panel is open (e.g. during scrollbar drag)
+		# If settings panel is open, close it first then open radial
 		if settings_panel and settings_panel.is_open:
-			return
+			settings_panel.close()
 		if radial_menu:
 			radial_menu.open()
 		return
@@ -270,12 +456,60 @@ func _handle_message(raw: String) -> void:
 					phase = Phase.ACTIVE
 		return
 	elif command == "TAMA_MOOD":
-		# Gemini's organic mood — stored for future AnimationTree transitions
 		var mood_name = data.get("mood", "calm")
 		var mood_intensity = data.get("intensity", 0.5)
-		# Store for potential use in animation blending / particle effects
-		# For now, the actual animation is handled via TAMA_ANIM sent alongside
+		_current_mood = mood_name
 		print("🎭 Mood: " + mood_name + " (" + str(mood_intensity) + ")")
+		# Set expression from mood (eyes + mouth idle)
+		var eye_key = MOOD_EYES.get(mood_name, "E0")
+		var mouth_key = MOOD_MOUTH.get(mood_name, "M0")
+		# Suspicious intensity affects which eyes
+		if mood_name == "suspicious" and mood_intensity >= 0.7:
+			eye_key = "E1"  # Plissés fort instead of léger
+		_set_eyes(eye_key)
+		if not _is_speaking:  # Don't override lip sync
+			_set_mouth(mouth_key)
+		return
+	elif command == "VISEME":
+		var shape = data.get("shape", "REST")
+		var amp: float = data.get("amp", 0.5)
+		var mouth_slot = VISEME_MAP.get(shape, "M0")
+		if shape == "REST":
+			_is_speaking = false
+			# Return to mood-based mouth expression
+			_set_mouth(_current_mouth_slot)
+			_set_jaw_open(0.0)
+		else:
+			_is_speaking = true
+			# Amplitude-based mouth selection for AH and OH
+			if shape == "AH":
+				if _current_mood in ["angry", "furious", "annoyed"]:
+					mouth_slot = "M6"  # Huh méchant when angry
+				elif amp > 0.6:
+					mouth_slot = "M2"   # A grand ouvert (loud)
+				elif amp > 0.3:
+					mouth_slot = "M9"   # A ouvert moyen
+				else:
+					mouth_slot = "M10"  # A ouvert petit (quiet)
+			elif shape == "OH":
+				if amp > 0.6:
+					mouth_slot = "M1"   # O grand ouvert (loud)
+				elif amp > 0.3:
+					mouth_slot = "M11"  # O ouvert moyen
+				else:
+					mouth_slot = "M12"  # O ouvert petit (quiet)
+			_set_mouth(mouth_slot)
+			# Jaw open = base amount per viseme × amplitude
+			var base_jaw: float = JAW_OPEN_MAP.get(shape, 0.3)
+			_set_jaw_open(base_jaw * clampf(amp, 0.3, 1.0))
+		return
+	elif command == "CONNECTION_STATUS":
+		var conn_status = data.get("status", "")
+		if conn_status == "reconnecting":
+			var attempt = data.get("attempt", 1)
+			_show_reconnect_indicator(attempt)
+		elif conn_status == "connected":
+			_hide_reconnect_indicator()
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──
@@ -289,6 +523,8 @@ func _handle_message(raw: String) -> void:
 	current_task = data.get("current_task", "...")
 	active_window = data.get("active_window", "Unknown")
 	active_duration = data.get("active_duration", 0)
+	session_elapsed_secs = data.get("session_elapsed_secs", 0)
+	session_duration_secs = data.get("session_duration_secs", 3000)
 
 	# Pendant l'intro : dès qu'on reçoit les premières données de l'agent,
 	# Tama dit bye et repart se cacher (elle a fini son coucou).
@@ -431,3 +667,195 @@ func _find_animation_player(node: Node) -> AnimationPlayer:
 		if found:
 			return found
 	return null
+
+# ─── Expression System ───────────────────────────────────
+func _setup_expression_system() -> void:
+	# Find the Tama node and its mesh materials
+	# Deferred because the .glb instance needs time to instantiate
+	call_deferred("_find_face_materials")
+
+func _find_face_materials() -> void:
+	var tama = get_node_or_null("Tama")
+	if tama == null:
+		print("⚠️ Expression: Tama node not found")
+		return
+	# Search for MeshInstance3D nodes with eyes/mouth materials
+	_scan_for_materials(tama)
+	if _eyes_material:
+		print("👀 Eyes material found")
+	else:
+		print("⚠️ Eyes material NOT found — looking for material named 'eyes'")
+	if _mouth_material:
+		print("👄 Mouth material found")
+	else:
+		print("⚠️ Mouth material NOT found — looking for material named 'mouth'")
+	_expression_ready = _eyes_material != null or _mouth_material != null
+	if _expression_ready:
+		print("🎭 Expression system ready!")
+
+func _scan_for_materials(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mesh_inst: MeshInstance3D = node as MeshInstance3D
+		var surf_count: int = mesh_inst.get_surface_override_material_count()
+		print("🔍 MeshInstance3D '%s' — %d surfaces" % [mesh_inst.name, surf_count])
+		for i in range(surf_count):
+			# Get the override material (what we'll manipulate)
+			var override_mat: Material = mesh_inst.get_surface_override_material(i)
+			# Get the ORIGINAL mesh material (has the real name from Blender)
+			var original_name: String = ""
+			if mesh_inst.mesh and i < mesh_inst.mesh.get_surface_count():
+				var orig: Material = mesh_inst.mesh.surface_get_material(i)
+				if orig:
+					original_name = orig.resource_name
+			# Use override if present, otherwise original
+			var active_mat: Material = override_mat
+			if active_mat == null and mesh_inst.mesh:
+				active_mat = mesh_inst.mesh.surface_get_material(i)
+			var override_name: String = ""
+			if override_mat:
+				override_name = override_mat.resource_name
+			print("  [%d] original='%s' override='%s'" % [i, original_name, override_name])
+			if active_mat == null:
+				continue
+			if not (active_mat is StandardMaterial3D):
+				continue
+			# Check ORIGINAL name for identification (Blender names: mouth, body, eyes, etc.)
+			var name_lower: String = original_name.to_lower()
+			if name_lower == "":
+				name_lower = override_name.to_lower()
+			var std_mat: StandardMaterial3D = active_mat as StandardMaterial3D
+			if "eye" in name_lower or "yeux" in name_lower:
+				var dup: StandardMaterial3D = std_mat.duplicate() as StandardMaterial3D
+				mesh_inst.set_surface_override_material(i, dup)
+				_eyes_material = dup
+				print("  ✅ → EYES material (index %d)" % i)
+			elif "mouth" in name_lower or "bouche" in name_lower:
+				var dup: StandardMaterial3D = std_mat.duplicate() as StandardMaterial3D
+				mesh_inst.set_surface_override_material(i, dup)
+				_mouth_material = dup
+				print("  ✅ → MOUTH material (index %d)" % i)
+		# Find blend shapes for pupil hiding + jaw
+		if mesh_inst.mesh and mesh_inst.mesh is ArrayMesh:
+			var arr_mesh: ArrayMesh = mesh_inst.mesh as ArrayMesh
+			var bs_count: int = arr_mesh.get_blend_shape_count()
+			for bs_i in range(bs_count):
+				var bs_name: String = arr_mesh.get_blend_shape_name(bs_i)
+				if bs_name == "BS_HideLeftEye":
+					_bs_hide_left_eye = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_HideLeftEye found (index %d)" % bs_i)
+				elif bs_name == "BS_HideRightEye":
+					_bs_hide_right_eye = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_HideRightEye found (index %d)" % bs_i)
+				elif bs_name == "BS_MoutOpen":
+					_bs_mouth_open = bs_i
+					_body_mesh = mesh_inst
+					print("  💥 BS_MoutOpen found (index %d)" % bs_i)
+	for child in node.get_children():
+		_scan_for_materials(child)
+
+func _set_eyes(slot: String) -> void:
+	_current_eye_slot = slot
+	_apply_eye_offset(slot)
+
+# Apply UV offset without changing _current_eye_slot (used by blink)
+func _apply_eye_offset(slot: String) -> void:
+	if not _expressions_painted:
+		return
+	if _eyes_material and EYE_OFFSETS.has(slot):
+		_eyes_material.uv1_offset = EYE_OFFSETS[slot]
+
+func _set_mouth(slot: String) -> void:
+	if not _is_speaking:
+		_current_mouth_slot = slot  # Remember mood-based mouth for when lip sync stops
+	if not _expressions_painted:
+		return
+	if _mouth_material and MOUTH_OFFSETS.has(slot):
+		_mouth_material.uv1_offset = MOUTH_OFFSETS[slot]
+
+func _set_jaw_open(amount: float) -> void:
+	if _body_mesh and _bs_mouth_open >= 0:
+		_body_mesh.set_blend_shape_value(_bs_mouth_open, clampf(amount, 0.0, 1.0))
+
+# ─── Blink System ────────────────────────────────────────
+func _set_pupils_visible(visible: bool) -> void:
+	if _body_mesh == null:
+		return
+	var val: float = 0.0 if visible else 1.0
+	if _bs_hide_left_eye >= 0:
+		_body_mesh.set_blend_shape_value(_bs_hide_left_eye, val)
+	if _bs_hide_right_eye >= 0:
+		_body_mesh.set_blend_shape_value(_bs_hide_right_eye, val)
+
+func _update_blink(delta: float) -> void:
+	if not _expression_ready:
+		return
+
+	if _blink_phase == 0:
+		# Waiting for next blink
+		_blink_timer += delta
+		if _blink_timer >= _blink_next:
+			_blink_timer = 0.0
+			_blink_next = randf_range(3.0, 7.0)  # Random interval
+			_blink_phase = 1
+			_blink_frame_timer = 0.0
+			_set_pupils_visible(false)  # Hide pupils
+			_apply_eye_offset("E6")  # Semi-closed
+	else:
+		_blink_frame_timer += delta
+		if _blink_frame_timer >= BLINK_FRAME_DURATION:
+			_blink_frame_timer = 0.0
+			if _blink_phase == 1:
+				_blink_phase = 2
+				_apply_eye_offset("E2")  # Fully closed
+			elif _blink_phase == 2:
+				_blink_phase = 3
+				_apply_eye_offset("E6")  # Semi-closed (opening)
+			elif _blink_phase == 3:
+				_blink_phase = 0
+				_set_pupils_visible(true)  # Show pupils
+				_apply_eye_offset(_current_eye_slot)  # Back to mood expression
+
+
+# ─── Reconnection Indicator ─────────────────────────────
+func _setup_reconnect_indicator() -> void:
+	_reconnect_canvas = CanvasLayer.new()
+	_reconnect_canvas.layer = 10
+	add_child(_reconnect_canvas)
+	_reconnect_label = Label.new()
+	_reconnect_label.text = "Reconnexion..."
+	_reconnect_label.add_theme_font_size_override("font_size", 14)
+	_reconnect_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3, 0.9))
+	_reconnect_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_reconnect_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_reconnect_label.offset_top = -40
+	_reconnect_label.offset_bottom = -10
+	_reconnect_canvas.add_child(_reconnect_label)
+	_reconnect_label.visible = false
+
+func _show_reconnect_indicator(attempt: int) -> void:
+	_reconnect_visible = true
+	_reconnect_label.visible = true
+	_reconnect_dots = 0
+	_reconnect_timer = 0.0
+	_reconnect_label.text = "Reconnexion (%d)..." % attempt
+
+func _hide_reconnect_indicator() -> void:
+	_reconnect_visible = false
+	_reconnect_label.visible = false
+
+func _update_reconnect_indicator(delta: float) -> void:
+	if not _reconnect_visible:
+		return
+	_reconnect_timer += delta
+	if _reconnect_timer >= 0.4:
+		_reconnect_timer = 0.0
+		_reconnect_dots = (_reconnect_dots + 1) % 4
+		var dots = ".".repeat(_reconnect_dots + 1)
+		var base_text = _reconnect_label.text.split(".")[0].strip_edges()
+		_reconnect_label.text = base_text + dots
+	# Pulse alpha
+	var alpha = 0.5 + 0.4 * sin(Time.get_ticks_msec() * 0.004)
+	_reconnect_label.modulate = Color(1, 1, 1, alpha)
+

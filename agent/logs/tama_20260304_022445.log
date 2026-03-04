@@ -1,0 +1,44 @@
+============================================================
+🥷 FocusPals / Tama — Session Log
+Started: 2026-03-04 02:24:45
+Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
+PID: 22996
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_022445.log
+============================================================
+
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_022445.log
+🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
+🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 2560px, zone Y: 892-1392
+02:24:50 [INFO] server listening on [::1]:8080
+02:24:50 [INFO] server listening on 127.0.0.1:8080
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+📐 Fenêtre repositionnée: (2160, 892) — taille 400x500
+✅ Click-through + position OK (handle: 790824)
+02:24:51 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ API key valid (key: AIzaSyBR...)
+🖱️ [EdgeMonitor] SHOW_RADIAL (2559, 1236) screen_w=2560
+🖱️ [EdgeMonitor] SHOW_RADIAL (2559, 1439) screen_w=2560
+
+👋 Tama: Fermeture propre...

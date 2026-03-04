@@ -1,0 +1,154 @@
+============================================================
+🥷 FocusPals / Tama — Session Log
+Started: 2026-03-04 11:21:23
+Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
+PID: 33388
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_112123.log
+============================================================
+
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_112123.log
+🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
+🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 1440px, zone Y: 352-852
+11:21:26 [INFO] server listening on 127.0.0.1:8080
+11:21:26 [INFO] server listening on [::1]:8080
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+11:21:27 [INFO] connection open
+📐 Fenêtre repositionnée: (1240, 602) — taille 200x250
+✅ Click-through + position OK (handle: 3803756)
+11:21:27 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ API key valid (key: AIzaSyBR...)
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 899) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 781) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1439, 777) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 760) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 773) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 792) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1437, 785) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 792) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 792) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1438, 775) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 738) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 733) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 730) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 538) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 894) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 787) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 785) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 735) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 773) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1439, 763) screen_w=1440
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 781) screen_w=1440
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "🚀 SESSION COMMENCÉE via Radial Menu !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connecting to Google WebSocket..."
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 770) screen_w=1440
+🎤 Micro actif: index 7
+🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 770) screen_w=1440
+⚠️ [EdgeMonitor] DPI DRIFT! screen_w changed: 1440 → 2880
+11:23:48 [INFO] AFC is enabled with max remote calls: 10.
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1587) screen_w=2880
+11:23:48 [WARNING] Flash-Lite pre-classify error: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-3.1-flash-lite is not found for API version v1alpha, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1484) screen_w=2880
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:-0.0 — Début de session, fenêtre de lancement active.
+  🎭 Mood: calm (0.3)
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1473) screen_w=2880
+⚙️ GET_SETTINGS: 5 micros (cache), selected=7, has_key=True
+  🔄 Session resume handle activé
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1600) screen_w=2880
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1546) screen_w=2880
+11:24:00 [INFO] AFC is enabled with max remote calls: 10.
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1565) screen_w=2880
+11:24:01 [WARNING] Flash-Lite pre-classify error: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-3.1-flash-lite is not found for API version v1alpha, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1503) screen_w=2880
+  🔍 S:0/10 | A:0.5 | Cat:PROCRASTINATION_PRODUCTIVE | ΔS:+0.4 | C:1.00 | Mood:-0.0 — Fenêtre de lancement, en attente de sélection de tâche.
+  🎭 Mood: calm (0.8)
+11:24:13 [INFO] AFC is enabled with max remote calls: 10.
+11:24:13 [WARNING] Flash-Lite pre-classify error: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-3.1-flash-lite is not found for API version v1alpha, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}
+🖱️ [EdgeMonitor] SHOW_RADIAL (2879, 1706) screen_w=2880
+
+👋 Tama: Fermeture propre...

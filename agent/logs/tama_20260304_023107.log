@@ -1,0 +1,147 @@
+============================================================
+🥷 FocusPals / Tama — Session Log
+Started: 2026-03-04 02:31:07
+Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
+PID: 35576
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_023107.log
+============================================================
+
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_023107.log
+🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
+🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 2560px, zone Y: 892-1392
+02:31:11 [INFO] server listening on 127.0.0.1:8080
+02:31:11 [INFO] server listening on [::1]:8080
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+02:31:11 [INFO] connection open
+📐 Fenêtre repositionnée: (2160, 892) — taille 400x500
+✅ Click-through + position OK (handle: 1772484)
+02:31:12 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ API key valid (key: AIzaSyBR...)
+🖱️ [EdgeMonitor] SHOW_RADIAL (2559, 947) screen_w=2560
+02:34:42 [ERROR] connection handler failed
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 463, in finish_socket_func
+    return ov.getresult()
+           ~~~~~~~~~~~~^^
+OSError: [WinError 64] Le nom réseau spécifié n’est plus disponible
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\proactor_events.py", line 286, in _loop_reading
+    length = fut.result()
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 804, in _poll
+    value = callback(transferred, key, ov)
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 467, in finish_socket_func
+    raise ConnectionResetError(*exc.args)
+ConnectionResetError: [WinError 64] Le nom réseau spécifié n’est plus disponible
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 376, in conn_handler
+    await self.handler(connection)
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\godot_bridge.py", line 235, in ws_handler
+    async for message in websocket:
+    ...<83 lines>...
+            import traceback; traceback.print_exc()
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 242, in __aiter__
+    yield await self.recv()
+          ^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: no close frame received or sent
+02:34:42 [ERROR] opening handshake failed
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\http11.py", line 138, in parse
+    request_line = yield from parse_line(read_line)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\http11.py", line 309, in parse_line
+    line = yield from read_line(MAX_LINE_LENGTH)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\streams.py", line 46, in read_line
+    raise EOFError(f"stream ends after {p} bytes, before end of line")
+EOFError: stream ends after 0 bytes, before end of line
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\server.py", line 545, in parse
+    request = yield from Request.parse(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.reader.read_line,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\http11.py", line 140, in parse
+    raise EOFError("connection closed while reading HTTP request line") from exc
+EOFError: connection closed while reading HTTP request line
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 356, in conn_handler
+    await connection.handshake(
+    ...<3 lines>...
+    )
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 207, in handshake
+    raise self.protocol.handshake_exc
+websockets.exceptions.InvalidMessage: did not receive a valid HTTP request
+02:34:50 [ERROR] opening handshake failed
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\http11.py", line 138, in parse
+    request_line = yield from parse_line(read_line)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\http11.py", line 309, in parse_line
+    line = yield from read_line(MAX_LINE_LENGTH)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\streams.py", line 46, in read_line
+    raise EOFError(f"stream ends after {p} bytes, before end of line")
+EOFError: stream ends after 0 bytes, before end of line
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\server.py", line 545, in parse
+    request = yield from Request.parse(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.reader.read_line,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\http11.py", line 140, in parse
+    raise EOFError("connection closed while reading HTTP request line") from exc
+EOFError: connection closed while reading HTTP request line
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 356, in conn_handler
+    await connection.handshake(
+    ...<3 lines>...
+    )
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 207, in handshake
+    raise self.protocol.handshake_exc
+websockets.exceptions.InvalidMessage: did not receive a valid HTTP request

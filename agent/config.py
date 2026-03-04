@@ -120,6 +120,8 @@ state = {
     "_mood_recent_infractions": 0,
     "_mood_compliance_streak_start": None,
     "_mood_last_infraction_time": 0,
+    # Confidence system (anti-cheat)
+    "_confidence": 1.0,  # 0.1 (zero trust) → 1.0 (full trust) — modulates S decay speed
     # API Usage tracking
     "_api_connections": 0,           # Number of Gemini Live connections
     "_api_screen_pulses": 0,         # Number of screen pulses sent
@@ -128,6 +130,12 @@ state = {
     "_api_audio_chunks_recv": 0,     # Audio chunks received from Gemini
     "_api_connect_time_start": 0,    # Timestamp of current connection start
     "_api_total_connect_secs": 0.0,  # Cumulative connection time in seconds
+    # Flash-Lite (3.1) secondary agent telemetry
+    "_lite_api_calls": 0,            # Number of Flash-Lite generate_content calls
+    "_lite_input_tokens": 0,         # Total input tokens consumed by Lite
+    "_lite_output_tokens": 0,        # Total output tokens consumed by Lite
+    "_lite_errors": 0,               # Number of Flash-Lite errors
+    "_session_summary": None,        # Last generated session summary (markdown)
 }
 
 
@@ -148,8 +156,14 @@ def compute_delta_s(alignment: float, category: str) -> float:
         if category == "BANNIE":
             return 0.2
         return -2.0
-    elif alignment >= 0.5:  # Doubt
-        return 0.2
+    elif alignment >= 0.5:  # Doubt — category matters!
+        if category == "BANNIE":
+            return 0.8   # Banned app even in doubt → fast escalation
+        elif category in ("FLUX", "ZONE_GRISE"):
+            return 0.5   # Foreground music/messaging → meaningful buildup
+        elif category == "PROCRASTINATION_PRODUCTIVE":
+            return 0.4
+        return 0.2        # SANTE in doubt → minimal
     else:  # Misaligned (A = 0.0)
         if category == "BANNIE":
             return 2.0

@@ -1,0 +1,1169 @@
+============================================================
+🥷 FocusPals / Tama — Session Log
+Started: 2026-03-04 12:09:18
+Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
+PID: 36776
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_120918.log
+============================================================
+
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_120918.log
+🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
+🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 1920px, zone Y: 532-1032
+12:09:21 [INFO] server listening on [::1]:8080
+12:09:22 [INFO] server listening on 127.0.0.1:8080
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+12:09:22 [INFO] connection open
+📐 Fenêtre repositionnée: (1520, 532) — taille 400x500
+✅ Click-through + position OK (handle: 3082890)
+12:09:23 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ API key valid (key: AIzaSyBR...)
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 685) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 692) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 847) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 893) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 775) screen_w=1920
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "🚀 SESSION COMMENCÉE via Radial Menu !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connecting to Google WebSocket..."
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Session resume handle activé
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=foculpal, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1194, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 0min, S=0.0)
+12:09:59 [INFO] AFC is enabled with max remote calls: 10.
+12:10:00 [INFO] ⚡ Lite: FLUX A:0.5 — Listening to music on SoundCloud
+12:10:12 [INFO] AFC is enabled with max remote calls: 10.
+12:10:14 [INFO] ⚡ Lite: FLUX A:0.5 — Listening to music
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:-0.0 — L'utilisateur est sur son environnement de travail principal.
+  🎭 Mood: calm (0.3)
+  🎭 ┌─ MOOD REPORT ────────────────────
+  🎭 │ Mood: calm | Intensity: 0.3
+  🎭 │ → Animation: Hello (loop)
+  🎭 └────────────────────────────────────
+12:10:26 [INFO] AFC is enabled with max remote calls: 10.
+12:10:28 [INFO] ⚡ Lite: FLUX A:0.5 — Listening to music on SoundCloud
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:-0.0 — Active window is foculpal, a health/focus tool. Also listening to music (FLUX) but primary focus seems aligned.
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=foculpal, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1194, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 0min, S=0.0)
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=foculpal, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1194, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 0min, S=0.0)
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=foculpal, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1194, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 1min, S=0.0)
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=foculpal, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1194, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 1min, S=0.0)
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=foculpal, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1194, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+  🔄 Crash recovery: injected resume context (task=None, 1min, S=0.0)
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 691) screen_w=1920
+
+⚠️  [WARN] Connexion Live API perdue (1011 None. Internal error occurred.). Forçage de la reconnexion...
+\n🚨 TASK CRASHED [Receive]: Connection dropped
+Traceback (most recent call last):
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    raw_response = await self._ws.recv(decode=False)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    async for response in turn:
+    ...<207 lines>...
+            print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    while result := await self._receive():
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    errors.APIError.raise_error(code, reason, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    raise cls(status_code, response_json, response)
+google.genai.errors.APIError: 1011 None. Internal error occurred.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    await coro
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    raise RuntimeError("Connection dropped") from e
+RuntimeError: Connection dropped
+  💾 Crash context saved: task=None, window=foculpal, S=0.0
+
+❌ [ERROR] unhandled errors in a TaskGroup (1 sub-exception)
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1194, in run_gemini_loop
+  |     async with asyncio.TaskGroup() as tg:
+  |                ~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 71, in __aexit__
+  |     return await self._aexit(et, exc)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\taskgroups.py", line 173, in _aexit
+  |     raise BaseExceptionGroup(
+  |     ...<2 lines>...
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 535, in _receive
+    |     raw_response = await self._ws.recv(decode=False)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
+    |     raise self.protocol.close_exc from self.recv_exc
+    | websockets.exceptions.ConnectionClosedError: received 1011 (internal error) Internal error occurred.; then sent 1011 (internal error) Internal error occurred.
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 905, in receive_responses
+    |     async for response in turn:
+    |     ...<207 lines>...
+    |             print(f"  ⚠️ [GoAway] Gemini va déconnecter dans {time_left}. Reconnexion préparée...")
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 454, in receive
+    |     while result := await self._receive():
+    |                     ^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\live.py", line 545, in _receive
+    |     errors.APIError.raise_error(code, reason, None)
+    |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\google\genai\errors.py", line 163, in raise_error
+    |     raise cls(status_code, response_json, response)
+    | google.genai.errors.APIError: 1011 None. Internal error occurred.
+    | 
+    | The above exception was the direct cause of the following exception:
+    | 
+    | Traceback (most recent call last):
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1185, in safe_task
+    |     await coro
+    |   File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\gemini_session.py", line 1120, in receive_responses
+    |     raise RuntimeError("Connection dropped") from e
+    | RuntimeError: Connection dropped
+    +------------------------------------
+🔄 Reconnexion dans 1s... (tentative #1)
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Reconnexion... (1)"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+
+👋 Tama: Fermeture propre...

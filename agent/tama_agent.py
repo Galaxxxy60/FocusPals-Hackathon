@@ -17,7 +17,12 @@ This file is the thin entry point. All logic lives in:
 - ui.py              — Display, tray icon, settings popup
 - godot_bridge.py    — WebSocket server, Godot launcher, click-through, edge monitor
 - gemini_session.py  — System prompt, tools, Gemini Live loop
+- crash_logger.py    — Crash logging, file logging, state dumps
 """
+
+# ── CRASH LOGGER: must init BEFORE any other imports ──
+from crash_logger import init_crash_logger, install_async_exception_handler
+init_crash_logger()
 
 import asyncio
 import threading
@@ -35,9 +40,33 @@ from gemini_session import run_gemini_loop
 state["current_tama_state"] = TamaState.CALM
 
 
+def _free_port(port: int):
+    """Kill any process occupying the given port (Windows only)."""
+    import subprocess, os
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano"], capture_output=True, text=True, timeout=5
+        )
+        my_pid = os.getpid()
+        for line in result.stdout.splitlines():
+            if f":{port}" in line and "LISTENING" in line:
+                parts = line.split()
+                pid = int(parts[-1])
+                if pid != my_pid and pid > 0:
+                    print(f"⚠️ Port {port} occupé par PID {pid} — kill automatique...")
+                    subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                                   capture_output=True, timeout=5)
+    except Exception:
+        pass  # Best effort — if it fails, websockets.serve will error normally
+
+
 async def run_tama_live():
     """Main async entry point: WebSocket server + Gemini loop."""
     state["main_loop"] = asyncio.get_running_loop()
+    install_async_exception_handler(asyncio.get_running_loop())
+
+    # ── Auto-kill any old process hogging port 8080 ──
+    _free_port(8080)
 
     pya = pyaudio.PyAudio()
 
