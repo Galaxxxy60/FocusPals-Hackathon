@@ -1,17 +1,22 @@
 ============================================================
 🥷 FocusPals / Tama — Session Log
-Started: 2026-03-04 12:25:58
+Started: 2026-03-04 19:50:13
 Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
-PID: 19100
-Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_122558.log
+PID: 31492
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_195013.log
 ============================================================
 
-📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_122558.log
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_195013.log
 🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
-🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
+📐 Fenêtre repositionnée: (1520, 532) — taille 400x500
+✅ Click-through + position OK (handle: 1769852)
+🎤 Micro restauré depuis les préférences: [5] Microphone Array (Technologie I
 🖱️ [EdgeMonitor] Démarré — écran: 1920px, zone Y: 532-1032
-12:26:01 [INFO] server listening on 127.0.0.1:8080
-12:26:01 [INFO] server listening on [::1]:8080
+⚠️ Port 8080 occupé par PID 28684 — kill automatique...
+19:50:22 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ API key valid (key: AIzaSyBR...)
+19:50:22 [INFO] server listening on 127.0.0.1:8080
+19:50:22 [INFO] server listening on [::1]:8080
 ==========================================
   FocusPals — Tama Agent 🥷 (LIVE API) 📡
   Dual-Monitor Pulse Vision + Audio Voice
@@ -34,12 +39,8 @@ Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_12
 
   Press Ctrl+C to stop.
 ──────────────────────────────────────────
-📐 Fenêtre repositionnée: (1520, 532) — taille 400x500
-✅ Click-through + position OK (handle: 1180838)
-12:26:02 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
-✅ API key valid (key: AIzaSyBR...)
-12:32:37 [INFO] connection open
-12:32:37 [ERROR] connection handler failed
+19:53:22 [INFO] connection open
+19:53:44 [ERROR] connection handler failed
 Traceback (most recent call last):
   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 463, in finish_socket_func
     return ov.getresult()
@@ -62,7 +63,7 @@ The above exception was the direct cause of the following exception:
 Traceback (most recent call last):
   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 376, in conn_handler
     await self.handler(connection)
-  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\godot_bridge.py", line 242, in ws_handler
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\godot_bridge.py", line 247, in ws_handler
     async for message in websocket:
     ...<84 lines>...
             import traceback; traceback.print_exc()
@@ -72,37 +73,4 @@ Traceback (most recent call last):
   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
     raise self.protocol.close_exc from self.recv_exc
 websockets.exceptions.ConnectionClosedError: no close frame received or sent
-12:32:46 [INFO] connection open
-12:32:46 [ERROR] connection handler failed
-Traceback (most recent call last):
-  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 463, in finish_socket_func
-    return ov.getresult()
-           ~~~~~~~~~~~~^^
-OSError: [WinError 64] Le nom réseau spécifié n’est plus disponible
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\proactor_events.py", line 286, in _loop_reading
-    length = fut.result()
-  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 804, in _poll
-    value = callback(transferred, key, ov)
-  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\windows_events.py", line 467, in finish_socket_func
-    raise ConnectionResetError(*exc.args)
-ConnectionResetError: [WinError 64] Le nom réseau spécifié n’est plus disponible
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 376, in conn_handler
-    await self.handler(connection)
-  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\godot_bridge.py", line 242, in ws_handler
-    async for message in websocket:
-    ...<84 lines>...
-            import traceback; traceback.print_exc()
-  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 242, in __aiter__
-    yield await self.recv()
-          ^^^^^^^^^^^^^^^^^
-  File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\connection.py", line 322, in recv
-    raise self.protocol.close_exc from self.recv_exc
-websockets.exceptions.ConnectionClosedError: no close frame received or sent
+19:55:16 [INFO] connection open

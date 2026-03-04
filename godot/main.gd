@@ -149,24 +149,38 @@ var _headphones_node: Node3D = null
 var _ack_audio_player: AudioStreamPlayer = null
 var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
 
-# ─── Gaze System (procedural bone look-at) ───
+# ─── Gaze System (post-process bone look-at) ───
 var _skeleton: Skeleton3D = null
 var _camera: Camera3D = null
 var _head_bone_idx: int = -1
 var _neck_bone_idx: int = -1
-var _head_bone_rest: Quaternion = Quaternion.IDENTITY  # Rest pose (from animation)
-var _neck_bone_rest: Quaternion = Quaternion.IDENTITY
-var _gaze_current_head: Quaternion = Quaternion.IDENTITY
-var _gaze_current_neck: Quaternion = Quaternion.IDENTITY
-var _gaze_target_head: Quaternion = Quaternion.IDENTITY
+
+# Gaze rotation state
+var _gaze_delta_head: Quaternion = Quaternion.IDENTITY   # Current smoothed rotation
+var _gaze_delta_neck: Quaternion = Quaternion.IDENTITY
+var _gaze_target_head: Quaternion = Quaternion.IDENTITY   # Target to slerp toward
 var _gaze_target_neck: Quaternion = Quaternion.IDENTITY
-var _gaze_speed: float = 3.0  # Slerp speed
+var _gaze_lerp_speed: float = 5.0   # How fast we slerp toward target
 var _gaze_active: bool = false
-var _gaze_weight: float = 0.0  # 0 = animation only, 1 = full gaze override
-var _gaze_weight_target: float = 0.0
+var _gaze_blend: float = 0.0        # 0 = pure animation, 1 = full gaze applied
+var _gaze_blend_target: float = 0.0 # What blend is transitioning toward
+const GAZE_BLEND_SPEED: float = 4.0 # How fast blend fades in/out
 
 # Gaze targets — procedural, no hardcoded angles
 enum GazeTarget { USER, SCREEN_CENTER, SCREEN_TOP, SCREEN_BOTTOM, OTHER_MONITOR, BOOK, AWAY, NEUTRAL }
+
+# Current 3D world target for gaze (used by debug viz)
+var _gaze_world_target: Vector3 = Vector3.ZERO
+
+# Debug: gaze follows mouse + visual debug
+var _debug_gaze_mouse: bool = false
+var _debug_sphere: MeshInstance3D = null
+var _debug_sphere_mat: StandardMaterial3D = null
+var _debug_line_mesh: ImmediateMesh = null
+var _debug_line_node: MeshInstance3D = null
+var _debug_depth_mesh: ImmediateMesh = null   # Cyan Z-depth line
+var _debug_depth_node: MeshInstance3D = null
+var _debug_print_timer: float = 0.0
 
 func _ready() -> void:
 	_position_window()
@@ -178,6 +192,7 @@ func _ready() -> void:
 	call_deferred("_setup_headphones")
 	_setup_ack_audio()
 	call_deferred("_setup_gaze")
+	call_deferred("_setup_gaze_debug")
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _setup_radial_menu() -> void:
@@ -279,6 +294,24 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				print("🎛️ [DEBUG] F1 → Ouverture du radial menu")
 				radial_menu.open()
+	# F3 = debug gaze: Tama follows mouse cursor + visual debug
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F3:
+		_debug_gaze_mouse = !_debug_gaze_mouse
+		if _debug_gaze_mouse:
+			print("👀 [DEBUG] Gaze → MOUSE FOLLOW ON")
+			_show_status_indicator("👀 Debug Gaze: ON (F3)", Color(1, 0.8, 0.2))
+			# Show debug viz
+			if _debug_sphere: _debug_sphere.visible = true
+			if _debug_line_node: _debug_line_node.visible = true
+			if _debug_depth_node: _debug_depth_node.visible = true
+		else:
+			print("👀 [DEBUG] Gaze → MOUSE FOLLOW OFF")
+			set_gaze(GazeTarget.NEUTRAL, 2.0)
+			_hide_status_indicator()
+			# Hide debug viz
+			if _debug_sphere: _debug_sphere.visible = false
+			if _debug_line_node: _debug_line_node.visible = false
+			if _debug_depth_node: _debug_depth_node.visible = false
 
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
@@ -399,6 +432,12 @@ func _process(delta: float) -> void:
 			_set_expression_slot("eyes", mood_eye)
 
 	# Gaze system — smooth bone rotation each frame
+	if _debug_gaze_mouse and _gaze_active:
+		# Track global mouse cursor → convert to 3D → look at it
+		var mouse_pos = DisplayServer.mouse_get_position()
+		var target_3d = _screen_to_world(float(mouse_pos.x), float(mouse_pos.y))
+		_gaze_world_target = target_3d
+		_look_at_world_point(target_3d, 8.0)
 	_update_gaze(delta)
 
 
@@ -664,12 +703,12 @@ func _on_animation_finished(_anim_name: StringName) -> void:
 	match phase:
 		Phase.PEEKING:
 			if conversation_active:
-				# Conversation: Peek terminé → Hello loop (elle attend la discussion)
-				_play("Hello", true)
+				# Conversation: Peek terminé → Idle_wall loop (elle attend la discussion)
+				_play("Idle_wall", true)
 				phase = Phase.HELLO
 			elif not intro_done:
-				# Intro : Peek terminé → dit Hello (loop tant qu'on attend les données)
-				_play("Hello", true)
+				# Intro : Peek terminé → Idle_wall (loop tant qu'on attend les données)
+				_play("Idle_wall", true)
 				phase = Phase.HELLO
 			else:
 				# Normal : Peek terminé → animation selon la suspicion actuelle
@@ -1001,22 +1040,15 @@ func _setup_gaze() -> void:
 				_neck_bone_idx = i
 				break
 
-	# Store rest poses
+	# Log bone discovery
 	if _head_bone_idx >= 0:
-		_head_bone_rest = _skeleton.get_bone_rest(_head_bone_idx).basis.get_rotation_quaternion()
 		print("\ud83d\udc40 Gaze: Head bone [%d] '%s'" % [_head_bone_idx, _skeleton.get_bone_name(_head_bone_idx)])
 	if _neck_bone_idx >= 0:
-		_neck_bone_rest = _skeleton.get_bone_rest(_neck_bone_idx).basis.get_rotation_quaternion()
 		print("\ud83d\udc40 Gaze: Neck bone [%d] '%s'" % [_neck_bone_idx, _skeleton.get_bone_name(_neck_bone_idx)])
-
-	# Print all bones for debug
-	print("\ud83e\uddb4 Skeleton bones:")
-	for i in range(_skeleton.get_bone_count()):
-		print("  [%d] %s" % [i, _skeleton.get_bone_name(i)])
 
 	_gaze_active = _head_bone_idx >= 0 and _camera != null
 	if _gaze_active:
-		print("\u2705 Gaze system ready (procedural look-at)!")
+		print("\u2705 Gaze system ready (additive post-process)!")
 	elif _camera == null:
 		print("\u26a0\ufe0f Gaze: Camera3D not found — gaze disabled")
 
@@ -1029,146 +1061,236 @@ func _find_skeleton(node: Node) -> Skeleton3D:
 			return found
 	return null
 
-# Compute a world-space target point for a given GazeTarget
-func _get_gaze_target_point(target: GazeTarget) -> Vector3:
-	var cam_pos: Vector3 = _camera.global_position
-	var head_pos: Vector3 = Vector3.ZERO
-	if _head_bone_idx >= 0:
-		head_pos = _skeleton.global_transform * _skeleton.get_bone_global_pose(_head_bone_idx).origin
+# Max rotation angles (degrees) — prevent neck-breaking
+const GAZE_MAX_YAW: float = 40.0   # Left/right
+const GAZE_MAX_PITCH: float = 30.0  # Up/down
 
-	match target:
-		GazeTarget.USER:
-			# User is behind the camera, looking at the screen
-			return cam_pos
-		GazeTarget.SCREEN_CENTER:
-			# Screen center = slightly behind camera, offset right from Tama
-			var right = _camera.global_transform.basis.x
-			return cam_pos - right * 1.5  # Center of screen (left from cam perspective)
-		GazeTarget.SCREEN_TOP:
-			var right = _camera.global_transform.basis.x
-			var up = _camera.global_transform.basis.y
-			return cam_pos - right * 1.5 + up * 0.8
-		GazeTarget.SCREEN_BOTTOM:
-			var right = _camera.global_transform.basis.x
-			var up = _camera.global_transform.basis.y
-			return cam_pos - right * 1.5 - up * 0.8
-		GazeTarget.OTHER_MONITOR:
-			# Far left from camera (second monitor)
-			var right = _camera.global_transform.basis.x
-			return cam_pos - right * 4.0
-		GazeTarget.BOOK:
-			# Below and slightly in front of head
-			return head_pos + Vector3(0, -0.5, 0.3)
-		GazeTarget.AWAY:
-			# Behind and to the side of Tama
-			var right = _camera.global_transform.basis.x
-			return head_pos + right * 2.0
-		GazeTarget.NEUTRAL, _:
-			# Forward gaze — slightly in front of head
-			var forward = _camera.global_transform.basis.z
-			return head_pos - forward * 2.0
+# Preset targets → 3D world offsets from head (X=right, Y=up, Z=toward camera)
+# These are relative to the head bone position
+var GAZE_PRESET_OFFSETS = {
+	GazeTarget.USER: Vector3(0, 0.1, 2.0),            # Straight at camera, slightly up
+	GazeTarget.SCREEN_CENTER: Vector3(-1.5, 0, 2.0),   # Left toward screen center
+	GazeTarget.SCREEN_TOP: Vector3(-1.5, 0.8, 2.0),    # Left + up
+	GazeTarget.SCREEN_BOTTOM: Vector3(-1.5, -0.5, 2.0),# Left + down
+	GazeTarget.OTHER_MONITOR: Vector3(3.0, 0, 2.0),    # Far right (second monitor)
+	GazeTarget.BOOK: Vector3(-0.3, -0.8, 0.5),         # Down in front
+	GazeTarget.AWAY: Vector3(2.0, 0.2, -0.5),          # Behind to the right
+}
 
-# Compute the bone-local rotation to look at a target point
-func _compute_look_at_rotation(bone_idx: int, target_world: Vector3, influence: float) -> Quaternion:
-	if bone_idx < 0:
-		return Quaternion.IDENTITY
-
-	# Get the bone's current global transform (from animation)
-	var bone_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(bone_idx)
-	var bone_pos: Vector3 = bone_global.origin
-
-	# Direction from bone to target
-	var dir_to_target: Vector3 = (target_world - bone_pos).normalized()
-	if dir_to_target.length_squared() < 0.001:
-		return Quaternion.IDENTITY
-
-	# Current forward direction of the bone (Y-up convention for head bones)
-	var current_forward: Vector3 = bone_global.basis.z.normalized()
-
-	# Rotation from current forward to target direction
-	var rot_axis = current_forward.cross(dir_to_target).normalized()
-	if rot_axis.length_squared() < 0.001:
-		return Quaternion.IDENTITY
-	var rot_angle = current_forward.angle_to(dir_to_target) * influence
-
-	# Clamp max rotation to avoid unnatural neck breaking
-	rot_angle = clamp(rot_angle, -1.2, 1.2)  # ~70 degrees max
-
-	# Return rotation in bone-local space
-	var world_rot = Quaternion(rot_axis, rot_angle)
-	# Convert world rotation to bone-local space
-	var parent_global_rot = bone_global.basis.get_rotation_quaternion()
-	return parent_global_rot.inverse() * world_rot * parent_global_rot
-
-func set_gaze(target: GazeTarget, speed: float = 3.0) -> void:
-	"""Convenience: look at a named preset target."""
+func set_gaze(target: GazeTarget, speed: float = 5.0) -> void:
+	"""Look at a named preset target. NEUTRAL = fade gaze out (pure animation)."""
 	if not _gaze_active:
 		return
+	_gaze_lerp_speed = speed
 	if target == GazeTarget.NEUTRAL:
-		_gaze_speed = speed
 		_gaze_target_head = Quaternion.IDENTITY
 		_gaze_target_neck = Quaternion.IDENTITY
-		_gaze_weight_target = 0.0
+		_gaze_blend_target = 0.0
 	else:
-		var point = _get_gaze_target_point(target)
-		set_gaze_at_world_point(point, speed)
+		var head_pos = _get_head_world_pos()
+		var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
+		var target_point = head_pos + offset
+		_gaze_world_target = target_point
+		_look_at_world_point(target_point, speed)
 
-func set_gaze_at_world_point(point: Vector3, speed: float = 3.0) -> void:
-	"""Core: Tama looks at any arbitrary 3D world point."""
+# ─── Screen → 3D World Conversion (Orthographic Camera) ──────
+func _screen_to_world(screen_x: float, screen_y: float) -> Vector3:
+	"""Convert desktop screen pixel coordinates to a 3D world point.
+	Uses the orthographic camera's linear projection extended to the full screen."""
+	var win_pos := DisplayServer.window_get_position()
+	var win_size := DisplayServer.window_get_size()
+	# Convert global screen coords to viewport-local coords
+	# (can be negative or > viewport — that's fine for ortho projection!)
+	var vp_x: float = screen_x - float(win_pos.x)
+	var vp_y: float = screen_y - float(win_pos.y)
+	var vp_w: float = float(win_size.x)
+	var vp_h: float = float(win_size.y)
+
+	# Orthographic camera: linear mapping from viewport pixels to world units
+	# Camera.size = full height of visible area in world units (KEEP_HEIGHT mode)
+	var cam_pos := _camera.global_position
+	var ortho_size: float = _camera.size  # e.g., 2.095
+	var half_h: float = ortho_size / 2.0
+	var aspect: float = vp_w / vp_h
+	var half_w: float = half_h * aspect
+
+	# Viewport pixel → world position (camera faces -Z)
+	var world_x: float = cam_pos.x + ((vp_x / vp_w) - 0.5) * 2.0 * half_w
+	var world_y: float = cam_pos.y + (0.5 - (vp_y / vp_h)) * 2.0 * half_h
+	# Place the target on a plane between Tama and camera (Z ≈ 1.0)
+	var world_z: float = cam_pos.z - 1.0
+
+	return Vector3(world_x, world_y, world_z)
+
+func _get_head_world_pos() -> Vector3:
+	"""Get head bone position in world space."""
+	if _head_bone_idx >= 0 and _skeleton != null:
+		return _skeleton.global_transform * _skeleton.get_bone_global_pose(_head_bone_idx).origin
+	return Vector3(0, 1.3, 0)  # Approximate fallback
+
+# ─── Look-At via 3D Target Point ──────────────────────────────
+func _look_at_world_point(target: Vector3, speed: float = 5.0) -> void:
+	"""Compute gaze rotation so head looks at a 3D world point."""
 	if not _gaze_active:
 		return
-	_gaze_speed = speed
-	_gaze_target_head = _compute_look_at_rotation(_head_bone_idx, point, 0.6)
-	_gaze_target_neck = _compute_look_at_rotation(_neck_bone_idx, point, 0.4)
-	_gaze_weight_target = 1.0
+	_gaze_lerp_speed = speed
 
-func set_gaze_at_screen_point(screen_x: float, screen_y: float, speed: float = 3.0) -> void:
-	"""Map real screen pixel coordinates to a 3D point and look there.
-	screen_x/y = pixel position on the actual monitor (e.g. 960, 540 = center of 1920x1080).
-	Tama's window is at the right edge, so screen content is to her right."""
+	var head_pos: Vector3 = _get_head_world_pos()
+	var dir: Vector3 = (target - head_pos).normalized()
+
+	# Convert direction to yaw/pitch relative to camera's forward (-Z)
+	# Camera faces -Z, so "forward" for tama (facing camera) is +Z
+	# Yaw: angle between direction projected onto XZ plane and +Z forward
+	#   atan2(dir.x, dir.z): positive when target is to the +X side (camera-right)
+	# Pitch: angle up/down
+	#   asin(dir.y): positive when target is above
+	var yaw_rad: float = atan2(dir.x, dir.z)
+	var pitch_rad: float = asin(clampf(dir.y, -1.0, 1.0))
+	var yaw_deg: float = rad_to_deg(yaw_rad)
+	var pitch_deg: float = rad_to_deg(pitch_rad)
+
+	_set_gaze_from_angles(yaw_deg, -pitch_deg, speed)
+
+func set_gaze_at_screen_point(screen_x: float, screen_y: float, speed: float = 8.0) -> void:
+	"""Map screen pixel coordinates to 3D world point and look there."""
 	if not _gaze_active:
 		return
-	# Normalize screen coords to -1..1 range (centered on screen)
-	# Assuming 1920x1080 primary monitor — could be made dynamic
-	var screen_w: float = DisplayServer.screen_get_size().x
-	var screen_h: float = DisplayServer.screen_get_size().y
-	var norm_x: float = (screen_x / screen_w - 0.5) * 2.0  # -1 (left) to 1 (right)
-	var norm_y: float = (screen_y / screen_h - 0.5) * 2.0  # -1 (top) to 1 (bottom)
+	var target_3d = _screen_to_world(screen_x, screen_y)
+	_gaze_world_target = target_3d
+	_look_at_world_point(target_3d, speed)
 
-	# Map to 3D world space using camera orientation
-	var cam_pos = _camera.global_position
-	var right = _camera.global_transform.basis.x
-	var up = _camera.global_transform.basis.y
-	var forward = -_camera.global_transform.basis.z
+func _set_gaze_from_angles(yaw_deg: float, pitch_deg: float, speed: float) -> void:
+	"""Set gaze target from yaw/pitch angles in degrees."""
+	_gaze_lerp_speed = speed
+	yaw_deg = clamp(yaw_deg, -GAZE_MAX_YAW, GAZE_MAX_YAW)
+	pitch_deg = clamp(pitch_deg, -GAZE_MAX_PITCH, GAZE_MAX_PITCH)
 
-	# The screen is "behind" the camera from Tama's perspective
-	# X: negative norm_x = left of screen = more to the "screen side" from Tama
-	# Y: negative norm_y = top of screen = up
-	var world_point = cam_pos + forward * 0.5 - right * norm_x * 2.0 - up * norm_y * 1.2
-	set_gaze_at_world_point(world_point, speed)
+	# Head gets 70%, Neck gets 30% (natural head-lead motion)
+	var head_yaw = deg_to_rad(yaw_deg * 0.7)
+	var head_pitch = deg_to_rad(pitch_deg * 0.7)
+	var neck_yaw = deg_to_rad(yaw_deg * 0.3)
+	var neck_pitch = deg_to_rad(pitch_deg * 0.3)
+
+	# Build rotation quaternions:
+	#   Yaw (turn head left/right) = rotate around local Y ✅
+	#   Pitch (nod up/down) = rotate around local Z (NOT X — X is roll/tilt!)
+	_gaze_target_head = Quaternion(Vector3.UP, head_yaw) * Quaternion(Vector3.FORWARD, head_pitch)
+	_gaze_target_neck = Quaternion(Vector3.UP, neck_yaw) * Quaternion(Vector3.FORWARD, neck_pitch)
+	_gaze_blend_target = 1.0
+
+# ─── Debug Visualization ──────────────────────────────────────
+func _setup_gaze_debug() -> void:
+	"""Create visible debug helpers: sphere at target, lines from head."""
+	# Sphere at target point (color changes: green=front, red=behind)
+	_debug_sphere = MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.05
+	sphere.height = 0.10
+	_debug_sphere.mesh = sphere
+	_debug_sphere_mat = StandardMaterial3D.new()
+	_debug_sphere_mat.albedo_color = Color.GREEN
+	_debug_sphere_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_debug_sphere_mat.no_depth_test = true  # Always visible (even behind Tama)
+	_debug_sphere.material_override = _debug_sphere_mat
+	add_child(_debug_sphere)
+	_debug_sphere.visible = false
+
+	# Yellow line: head → target (look-at direction)
+	_debug_line_mesh = ImmediateMesh.new()
+	_debug_line_node = MeshInstance3D.new()
+	_debug_line_node.mesh = _debug_line_mesh
+	var line_mat := StandardMaterial3D.new()
+	line_mat.albedo_color = Color.YELLOW
+	line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	line_mat.no_depth_test = true
+	_debug_line_node.material_override = line_mat
+	add_child(_debug_line_node)
+	_debug_line_node.visible = false
+
+	# Cyan line: Z-depth indicator (head → straight forward to target's Z)
+	_debug_depth_mesh = ImmediateMesh.new()
+	_debug_depth_node = MeshInstance3D.new()
+	_debug_depth_node.mesh = _debug_depth_mesh
+	var depth_mat := StandardMaterial3D.new()
+	depth_mat.albedo_color = Color.CYAN
+	depth_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	depth_mat.no_depth_test = true
+	_debug_depth_node.material_override = depth_mat
+	add_child(_debug_depth_node)
+	_debug_depth_node.visible = false
+
+func _update_debug_viz(delta: float) -> void:
+	"""Update debug sphere + lines + console prints."""
+	if not _debug_gaze_mouse or _debug_sphere == null:
+		return
+
+	var head_pos = _get_head_world_pos()
+	var target = _gaze_world_target
+
+	# ─── Sphere: position + color based on depth ───
+	_debug_sphere.global_position = target
+	# Green = target is IN FRONT of Tama (Z > head Z, toward camera)
+	# Red = target is BEHIND Tama
+	if target.z > head_pos.z:
+		_debug_sphere_mat.albedo_color = Color.GREEN  # In front ✔
+	else:
+		_debug_sphere_mat.albedo_color = Color.RED    # Behind ✖
+
+	# ─── Yellow line: head → target (actual look direction) ───
+	_debug_line_mesh.clear_surfaces()
+	_debug_line_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	_debug_line_mesh.surface_add_vertex(head_pos)
+	_debug_line_mesh.surface_add_vertex(target)
+	_debug_line_mesh.surface_end()
+
+	# ─── Cyan line: Z-depth indicator ───
+	# Goes from head straight along Z to show how far in front/behind the target is
+	_debug_depth_mesh.clear_surfaces()
+	_debug_depth_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	_debug_depth_mesh.surface_add_vertex(head_pos)
+	_debug_depth_mesh.surface_add_vertex(Vector3(head_pos.x, head_pos.y, target.z))
+	_debug_depth_mesh.surface_end()
+
+	# ─── Console print every 0.5s ───
+	_debug_print_timer += delta
+	if _debug_print_timer >= 0.5:
+		_debug_print_timer = 0.0
+		var z_dist = target.z - head_pos.z
+		var z_label = "DEVANT" if z_dist > 0 else "DERRIERE"
+		print("🔴 Target: (%.2f, %.2f, %.2f) | Head: (%.2f, %.2f, %.2f) | Z dist: %.2f (%s)" % [
+			target.x, target.y, target.z,
+			head_pos.x, head_pos.y, head_pos.z,
+			z_dist, z_label
+		])
 
 func _update_gaze(delta: float) -> void:
+	"""Gaze override — directly sets bone rotation."""
 	if not _gaze_active or _skeleton == null:
 		return
 
-	# Smooth weight transition
-	_gaze_weight = lerp(_gaze_weight, _gaze_weight_target, clamp(_gaze_speed * delta, 0.0, 1.0))
+	# 1. Smooth blend weight (fade in/out)
+	var blend_t: float = clampf(GAZE_BLEND_SPEED * delta, 0.0, 1.0)
+	_gaze_blend = lerpf(_gaze_blend, _gaze_blend_target, blend_t)
 
-	# Smooth slerp toward target rotation
-	var t = clamp(_gaze_speed * delta, 0.0, 1.0)
-	_gaze_current_head = _gaze_current_head.slerp(_gaze_target_head, t)
-	_gaze_current_neck = _gaze_current_neck.slerp(_gaze_target_neck, t)
+	# 2. Slerp toward target rotation
+	var slerp_t: float = clampf(_gaze_lerp_speed * delta, 0.0, 1.0)
+	_gaze_delta_head = _gaze_delta_head.slerp(_gaze_target_head, slerp_t).normalized()
+	_gaze_delta_neck = _gaze_delta_neck.slerp(_gaze_target_neck, slerp_t).normalized()
 
-	# Apply gaze as additive rotation blended by weight
-	if _gaze_weight > 0.01:
-		if _head_bone_idx >= 0:
-			var anim_rot = _skeleton.get_bone_pose_rotation(_head_bone_idx)
-			var blended = anim_rot.slerp(anim_rot * _gaze_current_head, _gaze_weight)
-			_skeleton.set_bone_pose_rotation(_head_bone_idx, blended)
-		if _neck_bone_idx >= 0:
-			var anim_rot = _skeleton.get_bone_pose_rotation(_neck_bone_idx)
-			var blended = anim_rot.slerp(anim_rot * _gaze_current_neck, _gaze_weight)
-			_skeleton.set_bone_pose_rotation(_neck_bone_idx, blended)
+	# 3. Update debug visualization
+	_update_debug_viz(delta)
+
+	# 4. When blend ≈ 0, don't touch bones → animation has full control
+	if _gaze_blend < 0.005:
+		return
+
+	# 5. Set bone rotation (scaled by blend weight)
+	if _head_bone_idx >= 0:
+		var final_rot: Quaternion = Quaternion.IDENTITY.slerp(_gaze_delta_head, _gaze_blend).normalized()
+		_skeleton.set_bone_pose_rotation(_head_bone_idx, final_rot)
+	if _neck_bone_idx >= 0:
+		var final_rot: Quaternion = Quaternion.IDENTITY.slerp(_gaze_delta_neck, _gaze_blend).normalized()
+		_skeleton.set_bone_pose_rotation(_neck_bone_idx, final_rot)
 
 # ─── Tama Status Indicator ──────────────────────────────
 func _setup_status_indicator() -> void:

@@ -1,17 +1,17 @@
 ============================================================
 🥷 FocusPals / Tama — Session Log
-Started: 2026-03-04 12:08:01
+Started: 2026-03-04 21:22:23
 Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
-PID: 31596
-Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_120801.log
+PID: 22460
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_212223.log
 ============================================================
 
-📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_120801.log
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_212223.log
 🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
-🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
-🖱️ [EdgeMonitor] Démarré — écran: 1440px, zone Y: 352-852
-12:08:04 [INFO] server listening on 127.0.0.1:8080
-12:08:04 [INFO] server listening on [::1]:8080
+🎤 Micro restauré depuis les préférences: [4] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 1920px, zone Y: 532-1032
+21:22:26 [INFO] server listening on 127.0.0.1:8080
+21:22:26 [INFO] server listening on [::1]:8080
 ==========================================
   FocusPals — Tama Agent 🥷 (LIVE API) 📡
   Dual-Monitor Pulse Vision + Audio Voice
@@ -34,15 +34,16 @@ Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_12
 
   Press Ctrl+C to stop.
 ──────────────────────────────────────────
-12:08:05 [INFO] connection open
-📐 Fenêtre repositionnée: (1240, 602) — taille 200x250
-✅ Click-through + position OK (handle: 1837592)
-12:08:05 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
-✅ API key valid (key: AIzaSyBR...)
-🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 711) screen_w=1440
-🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 783) screen_w=1440
-🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 895) screen_w=1440
-🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 894) screen_w=1440
-🖱️ [EdgeMonitor] SHOW_RADIAL (1440, 781) screen_w=1440
+21:22:27 [INFO] connection open
+❌ API key invalid: [Errno 11001] getaddrinfo failed
+📐 Fenêtre repositionnée: (1520, 532) — taille 400x500
+✅ Click-through + position OK (handle: 723116)
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 589) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1916, 763) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1917, 899) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 646) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1917, 663) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 879) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 806) screen_w=1920
 
 👋 Tama: Fermeture propre...

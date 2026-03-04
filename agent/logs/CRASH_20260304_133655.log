@@ -1,111 +1,98 @@
-============================================================
-🥷 FocusPals / Tama — Session Log
-Started: 2026-03-04 02:22:17
-Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
-PID: 22992
-Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_022217.log
-============================================================
-
-📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_022217.log
-🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
-🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
-🖱️ [EdgeMonitor] Démarré — écran: 2560px, zone Y: 892-1392
-👋 Tama: Au revoir. N'oublie pas de travailler.
 
 🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
-💥 FATAL CRASH at 2026-03-04 02:22:21
+💥 FATAL CRASH at 2026-03-04 13:36:59
 Exception: OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 🔴
 
 Traceback (most recent call last):
-  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\tama_agent.py", line 76, in <module>
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\tama_agent.py", line 99, in <module>
     asyncio.run(run_tama_live())
     ~~~~~~~~~~~^^^^^^^^^^^^^^^^^
   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
@@ -117,7 +104,7 @@ Traceback (most recent call last):
   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
     return future.result()
            ~~~~~~~~~~~~~^^
-  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\tama_agent.py", line 50, in run_tama_live
+  File "C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\tama_agent.py", line 73, in run_tama_live
     async with websockets.serve(ws_handler, "localhost", 8080):
                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   File "C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py", line 813, in __aenter__
@@ -131,94 +118,7 @@ Traceback (most recent call last):
 OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée
 
 
-============================================================
-📋 TAMA STATE DUMP AT CRASH TIME
-============================================================
-{
-  "session_duration_minutes": 50,
-  "is_session_active": false,
-  "session_start_time": null,
-  "just_started_session": false,
-  "current_mode": "libre",
-  "conversation_requested": false,
-  "conversation_start_time": null,
-  "current_suspicion_index": 0.0,
-  "current_alignment": 1.0,
-  "current_category": "SANTE",
-  "current_task": null,
-  "can_be_closed": true,
-  "suspicion_above_3_start": null,
-  "suspicion_above_6_start": null,
-  "suspicion_at_9_start": null,
-  "force_speech": false,
-  "current_tama_state": "<TamaState.CALM: 'calm'>",
-  "last_active_window_title": "Unknown",
-  "active_window_start_time": 1772587340.370587,
-  "current_break_index": 0,
-  "break_reminder_active": false,
-  "is_on_break": false,
-  "break_start_time": null,
-  "user_spoke_at": 0.0,
-  "window_positioned": false,
-  "godot_hwnd": null,
-  "radial_shown": false,
-  "_radial_cooldown_until": 0,
-  "_mouse_was_away": true,
-  "_mic_panel_pending": false,
-  "_api_key_valid": false,
-  "connected_ws_clients": "set()",
-  "main_loop": "<ProactorEventLoop running=False closed=True debug=False>",
-  "tray_icon": "<pystray._win32.Icon object at 0x0000026BB13C3230>",
-  "selected_mic_index": 7,
-  "language": "fr",
-  "tama_volume": 1.0,
-  "godot_process": "<Popen: returncode: None args: ['C:\\\\Users\\\\xewi6\\\\Desktop\\\\FocusPals\\\\Focus...>",
-  "_session_resume_handle": null,
-  "_current_mood": "calm",
-  "_current_mood_intensity": 0.0,
-  "_mood_anim_set": false,
-  "_mood_bias": 0.0,
-  "_mood_recent_infractions": 0,
-  "_mood_compliance_streak_start": null,
-  "_mood_last_infraction_time": 0,
-  "_confidence": 1.0,
-  "_api_connections": 0,
-  "_api_screen_pulses": 0,
-  "_api_function_calls": 0,
-  "_api_audio_chunks_sent": 0,
-  "_api_audio_chunks_recv": 0,
-  "_api_connect_time_start": 0,
-  "_api_total_connect_secs": 0.0
-}
-============================================================
-Traceback (most recent call last):
-  File [35m"C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\tama_agent.py"[0m, line [35m76[0m, in [35m<module>[0m
-    [31masyncio.run[0m[1;31m(run_tama_live())[0m
-    [31m~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^[0m
-  File [35m"C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py"[0m, line [35m195[0m, in [35mrun[0m
-    return [31mrunner.run[0m[1;31m(main)[0m
-           [31m~~~~~~~~~~[0m[1;31m^^^^^^[0m
-  File [35m"C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py"[0m, line [35m118[0m, in [35mrun[0m
-    return [31mself._loop.run_until_complete[0m[1;31m(task)[0m
-           [31m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^[0m
-  File [35m"C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py"[0m, line [35m725[0m, in [35mrun_until_complete[0m
-    return [31mfuture.result[0m[1;31m()[0m
-           [31m~~~~~~~~~~~~~[0m[1;31m^^[0m
-  File [35m"C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\tama_agent.py"[0m, line [35m50[0m, in [35mrun_tama_live[0m
-    async with [31mwebsockets.serve[0m[1;31m(ws_handler, "localhost", 8080)[0m:
-               [31m~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
-  File [35m"C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py"[0m, line [35m813[0m, in [35m__aenter__[0m
-    return [1;31mawait self[0m
-           [1;31m^^^^^^^^^^[0m
-  File [35m"C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\site-packages\websockets\asyncio\server.py"[0m, line [35m831[0m, in [35m__await_impl__[0m
-    server = [1;31mawait self.create_server[0m
-             [1;31m^^^^^^^^^^^^^^^^^^^^^^^^[0m
-  File [35m"C:\Users\xewi6\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py"[0m, line [35m1622[0m, in [35mcreate_server[0m
-    raise OSError(err.errno, msg) from None
-[1;35mOSError[0m: [35m[Errno 10048] error while attempting to bind on address ('127.0.0.1', 8080): [winerror 10048] une seule utilisation de chaque adresse de socket (protocole/adresse réseau/port) est habituellement autorisée[0m
 
-============================================================
-👋 Session ended normally at 2026-03-04 02:22:21
 
 ============================================================
 📋 TAMA STATE DUMP AT CRASH TIME
@@ -242,7 +142,7 @@ Traceback (most recent call last):
   "force_speech": false,
   "current_tama_state": "<TamaState.CALM: 'calm'>",
   "last_active_window_title": "Unknown",
-  "active_window_start_time": 1772587340.370587,
+  "active_window_start_time": 1772627818.4079187,
   "current_break_index": 0,
   "break_reminder_active": false,
   "is_on_break": false,
@@ -257,7 +157,7 @@ Traceback (most recent call last):
   "_api_key_valid": false,
   "connected_ws_clients": "set()",
   "main_loop": "<ProactorEventLoop running=False closed=True debug=False>",
-  "tray_icon": "<pystray._win32.Icon object at 0x0000026BB13C3230>",
+  "tray_icon": "<pystray._win32.Icon object at 0x00000146437834D0>",
   "selected_mic_index": 7,
   "language": "fr",
   "tama_volume": 1.0,
@@ -277,7 +177,11 @@ Traceback (most recent call last):
   "_api_audio_chunks_sent": 0,
   "_api_audio_chunks_recv": 0,
   "_api_connect_time_start": 0,
-  "_api_total_connect_secs": 0.0
+  "_api_total_connect_secs": 0.0,
+  "_lite_api_calls": 0,
+  "_lite_input_tokens": 0,
+  "_lite_output_tokens": 0,
+  "_lite_errors": 0,
+  "_session_summary": null
 }
-============================================================
 ============================================================

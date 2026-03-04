@@ -1,0 +1,48 @@
+============================================================
+🥷 FocusPals / Tama — Session Log
+Started: 2026-03-04 21:26:29
+Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
+PID: 52932
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_212628.log
+============================================================
+
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_212628.log
+🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
+🎤 Micro restauré depuis les préférences: [4] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 1920px, zone Y: 532-1032
+21:26:32 [INFO] server listening on [::1]:8080
+21:26:32 [INFO] server listening on 127.0.0.1:8080
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+21:26:32 [INFO] connection open
+📐 Fenêtre repositionnée: (1520, 532) — taille 400x500
+✅ Click-through + position OK (handle: 985260)
+21:26:33 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ API key valid (key: AIzaSyBR...)
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 746) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1916, 871) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 883) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 811) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 927) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1916, 718) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 824) screen_w=1920

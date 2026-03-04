@@ -34,17 +34,17 @@ albedo_texture = ExtResource("3_h2yge")
 [node name="Node3D" type="Node3D" unique_id=436502441]
 script = ExtResource("1_script")
 
-[node name="Tama" parent="." unique_id=433043461 instance=ExtResource("2_h2yge")]
+[node name="Tama" parent="." unique_id=1006748452 instance=ExtResource("2_h2yge")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.044795275, 1.1920929e-07, -0.109035015)
 
-[node name="Geo_Body_004" parent="Tama/Armature/Skeleton3D" parent_id_path=PackedInt32Array(433043461, 1325096226) index="0" unique_id=2045010613]
+[node name="Geo_Body_004" parent="Tama/Armature/Skeleton3D" parent_id_path=PackedInt32Array(1006748452, 958645065) index="0" unique_id=36380577]
 surface_material_override/0 = SubResource("StandardMaterial3D_0xm2m")
 surface_material_override/1 = SubResource("StandardMaterial3D_h2yge")
 surface_material_override/2 = SubResource("StandardMaterial3D_1bvp3")
 surface_material_override/3 = SubResource("StandardMaterial3D_lquwl")
 surface_material_override/4 = SubResource("StandardMaterial3D_7mycd")
 
-[node name="HeadPhones" parent="Tama/Armature/Skeleton3D" parent_id_path=PackedInt32Array(433043461, 1325096226) index="1" unique_id=1360701076 instance=ExtResource("4_1bvp3")]
+[node name="HeadPhones" parent="Tama/Armature/Skeleton3D" parent_id_path=PackedInt32Array(1006748452, 958645065) index="1" unique_id=1360701076 instance=ExtResource("4_1bvp3")]
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1997184296]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03470266, 1.0462117, 2.1872618)

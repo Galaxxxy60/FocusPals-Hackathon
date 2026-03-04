@@ -1028,7 +1028,7 @@ async def run_gemini_loop(pya):
                                                     # Once report_mood fires, it overrides this with the correct mood anim.
                                                     if not state.get("_mood_anim_set"):
                                                         if state["current_mode"] == "conversation":
-                                                            send_anim_to_godot("Hello", True)
+                                                            send_anim_to_godot("Idle_wall", True)
                                                         else:
                                                             send_anim_to_godot("Peek", False)
 

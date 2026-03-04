@@ -239,10 +239,10 @@ def send_anim_to_godot(anim_name: str, loop: bool = False):
 
 _MOOD_ANIM_MAP = {
     # mood: (low_intensity_anim, mid_intensity_anim, high_intensity_anim)
-    "calm":         ("Hello", "Hello", "Hello"),
+    "calm":         ("Idle_wall", "Idle_wall", "Idle_wall"),
     "curious":      ("Peek",  "Suspicious", "Suspicious"),
-    "amused":       ("Hello", "Hello", "Hello"),
-    "proud":        ("Hello", "Hello", "Hello"),
+    "amused":       ("Idle_wall", "Idle_wall", "Idle_wall"),
+    "proud":        ("Idle_wall", "Idle_wall", "Idle_wall"),
     "disappointed": ("Suspicious", "Suspicious", "Angry"),
     "sarcastic":    ("Suspicious", "Suspicious", "Angry"),
     "annoyed":      ("Suspicious", "Angry", "Angry"),
@@ -257,7 +257,7 @@ def send_mood_to_godot(mood: str, intensity: float):
     NOTE: TAMA_MOOD (facial expressions) is now sent directly in gemini_session.py.
     """
     # Pick animation from mood map
-    anims = _MOOD_ANIM_MAP.get(mood, ("Hello", "Suspicious", "Angry"))
+    anims = _MOOD_ANIM_MAP.get(mood, ("Idle_wall", "Suspicious", "Angry"))
     if intensity < 0.4:
         anim = anims[0]
     elif intensity < 0.7:

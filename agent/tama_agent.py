@@ -26,6 +26,11 @@ init_crash_logger()
 
 import asyncio
 import threading
+import logging
+
+# Silence spammy google.genai logs ("AFC is enabled with max remote calls: 10")
+logging.getLogger("google.genai").setLevel(logging.WARNING)
+logging.getLogger("google.genai.live").setLevel(logging.WARNING)
 
 import pyaudio
 import websockets
@@ -42,22 +47,39 @@ state["current_tama_state"] = TamaState.CALM
 
 def _free_port(port: int):
     """Kill any process occupying the given port (Windows only)."""
-    import subprocess, os
+    import subprocess, os, time as _t
+    my_pid = os.getpid()
+    pids_to_kill = set()
     try:
         result = subprocess.run(
-            ["netstat", "-ano"], capture_output=True, text=True, timeout=5
+            ["netstat", "-ano", "-p", "TCP"], capture_output=True, text=False, timeout=5
         )
-        my_pid = os.getpid()
-        for line in result.stdout.splitlines():
-            if f":{port}" in line and "LISTENING" in line:
-                parts = line.split()
-                pid = int(parts[-1])
+        stdout = result.stdout.decode("utf-8", errors="replace")
+        for line in stdout.splitlines():
+            if f":{port}" not in line or "LISTENING" not in line:
+                continue
+            try:
+                pid = int(line.strip().split()[-1])
                 if pid != my_pid and pid > 0:
-                    print(f"⚠️ Port {port} occupé par PID {pid} — kill automatique...")
-                    subprocess.run(["taskkill", "/F", "/PID", str(pid)],
-                                   capture_output=True, timeout=5)
-    except Exception:
-        pass  # Best effort — if it fails, websockets.serve will error normally
+                    pids_to_kill.add(pid)
+            except (ValueError, IndexError):
+                continue
+    except Exception as exc:
+        print(f"  ⚠️ netstat failed: {exc}")
+    
+    if not pids_to_kill:
+        return  # Port is free
+    
+    for pid in pids_to_kill:
+        print(f"⚠️ Port {port} occupé par PID {pid} — kill automatique...")
+        try:
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                           capture_output=True, timeout=5)
+        except Exception:
+            pass
+    
+    # Wait for OS to release the socket
+    _t.sleep(1.5)
 
 
 async def run_tama_live():

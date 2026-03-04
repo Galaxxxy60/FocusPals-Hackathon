@@ -1,17 +1,17 @@
 ============================================================
 🥷 FocusPals / Tama — Session Log
-Started: 2026-03-04 02:35:19
+Started: 2026-03-04 20:31:47
 Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
-PID: 4644
-Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_023519.log
+PID: 3720
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_203147.log
 ============================================================
 
-📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_023519.log
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_203147.log
 🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
-🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
-🖱️ [EdgeMonitor] Démarré — écran: 2560px, zone Y: 892-1392
-02:35:23 [INFO] server listening on 127.0.0.1:8080
-02:35:23 [INFO] server listening on [::1]:8080
+🎤 Micro restauré depuis les préférences: [4] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 1920px, zone Y: 532-1032
+20:31:51 [INFO] server listening on [::1]:8080
+20:31:51 [INFO] server listening on 127.0.0.1:8080
 ==========================================
   FocusPals — Tama Agent 🥷 (LIVE API) 📡
   Dual-Monitor Pulse Vision + Audio Voice
@@ -34,13 +34,23 @@ Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_02
 
   Press Ctrl+C to stop.
 ──────────────────────────────────────────
-02:35:23 [INFO] connection open
-📐 Fenêtre repositionnée: (2160, 892) — taille 400x500
-✅ Click-through + position OK (handle: 1970466)
-02:35:24 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+20:31:51 [INFO] connection open
+📐 Fenêtre repositionnée: (1520, 532) — taille 400x500
+✅ Click-through + position OK (handle: 1252372)
+20:31:52 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
 ✅ API key valid (key: AIzaSyBR...)
-🖱️ [EdgeMonitor] SHOW_RADIAL (2559, 1086) screen_w=2560
-🖱️ [EdgeMonitor] SHOW_RADIAL (2559, 1144) screen_w=2560
-🖱️ [EdgeMonitor] SHOW_RADIAL (2559, 1361) screen_w=2560
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 856) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1918, 623) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 650) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 694) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 662) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 745) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 656) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 720) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 660) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 672) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 693) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 695) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 943) screen_w=1920
 
 👋 Tama: Fermeture propre...
