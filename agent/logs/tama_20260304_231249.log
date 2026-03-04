@@ -1,17 +1,17 @@
 ============================================================
 🥷 FocusPals / Tama — Session Log
-Started: 2026-03-04 20:24:45
+Started: 2026-03-04 23:12:49
 Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
-PID: 5112
-Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_202445.log
+PID: 6736
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_231249.log
 ============================================================
 
-📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_202445.log
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_231249.log
 🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
 🎤 Micro restauré depuis les préférences: [4] Microphone Array (Technologie I
 🖱️ [EdgeMonitor] Démarré — écran: 1920px, zone Y: 532-1032
-20:24:49 [INFO] server listening on 127.0.0.1:8080
-20:24:49 [INFO] server listening on [::1]:8080
+23:12:53 [INFO] server listening on [::1]:8080
+23:12:53 [INFO] server listening on 127.0.0.1:8080
 ==========================================
   FocusPals — Tama Agent 🥷 (LIVE API) 📡
   Dual-Monitor Pulse Vision + Audio Voice
@@ -34,18 +34,12 @@ Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260304_20
 
   Press Ctrl+C to stop.
 ──────────────────────────────────────────
-20:24:49 [INFO] connection open
+23:12:53 [INFO] connection open
 📐 Fenêtre repositionnée: (1520, 532) — taille 400x500
-✅ Click-through + position OK (handle: 1645210)
-20:24:50 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ Click-through + position OK (handle: 5312732)
+23:12:54 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
 ✅ API key valid (key: AIzaSyBR...)
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 856) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 935) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 1009) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1915, 647) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 1036) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 755) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 576) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 698) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 708) screen_w=1920
-🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 756) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 920) screen_w=1920
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 841) screen_w=1920
+
+👋 Tama: Fermeture propre...

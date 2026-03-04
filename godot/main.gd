@@ -47,6 +47,22 @@ var _bs_hide_left_eye: int = -1
 var _bs_hide_right_eye: int = -1
 var _bs_mouth_open: int = -1
 
+# ─── Eye Follow (Blend Shapes: LookLeft/Right/Up/Down) ───
+var _bs_look_left: int = -1
+var _bs_look_right: int = -1
+var _bs_look_up: int = -1
+var _bs_look_down: int = -1
+var _eye_follow_active: bool = false   # Master switch (set by Python or F4 debug)
+var _debug_eye_follow: bool = false    # F4 debug toggle (mouse follow)
+var _eye_follow_h: float = 0.0        # Current horizontal: -1=left, 0=center, +1=right
+var _eye_follow_v: float = 0.0        # Current vertical: -1=down, 0=center, +1=up
+var _eye_target_h: float = 0.0        # Target horizontal
+var _eye_target_v: float = 0.0        # Target vertical
+var _eye_saccade_timer: float = 0.0   # Timer between saccades
+const EYE_SACCADE_INTERVAL: float = 0.08  # Snap every ~80ms (like real saccades)
+const EYE_SACCADE_THRESHOLD: float = 0.03 # Dead zone: ignore tiny changes
+const EYE_RETURN_SPEED: float = 8.0       # Speed to return to center when deactivated
+
 # Jaw open amount per viseme (base values, modulated by amplitude)
 const JAW_OPEN_MAP = {
 	"REST": 0.0,
@@ -165,6 +181,13 @@ var _gaze_active: bool = false
 var _gaze_blend: float = 0.0        # 0 = pure animation, 1 = full gaze applied
 var _gaze_blend_target: float = 0.0 # What blend is transitioning toward
 const GAZE_BLEND_SPEED: float = 4.0 # How fast blend fades in/out
+
+# Base rotation: the animation's natural head/neck rotation, captured once
+# before gaze ever modifies the bones. Used instead of IDENTITY so that
+# blend=0 returns to the animation pose (not the bind pose / chin-up).
+var _head_base_rot: Quaternion = Quaternion.IDENTITY
+var _neck_base_rot: Quaternion = Quaternion.IDENTITY
+var _gaze_base_captured: bool = false
 
 # Gaze targets — procedural, no hardcoded angles
 enum GazeTarget { USER, SCREEN_CENTER, SCREEN_TOP, SCREEN_BOTTOM, OTHER_MONITOR, BOOK, AWAY, NEUTRAL }
@@ -312,6 +335,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _debug_sphere: _debug_sphere.visible = false
 			if _debug_line_node: _debug_line_node.visible = false
 			if _debug_depth_node: _debug_depth_node.visible = false
+	# F4 = debug eye follow: eyes track mouse cursor
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F4:
+		_debug_eye_follow = !_debug_eye_follow
+		_eye_follow_active = _debug_eye_follow
+		if _debug_eye_follow:
+			print("👁️ [DEBUG] Eye Follow → ON")
+			_show_status_indicator("👁️ Eye Follow: ON (F4)", Color(0.5, 1.0, 0.8))
+		else:
+			print("👁️ [DEBUG] Eye Follow → OFF")
+			_hide_status_indicator()
+			# Reset eyes to center
+			_eye_target_h = 0.0
+			_eye_target_v = 0.0
 
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
@@ -439,6 +475,12 @@ func _process(delta: float) -> void:
 		_gaze_world_target = target_3d
 		_look_at_world_point(target_3d, 8.0)
 	_update_gaze(delta)
+
+	# Eye follow system — blend shape eye tracking
+	if _debug_eye_follow and _eye_follow_active:
+		var mouse_pos = DisplayServer.mouse_get_position()
+		_set_eye_target_from_screen(float(mouse_pos.x), float(mouse_pos.y))
+	_update_eye_follow(delta)
 
 
 func _handle_message(raw: String) -> void:
@@ -869,6 +911,23 @@ func _scan_for_materials(node: Node) -> void:
 					_bs_mouth_open = bs_i
 					_body_mesh = mesh_inst
 					print("  💥 BS_MoutOpen found (index %d)" % bs_i)
+				# Eye follow blend shapes
+				elif bs_name == "BS_LookLeft":
+					_bs_look_left = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_LookLeft found (index %d)" % bs_i)
+				elif bs_name == "BS_LookRight":
+					_bs_look_right = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_LookRight found (index %d)" % bs_i)
+				elif bs_name == "BS_LookUp":
+					_bs_look_up = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_LookUp found (index %d)" % bs_i)
+				elif bs_name == "BS_LookDown":
+					_bs_look_down = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_LookDown found (index %d)" % bs_i)
 	for child in node.get_children():
 		_scan_for_materials(child)
 
@@ -940,6 +999,75 @@ func _update_blink(delta: float) -> void:
 				_set_pupils_visible(true)  # Show pupils
 				_apply_eye_offset(_current_eye_slot)  # Back to mood expression
 
+
+# ─── Eye Follow System (Blend Shape) ────────────────────
+func _set_eye_target_from_screen(screen_x: float, screen_y: float) -> void:
+	"""Convert screen mouse position to eye target direction (-1..+1)."""
+	var win_pos := DisplayServer.window_get_position()
+	var win_size := DisplayServer.window_get_size()
+
+	# Tama's eye center on screen (approximate: center-top of Godot window)
+	var eye_sx: float = float(win_pos.x) + float(win_size.x) * 0.5
+	var eye_sy: float = float(win_pos.y) + float(win_size.y) * 0.35
+
+	# Delta from eye center to mouse
+	var dx: float = screen_x - eye_sx
+	var dy: float = screen_y - eye_sy
+
+	# Normalize by a reference distance (half screen width)
+	var screen_w: float = float(DisplayServer.screen_get_size().x)
+	var ref: float = screen_w * 0.4
+
+	# H: negative = mouse to left of Tama, positive = to right
+	# V: negative = mouse above Tama, positive = below
+	_eye_target_h = clampf(dx / ref, -1.0, 1.0)
+	_eye_target_v = clampf(dy / ref, -1.0, 1.0)
+
+func _set_eye_look(h: float, v: float) -> void:
+	"""Public API: set eye direction. h: -1=left +1=right, v: -1=up +1=down."""
+	_eye_target_h = clampf(h, -1.0, 1.0)
+	_eye_target_v = clampf(v, -1.0, 1.0)
+	_eye_follow_active = true
+
+func _update_eye_follow(delta: float) -> void:
+	"""Saccadic eye movement — snaps between fixation points like real eyes."""
+	if _body_mesh == null:
+		return
+
+	if _eye_follow_active:
+		# Saccade: snap to target at intervals (not every frame)
+		_eye_saccade_timer += delta
+		if _eye_saccade_timer >= EYE_SACCADE_INTERVAL:
+			_eye_saccade_timer = 0.0
+			# Only snap if target has moved enough (dead zone prevents jitter)
+			var dh: float = absf(_eye_target_h - _eye_follow_h)
+			var dv: float = absf(_eye_target_v - _eye_follow_v)
+			if dh > EYE_SACCADE_THRESHOLD or dv > EYE_SACCADE_THRESHOLD:
+				_eye_follow_h = _eye_target_h
+				_eye_follow_v = _eye_target_v
+	else:
+		# Not active → smoothly return eyes to center
+		var t: float = clampf(EYE_RETURN_SPEED * delta, 0.0, 1.0)
+		_eye_follow_h = lerpf(_eye_follow_h, 0.0, t)
+		_eye_follow_v = lerpf(_eye_follow_v, 0.0, t)
+
+	# Apply blend shapes (only one direction per axis is non-zero)
+	# Compensate for head gaze: if head is already rotated toward target,
+	# reduce eye movement — they share the workload naturally
+	var head_comp: float = 1.0 - (_gaze_blend * 0.5)  # 1.0 → 0.5 as head engages
+	var h: float = _eye_follow_h * head_comp
+	var v: float = _eye_follow_v * head_comp
+
+	# Horizontal: swapped because Tama faces the user (mirrored)
+	if _bs_look_left >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_left, clampf(h, 0.0, 1.0))
+	if _bs_look_right >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_right, clampf(-h, 0.0, 1.0))
+	# Vertical
+	if _bs_look_up >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_up, clampf(-v, 0.0, 1.0))
+	if _bs_look_down >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_down, clampf(v, 0.0, 1.0))
 
 # ─── Headphones (deaf mode indicator) ───────────────────
 func _setup_headphones() -> void:
@@ -1063,7 +1191,12 @@ func _find_skeleton(node: Node) -> Skeleton3D:
 
 # Max rotation angles (degrees) — prevent neck-breaking
 const GAZE_MAX_YAW: float = 40.0   # Left/right
-const GAZE_MAX_PITCH: float = 30.0  # Up/down
+const GAZE_MAX_PITCH: float = 45.0  # Up/down (increased for more range)
+
+# Constant pitch offset (degrees) to compensate for camera–head height mismatch.
+# Positive = tilts gaze upward (counters "looking down" bias).
+# Adjust visually: if head looks too high, make this MORE NEGATIVE; too low, MORE POSITIVE.
+const GAZE_PITCH_OFFSET_DEG: float = -20.0
 
 # Preset targets → 3D world offsets from head (X=right, Y=up, Z=toward camera)
 # These are relative to the head bone position
@@ -1117,7 +1250,7 @@ func _screen_to_world(screen_x: float, screen_y: float) -> Vector3:
 	# Viewport pixel → world position (camera faces -Z)
 	var world_x: float = cam_pos.x + ((vp_x / vp_w) - 0.5) * 2.0 * half_w
 	var world_y: float = cam_pos.y + (0.5 - (vp_y / vp_h)) * 2.0 * half_h
-	# Place the target on a plane between Tama and camera (Z ≈ 1.0)
+	# Place the target on a plane between Tama and camera
 	var world_z: float = cam_pos.z - 1.0
 
 	return Vector3(world_x, world_y, world_z)
@@ -1136,19 +1269,26 @@ func _look_at_world_point(target: Vector3, speed: float = 5.0) -> void:
 	_gaze_lerp_speed = speed
 
 	var head_pos: Vector3 = _get_head_world_pos()
-	var dir: Vector3 = (target - head_pos).normalized()
 
-	# Convert direction to yaw/pitch relative to camera's forward (-Z)
-	# Camera faces -Z, so "forward" for tama (facing camera) is +Z
-	# Yaw: angle between direction projected onto XZ plane and +Z forward
-	#   atan2(dir.x, dir.z): positive when target is to the +X side (camera-right)
-	# Pitch: angle up/down
-	#   asin(dir.y): positive when target is above
-	var yaw_rad: float = atan2(dir.x, dir.z)
-	var pitch_rad: float = asin(clampf(dir.y, -1.0, 1.0))
+	# Y compensation: _screen_to_world maps screen-center to camera.y in world,
+	# but we want screen-center to correspond to head.y (so pitch=0 when mouse
+	# is visually at Tama's eye level). Shift target Y up by the height difference.
+	var corrected_target: Vector3 = target
+	if _camera:
+		corrected_target.y += (head_pos.y - _camera.global_position.y)
+	var delta: Vector3 = corrected_target - head_pos
+
+	# Yaw: horizontal angle (uses full XZ plane — correct for left/right)
+	var yaw_rad: float = atan2(delta.x, delta.z)
+	# Pitch: vertical angle in YZ plane ONLY — ignoring lateral distance X.
+	# This prevents horizontal mouse movement from affecting head tilt.
+	# (Old: asin(dir.y) on normalized 3D vector — pitch changed when X changed)
+	var pitch_rad: float = atan2(delta.y, absf(delta.z))
 	var yaw_deg: float = rad_to_deg(yaw_rad)
-	var pitch_deg: float = rad_to_deg(pitch_rad)
+	var pitch_deg: float = rad_to_deg(pitch_rad) + GAZE_PITCH_OFFSET_DEG
 
+	# -pitch_deg is required: the bone's Z-FORWARD rotation axis is inverted
+	# relative to the geometric pitch, so the negation corrects up/down direction.
 	_set_gaze_from_angles(yaw_deg, -pitch_deg, speed)
 
 func set_gaze_at_screen_point(screen_x: float, screen_y: float, speed: float = 8.0) -> void:
@@ -1162,6 +1302,12 @@ func set_gaze_at_screen_point(screen_x: float, screen_y: float, speed: float = 8
 func _set_gaze_from_angles(yaw_deg: float, pitch_deg: float, speed: float) -> void:
 	"""Set gaze target from yaw/pitch angles in degrees."""
 	_gaze_lerp_speed = speed
+
+	# When eye follow is active, head shares the workload (does less)
+	if _eye_follow_active:
+		yaw_deg *= 0.5
+		pitch_deg *= 0.5
+
 	yaw_deg = clamp(yaw_deg, -GAZE_MAX_YAW, GAZE_MAX_YAW)
 	pitch_deg = clamp(pitch_deg, -GAZE_MAX_PITCH, GAZE_MAX_PITCH)
 
@@ -1264,9 +1410,19 @@ func _update_debug_viz(delta: float) -> void:
 		])
 
 func _update_gaze(delta: float) -> void:
-	"""Gaze override — directly sets bone rotation."""
+	"""Gaze system — blends between animation's base rotation and gaze target."""
 	if not _gaze_active or _skeleton == null:
 		return
+
+	# 0. Capture the animation's natural bone rotation ONCE (before gaze touches it)
+	#    This is the "base" that blend=0 returns to (not IDENTITY/bind-pose).
+	if not _gaze_base_captured:
+		if _head_bone_idx >= 0:
+			_head_base_rot = _skeleton.get_bone_pose_rotation(_head_bone_idx)
+		if _neck_bone_idx >= 0:
+			_neck_base_rot = _skeleton.get_bone_pose_rotation(_neck_bone_idx)
+		_gaze_base_captured = true
+		print("\ud83d\udc40 Gaze: captured animation base rotation (head=%s)" % str(_head_base_rot))
 
 	# 1. Smooth blend weight (fade in/out)
 	var blend_t: float = clampf(GAZE_BLEND_SPEED * delta, 0.0, 1.0)
@@ -1280,16 +1436,25 @@ func _update_gaze(delta: float) -> void:
 	# 3. Update debug visualization
 	_update_debug_viz(delta)
 
-	# 4. When blend ≈ 0, don't touch bones → animation has full control
+	# 4. When blend ≈ 0, restore bone to animation base and stop
 	if _gaze_blend < 0.005:
+		# Ensure bone is at animation base (not stuck at some intermediate state)
+		if _head_bone_idx >= 0:
+			_skeleton.set_bone_pose_rotation(_head_bone_idx, _head_base_rot)
+		if _neck_bone_idx >= 0:
+			_skeleton.set_bone_pose_rotation(_neck_bone_idx, _neck_base_rot)
 		return
 
-	# 5. Set bone rotation (scaled by blend weight)
+	# 5. Blend between base rotation and base+gaze.
+	#    base_rot → the animation's natural head position (no chin-up)
+	#    base_rot * gaze_delta → gaze applied on top of animation
 	if _head_bone_idx >= 0:
-		var final_rot: Quaternion = Quaternion.IDENTITY.slerp(_gaze_delta_head, _gaze_blend).normalized()
+		var target_rot: Quaternion = (_head_base_rot * _gaze_delta_head).normalized()
+		var final_rot: Quaternion = _head_base_rot.slerp(target_rot, _gaze_blend).normalized()
 		_skeleton.set_bone_pose_rotation(_head_bone_idx, final_rot)
 	if _neck_bone_idx >= 0:
-		var final_rot: Quaternion = Quaternion.IDENTITY.slerp(_gaze_delta_neck, _gaze_blend).normalized()
+		var target_rot: Quaternion = (_neck_base_rot * _gaze_delta_neck).normalized()
+		var final_rot: Quaternion = _neck_base_rot.slerp(target_rot, _gaze_blend).normalized()
 		_skeleton.set_bone_pose_rotation(_neck_bone_idx, final_rot)
 
 # ─── Tama Status Indicator ──────────────────────────────
