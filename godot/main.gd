@@ -833,6 +833,12 @@ func _scan_for_materials(node: Node) -> void:
 	for child in node.get_children():
 		_scan_for_materials(child)
 
+func _set_expression_slot(slot_type: String, slot: String) -> void:
+	if slot_type == "eyes":
+		_set_eyes(slot)
+	elif slot_type == "mouth":
+		_set_mouth(slot)
+
 func _set_eyes(slot: String) -> void:
 	_current_eye_slot = slot
 	_apply_eye_offset(slot)
