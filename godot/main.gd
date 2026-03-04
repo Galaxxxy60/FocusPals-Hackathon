@@ -149,6 +149,25 @@ var _headphones_node: Node3D = null
 var _ack_audio_player: AudioStreamPlayer = null
 var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
 
+# ─── Gaze System (procedural bone look-at) ───
+var _skeleton: Skeleton3D = null
+var _camera: Camera3D = null
+var _head_bone_idx: int = -1
+var _neck_bone_idx: int = -1
+var _head_bone_rest: Quaternion = Quaternion.IDENTITY  # Rest pose (from animation)
+var _neck_bone_rest: Quaternion = Quaternion.IDENTITY
+var _gaze_current_head: Quaternion = Quaternion.IDENTITY
+var _gaze_current_neck: Quaternion = Quaternion.IDENTITY
+var _gaze_target_head: Quaternion = Quaternion.IDENTITY
+var _gaze_target_neck: Quaternion = Quaternion.IDENTITY
+var _gaze_speed: float = 3.0  # Slerp speed
+var _gaze_active: bool = false
+var _gaze_weight: float = 0.0  # 0 = animation only, 1 = full gaze override
+var _gaze_weight_target: float = 0.0
+
+# Gaze targets — procedural, no hardcoded angles
+enum GazeTarget { USER, SCREEN_CENTER, SCREEN_TOP, SCREEN_BOTTOM, OTHER_MONITOR, BOOK, AWAY, NEUTRAL }
+
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
@@ -158,6 +177,7 @@ func _ready() -> void:
 	_setup_status_indicator()
 	call_deferred("_setup_headphones")
 	_setup_ack_audio()
+	call_deferred("_setup_gaze")
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _setup_radial_menu() -> void:
@@ -378,6 +398,9 @@ func _process(delta: float) -> void:
 			var mood_eye = MOOD_EYES.get(_current_mood, "E0")
 			_set_expression_slot("eyes", mood_eye)
 
+	# Gaze system — smooth bone rotation each frame
+	_update_gaze(delta)
+
 
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
@@ -450,6 +473,25 @@ func _handle_message(raw: String) -> void:
 		if conversation_active:
 			_on_user_speaking_ack()
 		return
+	elif command == "GAZE_AT":
+		# Python tells Tama where to look
+		# Supports: {x, y} screen pixels OR {target: "user"/"screen"/"book"/etc}
+		var spd = data.get("speed", 3.0)
+		if data.has("x") and data.has("y"):
+			# Screen pixel coordinates
+			set_gaze_at_screen_point(float(data["x"]), float(data["y"]), spd)
+		elif data.has("target"):
+			var t = str(data["target"]).to_lower()
+			match t:
+				"user": set_gaze(GazeTarget.USER, spd)
+				"screen", "screen_center": set_gaze(GazeTarget.SCREEN_CENTER, spd)
+				"screen_top": set_gaze(GazeTarget.SCREEN_TOP, spd)
+				"screen_bottom": set_gaze(GazeTarget.SCREEN_BOTTOM, spd)
+				"other_monitor": set_gaze(GazeTarget.OTHER_MONITOR, spd)
+				"book": set_gaze(GazeTarget.BOOK, spd)
+				"away": set_gaze(GazeTarget.AWAY, spd)
+				"neutral": set_gaze(GazeTarget.NEUTRAL, spd)
+		return
 	elif command == "TAMA_ANIM":
 		# Python tells Godot exactly which animation to play
 		var anim_name = data.get("anim", "")
@@ -500,12 +542,15 @@ func _handle_message(raw: String) -> void:
 		var mouth_slot = VISEME_MAP.get(shape, "M0")
 		# Track Tama speech
 		if shape != "REST":
-			pass  # Tama is speaking (viseme animation handled below)
+			if not _is_speaking and conversation_active:
+				set_gaze(GazeTarget.USER, 5.0)  # Look at user while talking
 		if shape == "REST":
 			_is_speaking = false
 			# Return to mood-based mouth expression
 			_set_mouth(_current_mouth_slot)
 			_set_jaw_open(0.0)
+			if conversation_active:
+				set_gaze(GazeTarget.NEUTRAL, 2.0)  # Relax gaze after speaking
 		else:
 			_is_speaking = true
 			# Amplitude-based mouth selection for AH and OH
@@ -902,7 +947,222 @@ func _on_user_speaking_ack() -> void:
 	# Change eyes to curious/attentive (E0 = wide eyes)
 	_set_expression_slot("eyes", "E0")
 	_ack_eye_timer = 2.0  # Restore after 2 seconds
+	# Look at the user
+	set_gaze(GazeTarget.USER, 4.0)
 	print("\ud83d\udc40 Ack: Tama heard you!")
+
+# ─── Gaze System ────────────────────────────────────────
+func _setup_gaze() -> void:
+	# Find Camera3D
+	_camera = get_node_or_null("Camera3D")
+	if _camera == null:
+		# Try finding recursively
+		for child in get_children():
+			if child is Camera3D:
+				_camera = child
+				break
+	if _camera:
+		print("\ud83c\udfa5 Gaze: Camera3D found at %s" % str(_camera.global_position))
+
+	# Find Skeleton3D
+	var skel = get_node_or_null("Tama/Armature/Skeleton3D")
+	if skel == null:
+		var tama = get_node_or_null("Tama")
+		if tama:
+			skel = _find_skeleton(tama)
+	if skel == null:
+		print("\u26a0\ufe0f Gaze: Skeleton3D not found")
+		return
+	_skeleton = skel
+
+	# Find Head and Neck bones
+	for i in range(_skeleton.get_bone_count()):
+		var bname = _skeleton.get_bone_name(i).to_lower()
+		if bname == "head":
+			_head_bone_idx = i
+		elif bname == "neck":
+			_neck_bone_idx = i
+
+	# Partial match fallback
+	if _head_bone_idx < 0:
+		for i in range(_skeleton.get_bone_count()):
+			if "head" in _skeleton.get_bone_name(i).to_lower():
+				_head_bone_idx = i
+				break
+	if _neck_bone_idx < 0:
+		for i in range(_skeleton.get_bone_count()):
+			if "neck" in _skeleton.get_bone_name(i).to_lower():
+				_neck_bone_idx = i
+				break
+
+	# Store rest poses
+	if _head_bone_idx >= 0:
+		_head_bone_rest = _skeleton.get_bone_rest(_head_bone_idx).basis.get_rotation_quaternion()
+		print("\ud83d\udc40 Gaze: Head bone [%d] '%s'" % [_head_bone_idx, _skeleton.get_bone_name(_head_bone_idx)])
+	if _neck_bone_idx >= 0:
+		_neck_bone_rest = _skeleton.get_bone_rest(_neck_bone_idx).basis.get_rotation_quaternion()
+		print("\ud83d\udc40 Gaze: Neck bone [%d] '%s'" % [_neck_bone_idx, _skeleton.get_bone_name(_neck_bone_idx)])
+
+	# Print all bones for debug
+	print("\ud83e\uddb4 Skeleton bones:")
+	for i in range(_skeleton.get_bone_count()):
+		print("  [%d] %s" % [i, _skeleton.get_bone_name(i)])
+
+	_gaze_active = _head_bone_idx >= 0 and _camera != null
+	if _gaze_active:
+		print("\u2705 Gaze system ready (procedural look-at)!")
+	elif _camera == null:
+		print("\u26a0\ufe0f Gaze: Camera3D not found — gaze disabled")
+
+func _find_skeleton(node: Node) -> Skeleton3D:
+	if node is Skeleton3D:
+		return node as Skeleton3D
+	for child in node.get_children():
+		var found = _find_skeleton(child)
+		if found:
+			return found
+	return null
+
+# Compute a world-space target point for a given GazeTarget
+func _get_gaze_target_point(target: GazeTarget) -> Vector3:
+	var cam_pos: Vector3 = _camera.global_position
+	var head_pos: Vector3 = Vector3.ZERO
+	if _head_bone_idx >= 0:
+		head_pos = _skeleton.global_transform * _skeleton.get_bone_global_pose(_head_bone_idx).origin
+
+	match target:
+		GazeTarget.USER:
+			# User is behind the camera, looking at the screen
+			return cam_pos
+		GazeTarget.SCREEN_CENTER:
+			# Screen center = slightly behind camera, offset right from Tama
+			var right = _camera.global_transform.basis.x
+			return cam_pos - right * 1.5  # Center of screen (left from cam perspective)
+		GazeTarget.SCREEN_TOP:
+			var right = _camera.global_transform.basis.x
+			var up = _camera.global_transform.basis.y
+			return cam_pos - right * 1.5 + up * 0.8
+		GazeTarget.SCREEN_BOTTOM:
+			var right = _camera.global_transform.basis.x
+			var up = _camera.global_transform.basis.y
+			return cam_pos - right * 1.5 - up * 0.8
+		GazeTarget.OTHER_MONITOR:
+			# Far left from camera (second monitor)
+			var right = _camera.global_transform.basis.x
+			return cam_pos - right * 4.0
+		GazeTarget.BOOK:
+			# Below and slightly in front of head
+			return head_pos + Vector3(0, -0.5, 0.3)
+		GazeTarget.AWAY:
+			# Behind and to the side of Tama
+			var right = _camera.global_transform.basis.x
+			return head_pos + right * 2.0
+		GazeTarget.NEUTRAL, _:
+			# Forward gaze — slightly in front of head
+			var forward = _camera.global_transform.basis.z
+			return head_pos - forward * 2.0
+
+# Compute the bone-local rotation to look at a target point
+func _compute_look_at_rotation(bone_idx: int, target_world: Vector3, influence: float) -> Quaternion:
+	if bone_idx < 0:
+		return Quaternion.IDENTITY
+
+	# Get the bone's current global transform (from animation)
+	var bone_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(bone_idx)
+	var bone_pos: Vector3 = bone_global.origin
+
+	# Direction from bone to target
+	var dir_to_target: Vector3 = (target_world - bone_pos).normalized()
+	if dir_to_target.length_squared() < 0.001:
+		return Quaternion.IDENTITY
+
+	# Current forward direction of the bone (Y-up convention for head bones)
+	var current_forward: Vector3 = bone_global.basis.z.normalized()
+
+	# Rotation from current forward to target direction
+	var rot_axis = current_forward.cross(dir_to_target).normalized()
+	if rot_axis.length_squared() < 0.001:
+		return Quaternion.IDENTITY
+	var rot_angle = current_forward.angle_to(dir_to_target) * influence
+
+	# Clamp max rotation to avoid unnatural neck breaking
+	rot_angle = clamp(rot_angle, -1.2, 1.2)  # ~70 degrees max
+
+	# Return rotation in bone-local space
+	var world_rot = Quaternion(rot_axis, rot_angle)
+	# Convert world rotation to bone-local space
+	var parent_global_rot = bone_global.basis.get_rotation_quaternion()
+	return parent_global_rot.inverse() * world_rot * parent_global_rot
+
+func set_gaze(target: GazeTarget, speed: float = 3.0) -> void:
+	"""Convenience: look at a named preset target."""
+	if not _gaze_active:
+		return
+	if target == GazeTarget.NEUTRAL:
+		_gaze_speed = speed
+		_gaze_target_head = Quaternion.IDENTITY
+		_gaze_target_neck = Quaternion.IDENTITY
+		_gaze_weight_target = 0.0
+	else:
+		var point = _get_gaze_target_point(target)
+		set_gaze_at_world_point(point, speed)
+
+func set_gaze_at_world_point(point: Vector3, speed: float = 3.0) -> void:
+	"""Core: Tama looks at any arbitrary 3D world point."""
+	if not _gaze_active:
+		return
+	_gaze_speed = speed
+	_gaze_target_head = _compute_look_at_rotation(_head_bone_idx, point, 0.6)
+	_gaze_target_neck = _compute_look_at_rotation(_neck_bone_idx, point, 0.4)
+	_gaze_weight_target = 1.0
+
+func set_gaze_at_screen_point(screen_x: float, screen_y: float, speed: float = 3.0) -> void:
+	"""Map real screen pixel coordinates to a 3D point and look there.
+	screen_x/y = pixel position on the actual monitor (e.g. 960, 540 = center of 1920x1080).
+	Tama's window is at the right edge, so screen content is to her right."""
+	if not _gaze_active:
+		return
+	# Normalize screen coords to -1..1 range (centered on screen)
+	# Assuming 1920x1080 primary monitor — could be made dynamic
+	var screen_w: float = DisplayServer.screen_get_size().x
+	var screen_h: float = DisplayServer.screen_get_size().y
+	var norm_x: float = (screen_x / screen_w - 0.5) * 2.0  # -1 (left) to 1 (right)
+	var norm_y: float = (screen_y / screen_h - 0.5) * 2.0  # -1 (top) to 1 (bottom)
+
+	# Map to 3D world space using camera orientation
+	var cam_pos = _camera.global_position
+	var right = _camera.global_transform.basis.x
+	var up = _camera.global_transform.basis.y
+	var forward = -_camera.global_transform.basis.z
+
+	# The screen is "behind" the camera from Tama's perspective
+	# X: negative norm_x = left of screen = more to the "screen side" from Tama
+	# Y: negative norm_y = top of screen = up
+	var world_point = cam_pos + forward * 0.5 - right * norm_x * 2.0 - up * norm_y * 1.2
+	set_gaze_at_world_point(world_point, speed)
+
+func _update_gaze(delta: float) -> void:
+	if not _gaze_active or _skeleton == null:
+		return
+
+	# Smooth weight transition
+	_gaze_weight = lerp(_gaze_weight, _gaze_weight_target, clamp(_gaze_speed * delta, 0.0, 1.0))
+
+	# Smooth slerp toward target rotation
+	var t = clamp(_gaze_speed * delta, 0.0, 1.0)
+	_gaze_current_head = _gaze_current_head.slerp(_gaze_target_head, t)
+	_gaze_current_neck = _gaze_current_neck.slerp(_gaze_target_neck, t)
+
+	# Apply gaze as additive rotation blended by weight
+	if _gaze_weight > 0.01:
+		if _head_bone_idx >= 0:
+			var anim_rot = _skeleton.get_bone_pose_rotation(_head_bone_idx)
+			var blended = anim_rot.slerp(anim_rot * _gaze_current_head, _gaze_weight)
+			_skeleton.set_bone_pose_rotation(_head_bone_idx, blended)
+		if _neck_bone_idx >= 0:
+			var anim_rot = _skeleton.get_bone_pose_rotation(_neck_bone_idx)
+			var blended = anim_rot.slerp(anim_rot * _gaze_current_neck, _gaze_weight)
+			_skeleton.set_bone_pose_rotation(_neck_bone_idx, blended)
 
 # ─── Tama Status Indicator ──────────────────────────────
 func _setup_status_indicator() -> void:
