@@ -144,9 +144,10 @@ var _gemini_status: String = "disconnected"  # "disconnected", "connecting", "re
 
 # ─── Headphones (visible when Tama can't hear/respond) ───
 var _headphones_node: Node3D = null
-var _last_tama_spoke_time: float = 0.0  # Updated when VISEME (non-REST) received
-var _convo_silence_shown: bool = false  # True when "Tama ne répond pas" is showing
-const CONVO_SILENCE_THRESHOLD: float = 8.0  # Seconds before showing headphones in conversation
+
+# ─── User Speaking Acknowledgment ───
+var _ack_audio_player: AudioStreamPlayer = null
+var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
 
 func _ready() -> void:
 	_position_window()
@@ -156,6 +157,7 @@ func _ready() -> void:
 	_setup_expression_system()
 	_setup_status_indicator()
 	call_deferred("_setup_headphones")
+	_setup_ack_audio()
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _setup_radial_menu() -> void:
@@ -368,8 +370,14 @@ func _process(delta: float) -> void:
 	# Tama status indicator
 	_update_status_indicator(delta)
 
-	# Conversation silence watchdog — detect when Tama stops responding
-	_update_convo_silence_watchdog()
+	# Ack eye timer — restore eyes after acknowledgment
+	if _ack_eye_timer > 0:
+		_ack_eye_timer -= delta
+		if _ack_eye_timer <= 0:
+			# Restore to current mood eyes
+			var mood_eye = MOOD_EYES.get(_current_mood, "E0")
+			_set_expression_slot("eyes", mood_eye)
+
 
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
@@ -393,8 +401,6 @@ func _handle_message(raw: String) -> void:
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
-			_last_tama_spoke_time = Time.get_unix_time_from_system()  # Reset watchdog
-			_convo_silence_shown = false
 			print("💬 Mode conversation — Tama arrive !")
 			_play("Peek", false)
 			phase = Phase.PEEKING
@@ -402,7 +408,6 @@ func _handle_message(raw: String) -> void:
 	elif command == "END_CONVERSATION":
 		if conversation_active:
 			conversation_active = false
-			_convo_silence_shown = false
 			print("💬 Fin de conversation — Tama repart.")
 			if phase != Phase.HIDDEN:
 				_play("bye", false)
@@ -439,6 +444,11 @@ func _handle_message(raw: String) -> void:
 		print("🔑 API key validation result: %s" % str(valid))
 		if settings_panel:
 			settings_panel.update_key_valid(valid)
+		return
+	elif command == "USER_SPEAKING":
+		# Instant local reaction — Tama acknowledges user before Gemini responds
+		if conversation_active:
+			_on_user_speaking_ack()
 		return
 	elif command == "TAMA_ANIM":
 		# Python tells Godot exactly which animation to play
@@ -488,14 +498,9 @@ func _handle_message(raw: String) -> void:
 		var shape = data.get("shape", "REST")
 		var amp: float = data.get("amp", 0.5)
 		var mouth_slot = VISEME_MAP.get(shape, "M0")
-		# Track Tama speech for silence watchdog
+		# Track Tama speech
 		if shape != "REST":
-			_last_tama_spoke_time = Time.get_unix_time_from_system()
-			# If silence watchdog was showing, hide it — Tama is responding!
-			if _convo_silence_shown:
-				_convo_silence_shown = false
-				_set_headphones_visible(false)
-				_hide_status_indicator()
+			pass  # Tama is speaking (viseme animation handled below)
 		if shape == "REST":
 			_is_speaking = false
 			# Return to mood-based mouth expression
@@ -874,24 +879,30 @@ func _set_headphones_visible(show: bool) -> void:
 	if _headphones_node:
 		_headphones_node.visible = show
 
-# ─── Conversation Silence Watchdog ───────────────────
-func _update_convo_silence_watchdog() -> void:
-	# Only active during conversation mode
-	if not conversation_active:
-		return
-	# Skip if connection-level issues are already showing the headphones
-	if _gemini_status != "connected":
-		return
+# (Silence watchdog removed — headphones now only reflect connection status)
 
-	var now := Time.get_unix_time_from_system()
-	var silence_duration := now - _last_tama_spoke_time
+# ─── User Speaking Acknowledgment ───────────────────
+func _setup_ack_audio() -> void:
+	_ack_audio_player = AudioStreamPlayer.new()
+	var audio_file = load("res://hmm_acknowledge.wav")
+	if audio_file:
+		_ack_audio_player.stream = audio_file
+		_ack_audio_player.volume_db = -12.0  # Soft, unobtrusive
+	else:
+		push_warning("\u26a0\ufe0f hmm_acknowledge.wav not found")
+	add_child(_ack_audio_player)
 
-	if silence_duration >= CONVO_SILENCE_THRESHOLD and not _convo_silence_shown:
-		# Tama hasn't spoken for too long during conversation
-		_convo_silence_shown = true
-		_set_headphones_visible(true)
-		_show_status_indicator("Tama ne r\u00e9pond pas", Color(1.0, 0.4, 0.4, 0.9))
-		print("🎧 Conversation silence: Tama hasn't spoken for %.0fs" % silence_duration)
+func _on_user_speaking_ack() -> void:
+	# Skip if Tama is already speaking (Gemini response playing)
+	if _is_speaking:
+		return
+	# Play soft acknowledgment sound
+	if _ack_audio_player and _ack_audio_player.stream:
+		_ack_audio_player.play()
+	# Change eyes to curious/attentive (E0 = wide eyes)
+	_set_expression_slot("eyes", "E0")
+	_ack_eye_timer = 2.0  # Restore after 2 seconds
+	print("\ud83d\udc40 Ack: Tama heard you!")
 
 # ─── Tama Status Indicator ──────────────────────────────
 func _setup_status_indicator() -> void:

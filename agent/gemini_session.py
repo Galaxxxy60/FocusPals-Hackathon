@@ -458,14 +458,25 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
 async def run_gemini_loop(pya):
     """The core Gemini Live API loop — handles reconnection, mode switching, and all async tasks."""
 
-    # ── Shared VAD + affective config (static — don't change per reconnection) ──
-    _vad_config = types.RealtimeInputConfig(
+    # ── VAD configs per mode ──
+    # Deep work: LOW sensitivity = fewer false triggers, conservative
+    _vad_deep_work = types.RealtimeInputConfig(
         automatic_activity_detection=types.AutomaticActivityDetection(
             disabled=False,
             start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
             end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
             prefix_padding_ms=20,
             silence_duration_ms=500,
+        )
+    )
+    # Conversation: HIGH sensitivity = faster reactions, more responsive
+    _vad_conversation = types.RealtimeInputConfig(
+        automatic_activity_detection=types.AutomaticActivityDetection(
+            disabled=False,
+            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+            prefix_padding_ms=20,
+            silence_duration_ms=300,
         )
     )
 
@@ -539,7 +550,7 @@ async def run_gemini_loop(pya):
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow(),
             ),
-            realtime_input_config=_vad_config,
+            realtime_input_config=_vad_deep_work,
             thinking_config=types.ThinkingConfig(
                 thinking_budget=512,
             ),
@@ -548,12 +559,6 @@ async def run_gemini_loop(pya):
         config_conversation = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             system_instruction=types.Content(parts=[types.Part(text=get_convo_prompt())]),
-            tools=[
-                types.Tool(function_declarations=[
-                    # Only report_mood in conversation — no screen classification or tab closing
-                    TOOLS[0].function_declarations[3]  # report_mood
-                ])
-            ],
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             session_resumption=types.SessionResumptionConfig(
@@ -562,11 +567,12 @@ async def run_gemini_loop(pya):
             proactivity=types.ProactivityConfig(proactive_audio=True),
             enable_affective_dialog=True,
             speech_config=_voice_config,
-            realtime_input_config=_vad_config,
+            realtime_input_config=_vad_conversation,
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow(),
             ),
-            # PAS de ThinkingConfig ici — latence en conversation vocale
+            # NOTE: No tools, no thinking_config — native audio crashes with 1011
+            #       when function calling is combined with some features
         )
 
         try:
@@ -589,9 +595,31 @@ async def run_gemini_loop(pya):
                         pass
 
                 audio_out_queue = asyncio.Queue()
-                audio_in_queue = asyncio.Queue(maxsize=2)
+                audio_in_queue = asyncio.Queue(maxsize=5)  # Match official Google example
 
                 state["force_speech"] = False
+                state["_tama_is_speaking"] = False  # Track globally for echo cancellation
+
+                # ── Conversation greeting: tell Tama to speak first ──
+                if state["current_mode"] == "conversation":
+                    state["_last_speech_ended"] = time.time()  # Init timer so nudge doesn't fire instantly
+                    state["_convo_nudge_sent"] = False
+                    greeting_text = (
+                        "L'utilisateur vient de cliquer pour discuter avec toi. Salue-le naturellement !"
+                        if state.get("language") != "en" else
+                        "The user just clicked to chat with you. Greet them naturally!"
+                    )
+                    try:
+                        await session.send_client_content(
+                            turns=types.Content(
+                                role="user",
+                                parts=[types.Part(text=greeting_text)]
+                            ),
+                            turn_complete=True
+                        )
+                        print("  💬 Greeting prompt sent to Gemini")
+                    except Exception as e:
+                        print(f"  ⚠️ Failed to send greeting: {e}")
 
                 # --- 1. Audio Input (Microphone) ---
                 async def listen_mic():
@@ -693,6 +721,20 @@ async def run_gemini_loop(pya):
                                     for buffered in pre_buffer:
                                         await audio_in_queue.put(buffered)
                                     pre_buffer.clear()
+
+                                    # Notify Godot: user is speaking → instant local reaction
+                                    if state["current_mode"] == "conversation":
+                                        _last_ack = state.get("_last_user_speaking_ack", 0)
+                                        if time.time() - _last_ack > 3.0:  # 3s cooldown
+                                            state["_last_user_speaking_ack"] = time.time()
+                                            ack_msg = json.dumps({"command": "USER_SPEAKING"})
+                                            for ws_client in list(state["connected_ws_clients"]):
+                                                try:
+                                                    main_loop = state["main_loop"]
+                                                    if main_loop and main_loop.is_running():
+                                                        asyncio.run_coroutine_threadsafe(ws_client.send(ack_msg), main_loop)
+                                                except Exception:
+                                                    pass
 
                                 await audio_in_queue.put(blob)
                             else:
@@ -811,35 +853,8 @@ async def run_gemini_loop(pya):
                                 state["current_mode"] = "libre"
                                 raise RuntimeError("Conversation ended")
 
-                            # Nudge: user spoke but Tama hasn't responded for 10s+
-                            # Gently re-prompt Gemini (once per silence period)
-                            last_tama_speech = state.get("_last_speech_ended", 0)
-                            user_spoke_at = state["user_spoke_at"]
-                            tama_silence = time.time() - last_tama_speech if last_tama_speech > 0 else 999
-                            user_spoke_recently_for_nudge = (time.time() - user_spoke_at) < 12.0
-
-                            if tama_silence > 10.0 and user_spoke_recently_for_nudge and not state.get("_convo_nudge_sent"):
-                                state["_convo_nudge_sent"] = True
-                                print("  🔔 Nudge: user spoke but Tama silent for 10s — re-prompting Gemini")
-                                try:
-                                    if state.get("language") == "en":
-                                        await session.send_realtime_input(
-                                            text="The user just said something to you. Respond naturally! Keep it short."
-                                        )
-                                    else:
-                                        await session.send_realtime_input(
-                                            text="L'utilisateur vient de te parler. Réponds-lui naturellement ! Reste courte."
-                                        )
-                                except Exception:
-                                    pass
-                            elif tama_silence < 5.0:
-                                # Reset nudge flag when Tama speaks
-                                state["_convo_nudge_sent"] = False
-
-                            # P3: If nudge was sent but Tama still silent 18s+ → force reconnection
-                            if tama_silence > 18.0 and state.get("_convo_nudge_sent"):
-                                print("  ⚠️ Nudge ignored for 18s — forcing reconnection")
-                                raise RuntimeError("Conversation stalled")
+                            # (Nudge system removed — it was polluting Gemini's context
+                            # and causing worse responses. Let Gemini + proactive_audio handle it.)
 
                             await asyncio.sleep(2.0)
                             continue
@@ -974,10 +989,24 @@ async def run_gemini_loop(pya):
                             async for response in turn:
                                 server = response.server_content
 
+                                # Fix 1: Handle interruptions — user barged in
+                                if server and server.interrupted:
+                                    while not audio_out_queue.empty():
+                                        audio_out_queue.get_nowait()
+                                    is_speaking = False
+                                    state["_tama_is_speaking"] = False
+                                    continue
+
                                 if server and server.model_turn:
                                     for part in server.model_turn.parts:
                                         if part.inline_data and isinstance(part.inline_data.data, bytes):
                                             if not is_speaking:
+                                                # Fix 8: Measure response latency
+                                                if state.get("user_spoke_at"):
+                                                    latency = time.time() - state["user_spoke_at"]
+                                                    if 0.5 < latency < 30:
+                                                        print(f"  ⏱️ Response latency: {latency:.1f}s")
+
                                                 speech_allowed = state["force_speech"] or state["break_reminder_active"]
                                                 if state["current_mode"] == "conversation":
                                                     speech_allowed = True
@@ -994,6 +1023,7 @@ async def run_gemini_loop(pya):
                                                     speech_allowed = True
                                                 if speech_allowed:
                                                     is_speaking = True
+                                                    state["_tama_is_speaking"] = True  # Fix 7
                                                     # Fallback animation — used only if report_mood hasn't arrived yet.
                                                     # Once report_mood fires, it overrides this with the correct mood anim.
                                                     if not state.get("_mood_anim_set"):
@@ -1024,6 +1054,7 @@ async def run_gemini_loop(pya):
                                             except Exception:
                                                 pass
                                     is_speaking = False
+                                    state["_tama_is_speaking"] = False  # Fix 7
                                     state["_mood_anim_set"] = False  # Reset for next speech turn
 
                                 if response.tool_call:
