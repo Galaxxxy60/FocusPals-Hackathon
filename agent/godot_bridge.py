@@ -58,6 +58,11 @@ def _handle_menu_action(action: str):
         else:
             state["conversation_requested"] = True
             print("💬 Mode conversation demandé !")
+            # Immediately notify Godot that we're connecting
+            # This gives instant visual feedback before the Gemini API connection is established
+            import websockets as _ws_lib
+            _connecting_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connecting"})
+            _ws_lib.broadcast(state["connected_ws_clients"], _connecting_msg)
     elif action == "settings":
         # Settings panel is handled via WebSocket GET_SETTINGS, not via menu action
         # This is a fallback if triggered via menu action instead
@@ -346,7 +351,8 @@ async def broadcast_ws_state():
                         "session_active": False,
                         "suspicion_index": 0.0,
                         "state": "CALM",
-                        "window_ready": False
+                        "window_ready": False,
+                        "gemini_connected": state["gemini_connected"],
                     }
                     websockets.broadcast(state["connected_ws_clients"], json.dumps(state_data))
                     await asyncio.sleep(2.0)

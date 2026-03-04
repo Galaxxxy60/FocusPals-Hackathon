@@ -134,12 +134,19 @@ const SettingsPanelScript = preload("res://settings_panel.gd")
 var _arc_canvas: CanvasLayer
 var _arc_control: Control
 
-# ─── Reconnection Indicator ──────────────────────────
-var _reconnect_label: Label
-var _reconnect_canvas: CanvasLayer
-var _reconnect_visible: bool = false
-var _reconnect_dots: int = 0
-var _reconnect_timer: float = 0.0
+# ─── Tama Status Indicator (connection state) ────────
+var _status_label: Label
+var _status_canvas: CanvasLayer
+var _status_visible: bool = false
+var _status_dots: int = 0
+var _status_timer: float = 0.0
+var _gemini_status: String = "disconnected"  # "disconnected", "connecting", "reconnecting", "connected"
+
+# ─── Headphones (visible when Tama can't hear/respond) ───
+var _headphones_node: Node3D = null
+var _last_tama_spoke_time: float = 0.0  # Updated when VISEME (non-REST) received
+var _convo_silence_shown: bool = false  # True when "Tama ne répond pas" is showing
+const CONVO_SILENCE_THRESHOLD: float = 8.0  # Seconds before showing headphones in conversation
 
 func _ready() -> void:
 	_position_window()
@@ -147,7 +154,8 @@ func _ready() -> void:
 	_setup_radial_menu()
 	_setup_arc()
 	_setup_expression_system()
-	_setup_reconnect_indicator()
+	_setup_status_indicator()
+	call_deferred("_setup_headphones")
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _setup_radial_menu() -> void:
@@ -357,8 +365,11 @@ func _process(delta: float) -> void:
 	if _arc_control and session_active:
 		_arc_control.queue_redraw()
 
-	# Reconnection indicator
-	_update_reconnect_indicator(delta)
+	# Tama status indicator
+	_update_status_indicator(delta)
+
+	# Conversation silence watchdog — detect when Tama stops responding
+	_update_convo_silence_watchdog()
 
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
@@ -382,6 +393,8 @@ func _handle_message(raw: String) -> void:
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
+			_last_tama_spoke_time = Time.get_unix_time_from_system()  # Reset watchdog
+			_convo_silence_shown = false
 			print("💬 Mode conversation — Tama arrive !")
 			_play("Peek", false)
 			phase = Phase.PEEKING
@@ -389,6 +402,7 @@ func _handle_message(raw: String) -> void:
 	elif command == "END_CONVERSATION":
 		if conversation_active:
 			conversation_active = false
+			_convo_silence_shown = false
 			print("💬 Fin de conversation — Tama repart.")
 			if phase != Phase.HIDDEN:
 				_play("bye", false)
@@ -474,6 +488,14 @@ func _handle_message(raw: String) -> void:
 		var shape = data.get("shape", "REST")
 		var amp: float = data.get("amp", 0.5)
 		var mouth_slot = VISEME_MAP.get(shape, "M0")
+		# Track Tama speech for silence watchdog
+		if shape != "REST":
+			_last_tama_spoke_time = Time.get_unix_time_from_system()
+			# If silence watchdog was showing, hide it — Tama is responding!
+			if _convo_silence_shown:
+				_convo_silence_shown = false
+				_set_headphones_visible(false)
+				_hide_status_indicator()
 		if shape == "REST":
 			_is_speaking = false
 			# Return to mood-based mouth expression
@@ -505,11 +527,17 @@ func _handle_message(raw: String) -> void:
 		return
 	elif command == "CONNECTION_STATUS":
 		var conn_status = data.get("status", "")
-		if conn_status == "reconnecting":
+		_gemini_status = conn_status
+		if conn_status == "connecting":
+			_show_status_indicator("Tama se connecte", Color(0.5, 0.7, 1.0, 0.9))
+			_set_headphones_visible(true)
+		elif conn_status == "reconnecting":
 			var attempt = data.get("attempt", 1)
-			_show_reconnect_indicator(attempt)
+			_show_status_indicator("Reconnexion (" + str(attempt) + ")", Color(0.9, 0.7, 0.3, 0.9))
+			_set_headphones_visible(true)
 		elif conn_status == "connected":
-			_hide_reconnect_indicator()
+			_hide_status_indicator()
+			_set_headphones_visible(false)
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──
@@ -818,44 +846,96 @@ func _update_blink(delta: float) -> void:
 				_apply_eye_offset(_current_eye_slot)  # Back to mood expression
 
 
-# ─── Reconnection Indicator ─────────────────────────────
-func _setup_reconnect_indicator() -> void:
-	_reconnect_canvas = CanvasLayer.new()
-	_reconnect_canvas.layer = 10
-	add_child(_reconnect_canvas)
-	_reconnect_label = Label.new()
-	_reconnect_label.text = "Reconnexion..."
-	_reconnect_label.add_theme_font_size_override("font_size", 14)
-	_reconnect_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3, 0.9))
-	_reconnect_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_reconnect_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	_reconnect_label.offset_top = -40
-	_reconnect_label.offset_bottom = -10
-	_reconnect_canvas.add_child(_reconnect_label)
-	_reconnect_label.visible = false
+# ─── Headphones (deaf mode indicator) ───────────────────
+func _setup_headphones() -> void:
+	# HeadPhones is attached to Tama's skeleton in the scene tree
+	_headphones_node = get_node_or_null("Tama/Armature/Skeleton3D/HeadPhones")
+	if _headphones_node == null:
+		# Try alternative paths (in case of different hierarchy)
+		var tama = get_node_or_null("Tama")
+		if tama:
+			_headphones_node = _find_node_by_name(tama, "HeadPhones")
+	if _headphones_node:
+		_headphones_node.visible = true  # Visible by default (Tama can't hear yet)
+		print("🎧 Headphones node found — visible (not connected yet)")
+	else:
+		print("⚠️ HeadPhones node not found in scene tree")
 
-func _show_reconnect_indicator(attempt: int) -> void:
-	_reconnect_visible = true
-	_reconnect_label.visible = true
-	_reconnect_dots = 0
-	_reconnect_timer = 0.0
-	_reconnect_label.text = "Reconnexion (%d)..." % attempt
+func _find_node_by_name(root: Node, target_name: String) -> Node:
+	for child in root.get_children():
+		if child.name == target_name:
+			return child
+		var found = _find_node_by_name(child, target_name)
+		if found:
+			return found
+	return null
 
-func _hide_reconnect_indicator() -> void:
-	_reconnect_visible = false
-	_reconnect_label.visible = false
+func _set_headphones_visible(show: bool) -> void:
+	if _headphones_node:
+		_headphones_node.visible = show
 
-func _update_reconnect_indicator(delta: float) -> void:
-	if not _reconnect_visible:
+# ─── Conversation Silence Watchdog ───────────────────
+func _update_convo_silence_watchdog() -> void:
+	# Only active during conversation mode
+	if not conversation_active:
 		return
-	_reconnect_timer += delta
-	if _reconnect_timer >= 0.4:
-		_reconnect_timer = 0.0
-		_reconnect_dots = (_reconnect_dots + 1) % 4
-		var dots = ".".repeat(_reconnect_dots + 1)
-		var base_text = _reconnect_label.text.split(".")[0].strip_edges()
-		_reconnect_label.text = base_text + dots
-	# Pulse alpha
-	var alpha = 0.5 + 0.4 * sin(Time.get_ticks_msec() * 0.004)
-	_reconnect_label.modulate = Color(1, 1, 1, alpha)
+	# Skip if connection-level issues are already showing the headphones
+	if _gemini_status != "connected":
+		return
 
+	var now := Time.get_unix_time_from_system()
+	var silence_duration := now - _last_tama_spoke_time
+
+	if silence_duration >= CONVO_SILENCE_THRESHOLD and not _convo_silence_shown:
+		# Tama hasn't spoken for too long during conversation
+		_convo_silence_shown = true
+		_set_headphones_visible(true)
+		_show_status_indicator("Tama ne r\u00e9pond pas", Color(1.0, 0.4, 0.4, 0.9))
+		print("🎧 Conversation silence: Tama hasn't spoken for %.0fs" % silence_duration)
+
+# ─── Tama Status Indicator ──────────────────────────────
+func _setup_status_indicator() -> void:
+	_status_canvas = CanvasLayer.new()
+	_status_canvas.layer = 10
+	add_child(_status_canvas)
+	_status_label = Label.new()
+	_status_label.text = ""
+	_status_label.add_theme_font_size_override("font_size", 13)
+	_status_label.add_theme_color_override("font_color", Color(0.5, 0.7, 1.0, 0.9))
+	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_status_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_status_label.offset_top = -40
+	_status_label.offset_bottom = -10
+	_status_canvas.add_child(_status_label)
+	_status_label.visible = false
+
+func _show_status_indicator(text: String, color: Color) -> void:
+	_status_visible = true
+	_status_label.visible = true
+	_status_dots = 0
+	_status_timer = 0.0
+	_status_label.text = text + "..."
+	_status_label.add_theme_color_override("font_color", color)
+
+func _hide_status_indicator() -> void:
+	_status_visible = false
+	_status_label.visible = false
+	_gemini_status = "connected"
+
+func _update_status_indicator(delta: float) -> void:
+	if not _status_visible:
+		return
+	_status_timer += delta
+	if _status_timer >= 0.5:
+		_status_timer = 0.0
+		_status_dots = (_status_dots + 1) % 4
+		var dots = ".".repeat(_status_dots + 1)
+		# Extract base text (before dots)
+		var base_text = _status_label.text
+		var dot_start = base_text.find(".")
+		if dot_start > 0:
+			base_text = base_text.substr(0, dot_start)
+		_status_label.text = base_text + dots
+	# Pulse alpha — gentle breathing effect
+	var alpha = 0.5 + 0.4 * sin(Time.get_ticks_msec() * 0.004)
+	_status_label.modulate = Color(1, 1, 1, alpha)

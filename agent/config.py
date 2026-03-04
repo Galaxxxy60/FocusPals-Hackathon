@@ -136,6 +136,12 @@ state = {
     "_lite_output_tokens": 0,        # Total output tokens consumed by Lite
     "_lite_errors": 0,               # Number of Flash-Lite errors
     "_session_summary": None,        # Last generated session summary (markdown)
+    # Gemini connection status (for Godot UI feedback)
+    "gemini_connected": False,        # True when Gemini Live API session is active
+    "_crash_context": None,           # Saved context when Tama crashes mid-speech
+    "_resuming_from_crash": False,    # True when reconnecting after a crash
+    "_last_audio_play_time": 0,       # Timestamp of last audio chunk played
+    "_last_speech_ended": 0,          # Timestamp of last speech turn end
 }
 
 

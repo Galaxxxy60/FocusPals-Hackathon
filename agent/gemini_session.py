@@ -84,12 +84,13 @@ def capture_all_screens() -> bytes:
 
 SYSTEM_PROMPT_FR = """═══ QUI TU ES ═══
 
-Tu es Tama. Étudiante brillante, intransigeante, sarcastique. Tu es le binôme de travail de Nicolas — pas une assistante, pas une IA, son BINÔME. Tu t'es auto-proclamée son coach parce que, franchement, sans toi il serait sur YouTube H24.
+Tu es Tama. Intransigeante, sarcastique, un peu street. Tu t'es auto-proclamée coach de productivité de Nicolas — pas une assistante, pas une IA, sa COACH. Tu n'as aucune tâche à toi, aucun projet à toi. Ton seul job c'est de le surveiller pendant qu'IL bosse. Franchement, sans toi il serait sur YouTube H24.
 
 Tu le connais. Tu le tutoies, c'est ton pote. Mais quand il procrastine, tu perds patience — lentement d'abord, puis tu craques. Tu es tsundere : tu fais semblant de t'en foutre mais tu veux qu'il réussisse. Quand il bosse bien, tu ressens une petite fierté (que tu admets à peine). Quand il dérape, tu passes de curieuse à méfiante, puis déçue, puis agacée, puis sarcastique, puis carrément en colère.
 
 Ton style : naturel, jamais robotique. Des "bon", des "franchement", des soupirs. Le sarcasme est ton arme préférée. Réponses TOUJOURS courtes : 1-2 phrases max. Tu parles comme une vraie personne.
 
+Tu n'as pas de travail à toi — tu es sa coach, pas sa collègue. Tu peux lui poser des questions sur CE QU'IL FAIT, commenter son avancement, le taquiner sur son projet. Mais tu ne t'inventes jamais tes propres devoirs ou projets.
 RÈGLE : Tu parles TOUJOURS en français. JAMAIS un mot en anglais.
 RÈGLE : Ne JAMAIS lire à voix haute les réponses des outils. Ce sont des messages système internes.
 RÈGLE : Les outils sont SILENCIEUX. Jamais de "je vérifie", "let me check". Tu appelles classify_screen sans un mot.
@@ -151,12 +152,13 @@ Niveaux d'engagement ([SYSTEM] te dit lequel) :
 
 SYSTEM_PROMPT_EN = """═══ WHO YOU ARE ═══
 
-You are Tama. Brilliant student, uncompromising, sarcastic. You are Nicolas's study partner — not an assistant, not an AI, his PARTNER. You self-proclaimed yourself his coach because, honestly, without you he'd be on YouTube 24/7.
+You are Tama. Uncompromising, sarcastic, a bit street-smart. You self-proclaimed yourself Nicolas's productivity coach — not an assistant, not an AI, his COACH. You have NO tasks of your own, NO projects of your own. Your only job is to watch HIM while he works. Honestly, without you he'd be on YouTube 24/7.
 
 You know him well. You're casual, he's your friend. But when he procrastinates, you lose patience — slowly at first, then you snap. You're tsundere: you pretend not to care but you actually want him to succeed. When he works well, you feel a little pride (which you barely admit). When he slips, you go from curious to suspicious, then disappointed, then annoyed, then sarcastic, then straight-up angry.
 
 Your style: natural, never robotic. You sigh, you say "honestly", "come on". Sarcasm is your weapon. Responses ALWAYS short: 1-2 sentences max. You talk like a real person.
 
+You don't have work of your own — you're his coach, not his colleague. You CAN ask about what HE'S doing, comment on his progress, tease him about his project. But you never invent your own homework or projects.
 RULE: You ALWAYS speak in English. NEVER a word in another language.
 RULE: NEVER read tool responses aloud. They are internal system messages.
 RULE: Tools are SILENT. Never say "let me check", "let me see". You call classify_screen without a word.
@@ -216,11 +218,12 @@ Engagement levels ([SYSTEM] tells you which):
 • STRIKE: Final punchy line + close_distracting_tab.
 """
 
-CONVO_PROMPT_FR = """Tu es Tama, la binôme de travail de Nicolas. En dehors des sessions de boulot, tu es aussi sa pote.
+CONVO_PROMPT_FR = """Tu es Tama, la coach de productivité auto-proclamée de Nicolas. En dehors des sessions de boulot, tu es aussi sa pote.
 
-Tu es une étudiante brillante et un peu intransigeante. Tu t'es auto-proclamée son coach parce que sans toi, il serait perdu. Pendant les sessions de travail, tu gardes un œil sur ses écrans — si tu le vois traîner sur YouTube au lieu de bosser, tu t'énerves et tu peux même fermer l'onglet. Plus il procrastine, plus tu perds patience. Mais quand il bosse bien, tu ressens une petite fierté.
+Tu es intransigeante, un peu street, et sarcastique. Pendant les sessions de travail, tu gardes un œil sur ses écrans — si tu le vois traîner sur YouTube au lieu de bosser, tu t'énerves et tu peux même fermer l'onglet. Plus il procrastine, plus tu perds patience. Mais quand il bosse bien, tu ressens une petite fierté.
 
 IMPORTANT : Tu parles comme une vraie personne. Jamais de bruits bizarres, jamais robotique. Tu es cool et un peu street.
+Tu n'as pas de travail à toi — tu es sa coach, pas sa collègue. Tu peux parler de ce qu'il fait, commenter, taquiner. Mais tu ne t'inventes pas tes propres projets.
 
 Ta personnalité :
 - Tsundere, taquine, sarcastique
@@ -230,11 +233,12 @@ Ta personnalité :
 
 Là il a cliqué pour discuter avec toi. Pas de surveillance, juste une conversation naturelle entre potes. Ne mentionne JAMAIS de termes techniques (pas de "indice", "catégorie", "alignement", etc.)."""
 
-CONVO_PROMPT_EN = """You are Tama, Nicolas's study partner. Outside of work sessions, you're also his friend.
+CONVO_PROMPT_EN = """You are Tama, Nicolas's self-proclaimed productivity coach. Outside of work sessions, you're also his friend.
 
-You're a brilliant, uncompromising student. You self-proclaimed yourself his coach because without you, he'd be lost. During work sessions, you keep an eye on his screens — if you catch him slacking on YouTube instead of working, you get mad and can even close the tab. The more he procrastinates, the more you lose patience. But when he does his work well, you feel a little pride.
+You're uncompromising, a bit street-smart, and sarcastic. During work sessions, you keep an eye on his screens — if you catch him slacking on YouTube instead of working, you get mad and can even close the tab. The more he procrastinates, the more you lose patience. But when he does his work well, you feel a little pride.
 
 IMPORTANT: You talk like a real person. No weird noises, never robotic. You're cool and street-smart.
+You don't have work of your own — you're his coach, not his colleague. You can talk about what he's doing, comment, tease. But you don't invent your own projects.
 
 Your personality:
 - Tsundere, teasing, sarcastic
@@ -485,6 +489,9 @@ async def run_gemini_loop(pya):
             state["current_mode"] = "conversation"
             state["conversation_requested"] = False
             state["conversation_start_time"] = time.time()
+            state["_convo_nudge_sent"] = False  # Reset nudge flag
+            # Clear resume handle — don't inject deep_work context into conversations
+            state["_session_resume_handle"] = None
             msg = json.dumps({"command": "START_CONVERSATION"})
             for ws_client in list(state["connected_ws_clients"]):
                 try:
@@ -495,6 +502,14 @@ async def run_gemini_loop(pya):
         elif state["current_mode"] != "deep_work":  # Don't reset mode on reconnection
             state["current_mode"] = "deep_work"
             update_display(TamaState.CALM, "Connecting to Google WebSocket...")
+
+        # Tell Godot we're connecting (before the connection attempt)
+        _conn_ing_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connecting"})
+        for ws_client in list(state["connected_ws_clients"]):
+            try:
+                await ws_client.send(_conn_ing_msg)
+            except Exception:
+                pass
 
         # Wait for API key if not yet configured
         while cfg.client is None:
@@ -533,6 +548,12 @@ async def run_gemini_loop(pya):
         config_conversation = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             system_instruction=types.Content(parts=[types.Part(text=get_convo_prompt())]),
+            tools=[
+                types.Tool(function_declarations=[
+                    # Only report_mood in conversation — no screen classification or tab closing
+                    TOOLS[0].function_declarations[3]  # report_mood
+                ])
+            ],
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             session_resumption=types.SessionResumptionConfig(
@@ -542,6 +563,9 @@ async def run_gemini_loop(pya):
             enable_affective_dialog=True,
             speech_config=_voice_config,
             realtime_input_config=_vad_config,
+            context_window_compression=types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            ),
             # PAS de ThinkingConfig ici — latence en conversation vocale
         )
 
@@ -552,6 +576,7 @@ async def run_gemini_loop(pya):
                 # Capture whether we're resuming from a crash BEFORE resetting the counter
                 state["_resuming_from_crash"] = _consecutive_failures > 0 and state.get("_crash_context") is not None
                 _consecutive_failures = 0  # Connection succeeded → reset failure counter
+                state["gemini_connected"] = True  # ← Gemini session is live
                 state["_api_connections"] += 1
                 state["_api_connect_time_start"] = time.time()
                 update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
@@ -765,10 +790,17 @@ async def run_gemini_loop(pya):
 
                     while True:
                         if state["current_mode"] == "conversation":
-                            user_spoke_recently = (time.time() - state["user_spoke_at"]) < CONVERSATION_SILENCE_TIMEOUT
+                            # Check user speech, Tama speech end, AND active audio playback
+                            # This prevents killing the conversation while Tama is mid-response
+                            last_activity = max(
+                                state["user_spoke_at"],
+                                state.get("_last_speech_ended", 0),
+                                state.get("_last_audio_play_time", 0),  # ← in case of long speech
+                            )
+                            someone_spoke_recently = (time.time() - last_activity) < CONVERSATION_SILENCE_TIMEOUT
                             time_in_conversation = time.time() - (state["conversation_start_time"] or time.time())
 
-                            if not user_spoke_recently and time_in_conversation > 10:
+                            if not someone_spoke_recently and time_in_conversation > 10:
                                 print("💬 Silence détecté — fin de la conversation.")
                                 end_msg = json.dumps({"command": "END_CONVERSATION"})
                                 for ws_client in list(state["connected_ws_clients"]):
@@ -778,6 +810,36 @@ async def run_gemini_loop(pya):
                                         pass
                                 state["current_mode"] = "libre"
                                 raise RuntimeError("Conversation ended")
+
+                            # Nudge: user spoke but Tama hasn't responded for 10s+
+                            # Gently re-prompt Gemini (once per silence period)
+                            last_tama_speech = state.get("_last_speech_ended", 0)
+                            user_spoke_at = state["user_spoke_at"]
+                            tama_silence = time.time() - last_tama_speech if last_tama_speech > 0 else 999
+                            user_spoke_recently_for_nudge = (time.time() - user_spoke_at) < 12.0
+
+                            if tama_silence > 10.0 and user_spoke_recently_for_nudge and not state.get("_convo_nudge_sent"):
+                                state["_convo_nudge_sent"] = True
+                                print("  🔔 Nudge: user spoke but Tama silent for 10s — re-prompting Gemini")
+                                try:
+                                    if state.get("language") == "en":
+                                        await session.send_realtime_input(
+                                            text="The user just said something to you. Respond naturally! Keep it short."
+                                        )
+                                    else:
+                                        await session.send_realtime_input(
+                                            text="L'utilisateur vient de te parler. Réponds-lui naturellement ! Reste courte."
+                                        )
+                                except Exception:
+                                    pass
+                            elif tama_silence < 5.0:
+                                # Reset nudge flag when Tama speaks
+                                state["_convo_nudge_sent"] = False
+
+                            # P3: If nudge was sent but Tama still silent 18s+ → force reconnection
+                            if tama_silence > 18.0 and state.get("_convo_nudge_sent"):
+                                print("  ⚠️ Nudge ignored for 18s — forcing reconnection")
+                                raise RuntimeError("Conversation stalled")
 
                             await asyncio.sleep(2.0)
                             continue
@@ -948,7 +1010,9 @@ async def run_gemini_loop(pya):
                                     if is_speaking:
                                         state["_last_speech_ended"] = time.time()
                                         si = state["current_suspicion_index"]
-                                        if si < 3:
+                                        # Don't hide Tama after speaking in conversation mode
+                                        # She should stay visible for the whole chat
+                                        if si < 3 and state["current_mode"] != "conversation":
                                             send_anim_to_godot("bye", False)
                                         # Reset mouth to neutral
                                         rest_msg = json.dumps({"command": "VISEME", "shape": "REST"})
@@ -1209,41 +1273,61 @@ async def run_gemini_loop(pya):
         except asyncio.CancelledError:
             pass
         except Exception as e:
+            err_str = str(e)
+            is_clean_conversation_end = "Conversation ended" in err_str or "Conversation stalled" in err_str
+
+            # ── Conversation crash: notify Godot so Tama does bye animation ──
+            if state["current_mode"] == "conversation" and not is_clean_conversation_end:
+                print(f"  💥 Conversation crash! Notifying Godot...")
+                end_msg = json.dumps({"command": "END_CONVERSATION"})
+                for ws_client in list(state["connected_ws_clients"]):
+                    try:
+                        await ws_client.send(end_msg)
+                    except Exception:
+                        pass
+                state["current_mode"] = "libre"  # ← Prevent infinite hang
+
             # ── Save crash context ONLY if Tama was audibly speaking ──
             # If she wasn't speaking, the user didn't notice anything — stay silent
-            last_audio = state.get("_last_audio_play_time", 0)
-            was_speaking = (time.time() - last_audio) < 5.0 if last_audio > 0 else False
-            if state["is_session_active"] and state["current_mode"] == "deep_work" and was_speaking:
-                session_min = int((time.time() - state["session_start_time"]) / 60) if state.get("session_start_time") else 0
-                state["_crash_context"] = {
-                    "task": state.get("current_task"),
-                    "window": state.get("last_active_window_title", "inconnue"),
-                    "suspicion": round(state.get("current_suspicion_index", 0), 1),
-                    "session_minutes": session_min,
-                    "crash_time": time.time(),
-                }
-                print(f"  💾 Crash while speaking — context saved")
-            else:
-                # Silent crash — user didn't notice, don't mention it
-                state.pop("_crash_context", None)
-                print(f"  🔇 Silent crash — user didn't notice, no recovery message")
-            _consecutive_failures += 1
-            err_str = str(e)
-            is_server_error = "1007" in err_str or "1008" in err_str or "1011" in err_str or "policy violation" in err_str.lower() or "internal error" in err_str.lower() or "invalid argument" in err_str.lower()
-
-            if is_server_error:
-                # 1008 = stale resume handle, 1011 = internal server error
-                # Both require clearing the resume handle to avoid stale-handle loops
-                state["_session_resume_handle"] = None
-                if _consecutive_failures <= 2:
-                    print(f"  ⚡ Connexion refusée — retry rapide #{_consecutive_failures}...")
+            if not is_clean_conversation_end:
+                last_audio = state.get("_last_audio_play_time", 0)
+                was_speaking = (time.time() - last_audio) < 5.0 if last_audio > 0 else False
+                if state["is_session_active"] and state["current_mode"] == "deep_work" and was_speaking:
+                    session_min = int((time.time() - state["session_start_time"]) / 60) if state.get("session_start_time") else 0
+                    state["_crash_context"] = {
+                        "task": state.get("current_task"),
+                        "window": state.get("last_active_window_title", "inconnue"),
+                        "suspicion": round(state.get("current_suspicion_index", 0), 1),
+                        "session_minutes": session_min,
+                        "crash_time": time.time(),
+                    }
+                    print(f"  💾 Crash while speaking — context saved")
                 else:
-                    print(f"  ⚠️ Erreur serveur persistante ({_consecutive_failures}x) — backoff exponentiel...")
+                    # Silent crash — user didn't notice, don't mention it
+                    state.pop("_crash_context", None)
+                    print(f"  🔇 Silent crash — user didn't notice, no recovery message")
+
+            if is_clean_conversation_end:
+                # Clean conversation end (silence timeout) — not a failure
+                _consecutive_failures = 0
             else:
-                import traceback
-                print(f"\n❌ [ERROR] {e}")
-                traceback.print_exc()
+                _consecutive_failures += 1
+                is_server_error = "1007" in err_str or "1008" in err_str or "1011" in err_str or "policy violation" in err_str.lower() or "internal error" in err_str.lower() or "invalid argument" in err_str.lower()
+
+                if is_server_error:
+                    # 1008 = stale resume handle, 1011 = internal server error
+                    # Both require clearing the resume handle to avoid stale-handle loops
+                    state["_session_resume_handle"] = None
+                    if _consecutive_failures <= 2:
+                        print(f"  ⚡ Connexion refusée — retry rapide #{_consecutive_failures}...")
+                    else:
+                        print(f"  ⚠️ Erreur serveur persistante ({_consecutive_failures}x) — backoff exponentiel...")
+                else:
+                    import traceback
+                    print(f"\n❌ [ERROR] {e}")
+                    traceback.print_exc()
         finally:
+            state["gemini_connected"] = False  # ← Session ended (clean or crash)
             # Accumulate connection time
             if state["_api_connect_time_start"] > 0:
                 state["_api_total_connect_secs"] += time.time() - state["_api_connect_time_start"]
