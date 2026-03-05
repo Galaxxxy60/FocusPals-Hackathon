@@ -29,6 +29,13 @@ var _mic_effect: AudioEffectCapture
 var _mic_bus_idx: int = -1
 var _vu_level := 0.0
 
+# Mic loopback test
+var _loopback_player: AudioStreamPlayer
+var _loopback_generator: AudioStreamGenerator
+var _loopback_playback: AudioStreamGeneratorPlayback
+var _is_testing_mic := false
+var _test_btn_ref: Button = null  # currently active test button
+
 const PANEL_WIDTH := 360.0
 const MARGIN_RIGHT := 10.0
 const MAX_HEIGHT_RATIO := 0.75
@@ -44,7 +51,7 @@ var _vbox: VBoxContainer
 var _session_slider: HSlider
 var _session_label: Label
 var _mic_container: VBoxContainer
-var _vu_bar: ProgressBar
+var _vu_bar: Control  # custom segmented VU meter
 var _api_key_input: LineEdit
 var _api_key_btn: Button
 var _api_status_label: Label
@@ -178,6 +185,15 @@ func _setup_mic_capture() -> void:
 	_mic_player.bus = "MicCapture"
 	_mic_player.volume_db = 0.0
 	add_child(_mic_player)
+	# Loopback player for mic test (plays captured mic audio to Master)
+	_loopback_generator = AudioStreamGenerator.new()
+	_loopback_generator.mix_rate = 44100.0
+	_loopback_generator.buffer_length = 0.1
+	_loopback_player = AudioStreamPlayer.new()
+	_loopback_player.stream = _loopback_generator
+	_loopback_player.bus = "Master"
+	_loopback_player.volume_db = 0.0
+	add_child(_loopback_player)
 
 # ─── Public API ────────────────────────────────────────────
 
@@ -210,6 +226,7 @@ func close() -> void:
 	if not is_open:
 		return
 	is_open = false
+	_stop_mic_test()
 	if _mic_player and _mic_player.playing:
 		_mic_player.stop()
 	var tw := create_tween()
@@ -350,21 +367,9 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	mic_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	audio_content.add_child(mic_lbl)
 
-	# VU meter
-	_vu_bar = ProgressBar.new()
-	_vu_bar.min_value = 0.0
-	_vu_bar.max_value = 1.0
-	_vu_bar.value = 0.0
-	_vu_bar.custom_minimum_size = Vector2(0, 8)
-	_vu_bar.show_percentage = false
-	var vu_bg := StyleBoxFlat.new()
-	vu_bg.bg_color = Color(0.04, 0.04, 0.08, 0.9)
-	vu_bg.set_corner_radius_all(3)
-	_vu_bar.add_theme_stylebox_override("background", vu_bg)
-	var vu_fill := StyleBoxFlat.new()
-	vu_fill.bg_color = Color(0.1, 0.9, 0.3, 0.9)
-	vu_fill.set_corner_radius_all(3)
-	_vu_bar.add_theme_stylebox_override("fill", vu_fill)
+	# VU meter (segmented bars)
+	_vu_bar = _SegmentedVU.new()
+	_vu_bar.custom_minimum_size = Vector2(0, 14)
 	audio_content.add_child(_vu_bar)
 
 	# Mic items
@@ -590,9 +595,15 @@ func _add_mic_button(index: int) -> void:
 		mic_name = mic_name.substr(0, 28) + "…"
 	var is_selected := mic_index == _selected_index
 
+	# Row: [mic select button] [test button]
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	_mic_container.add_child(row)
+
 	var btn := Button.new()
 	btn.text = ("  ✓  " if is_selected else "  ○  ") + mic_name + ("   ACTIF" if is_selected else "")
 	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.custom_minimum_size.y = 32
 	btn.add_theme_stylebox_override("normal", _make_mic_btn_style(is_selected))
 	btn.add_theme_stylebox_override("hover", _make_mic_btn_hover_style())
@@ -603,7 +614,22 @@ func _add_mic_button(index: int) -> void:
 	else:
 		btn.add_theme_color_override("font_color", Color(0.7, 0.75, 0.8))
 	btn.pressed.connect(_on_mic_btn_pressed.bind(mic_index))
-	_mic_container.add_child(btn)
+	row.add_child(btn)
+
+	# Test button
+	var test_btn := Button.new()
+	test_btn.text = "🔊"
+	test_btn.tooltip_text = "Tester ce micro"
+	test_btn.custom_minimum_size = Vector2(36, 32)
+	var test_style := _make_btn_style()
+	test_style.bg_color = Color(0.08, 0.12, 0.22, 0.7)
+	test_btn.add_theme_stylebox_override("normal", test_style)
+	test_btn.add_theme_stylebox_override("hover", _make_btn_hover_style())
+	test_btn.add_theme_stylebox_override("pressed", _make_btn_pressed_style())
+	test_btn.add_theme_font_size_override("font_size", 13)
+	test_btn.add_theme_color_override("font_color", Color(0.6, 0.7, 0.85))
+	test_btn.pressed.connect(_on_test_mic_pressed.bind(mic_index, test_btn))
+	row.add_child(test_btn)
 
 # ─── Signal Handlers ──────────────────────────────────────
 
@@ -618,6 +644,7 @@ func _on_volume_value_changed(val: float) -> void:
 
 func _on_mic_btn_pressed(mic_idx: int) -> void:
 	_selected_index = mic_idx
+	_stop_mic_test()
 	mic_selected.emit(mic_idx)
 	_match_input_device()
 	# Rebuild mic list to update selection visuals
@@ -656,6 +683,71 @@ func _rebuild_mic_list() -> void:
 	await get_tree().process_frame
 	for i in _mics.size():
 		_add_mic_button(i)
+
+# ─── Mic Test (Loopback) ─────────────────────────────────
+
+func _on_test_mic_pressed(mic_idx: int, btn: Button) -> void:
+	# If already testing this mic, stop
+	if _is_testing_mic and _test_btn_ref == btn:
+		_stop_mic_test()
+		return
+	# Stop any existing test first
+	_stop_mic_test()
+	# Select this mic for capture
+	_selected_index = mic_idx
+	mic_selected.emit(mic_idx)
+	_match_input_device()
+	# Start loopback
+	_is_testing_mic = true
+	_test_btn_ref = btn
+	_style_test_btn_active(btn, true)
+	if _loopback_player and not _loopback_player.playing:
+		_loopback_player.play()
+		_loopback_playback = _loopback_player.get_stream_playback()
+	# Rebuild to update selection visuals
+	# (skip — would destroy buttons; just update styles inline)
+
+func _stop_mic_test() -> void:
+	if not _is_testing_mic:
+		return
+	_is_testing_mic = false
+	if _loopback_player and _loopback_player.playing:
+		_loopback_player.stop()
+	_loopback_playback = null
+	if _test_btn_ref and is_instance_valid(_test_btn_ref):
+		_style_test_btn_active(_test_btn_ref, false)
+	_test_btn_ref = null
+
+func _style_test_btn_active(btn: Button, active: bool) -> void:
+	if active:
+		var active_style := _make_btn_style()
+		active_style.bg_color = Color(0.1, 0.4, 0.2, 0.85)
+		active_style.border_color = Color(0.3, 1.0, 0.5, 0.6)
+		btn.add_theme_stylebox_override("normal", active_style)
+		btn.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5))
+		btn.text = "🔇"
+	else:
+		var normal_style := _make_btn_style()
+		normal_style.bg_color = Color(0.08, 0.12, 0.22, 0.7)
+		btn.add_theme_stylebox_override("normal", normal_style)
+		btn.add_theme_color_override("font_color", Color(0.6, 0.7, 0.85))
+		btn.text = "🔊"
+
+func _feed_loopback() -> void:
+	## Feed captured mic frames into the loopback generator for playback.
+	if _mic_effect == null or _loopback_playback == null:
+		return
+	var frames := _mic_effect.get_frames_available()
+	if frames <= 0:
+		return
+	# Read frames (shared with VU meter — VU will also read, so we use a
+	# reasonable chunk).  The capture buffer is consumed once, so we process
+	# here and also update VU from the same data.
+	var buf := _mic_effect.get_buffer(mini(frames, 2048))
+	var can_push := _loopback_playback.get_frames_available()
+	var to_push := mini(buf.size(), can_push)
+	for i in to_push:
+		_loopback_playback.push_frame(buf[i])
 
 # ─── API Status ───────────────────────────────────────────
 
@@ -721,11 +813,15 @@ func _process(delta: float) -> void:
 		_panel_container.position.x = lerpf(off_x, target_x, _progress)
 		_panel_container.modulate.a = _progress
 
-	# VU meter
+	# VU meter + loopback
 	if is_open:
-		_read_vu_level()
+		if _is_testing_mic:
+			_feed_loopback_and_vu()
+		else:
+			_read_vu_level()
 		if _vu_bar:
-			_vu_bar.value = _vu_level
+			_vu_bar.set_meta("level", _vu_level)
+			_vu_bar.queue_redraw()
 
 	# Auto-close if mouse far away
 	if is_open and _progress >= 0.9 and _panel_container:
@@ -794,6 +890,33 @@ func _read_vu_level() -> void:
 	else:
 		_vu_level = lerp(_vu_level, peak, 0.15)
 
+func _feed_loopback_and_vu() -> void:
+	## Combined: read mic frames, feed loopback AND update VU from the same buffer.
+	if _mic_effect == null:
+		return
+	var frames := _mic_effect.get_frames_available()
+	if frames <= 0:
+		_vu_level = lerp(_vu_level, 0.0, 0.1)
+		return
+	var buf := _mic_effect.get_buffer(mini(frames, 2048))
+	# VU
+	var peak := 0.0
+	for i in buf.size():
+		var sample := absf(buf[i].x)
+		if sample > peak:
+			peak = sample
+	peak = clampf(peak * 2.5, 0.0, 1.0)
+	if peak > _vu_level:
+		_vu_level = lerp(_vu_level, peak, 0.5)
+	else:
+		_vu_level = lerp(_vu_level, peak, 0.15)
+	# Loopback
+	if _loopback_playback != null:
+		var can_push := _loopback_playback.get_frames_available()
+		var to_push := mini(buf.size(), can_push)
+		for i in to_push:
+			_loopback_playback.push_frame(buf[i])
+
 # ─── Formatting Helpers ───────────────────────────────────
 
 func _format_duration(total_secs: int) -> String:
@@ -814,3 +937,56 @@ func _format_number(n: int) -> String:
 		return str(n / 1000) + "." + str((n % 1000) / 100) + "k"
 	else:
 		return str(n / 1000) + "k"
+
+# ─── Segmented VU Meter (inner class) ─────────────────────
+
+class _SegmentedVU extends Control:
+	## Draws N small rectangles that go from green → yellow → orange → red.
+	## Inactive segments are drawn as dark semi-transparent ghost bars.
+	const SEGMENT_COUNT := 20
+	const GAP := 2.0
+	const CORNER := 1.5
+
+	# Color stops: segment 0..19 mapped to a gradient
+	static func _seg_color(i: int) -> Color:
+		var t := float(i) / float(SEGMENT_COUNT - 1)
+		if t < 0.5:
+			# green → yellow
+			return Color(0.15 + t * 1.7, 0.9, 0.2, 1.0)
+		elif t < 0.75:
+			# yellow → orange
+			var u := (t - 0.5) / 0.25
+			return Color(1.0, 0.9 - u * 0.5, 0.15, 1.0)
+		else:
+			# orange → red
+			var u := (t - 0.75) / 0.25
+			return Color(1.0, 0.4 - u * 0.3, 0.1, 1.0)
+
+	func _draw() -> void:
+		var level: float = get_meta("level", 0.0)
+		var w := size.x
+		var h := size.y
+		var seg_w := (w - GAP * (SEGMENT_COUNT - 1)) / float(SEGMENT_COUNT)
+		if seg_w < 2.0:
+			seg_w = 2.0
+
+		var active_count := int(level * SEGMENT_COUNT)
+		# Partial brightness on the next segment
+		var partial := (level * SEGMENT_COUNT) - float(active_count)
+
+		for i in SEGMENT_COUNT:
+			var x := float(i) * (seg_w + GAP)
+			var rect := Rect2(x, 0, seg_w, h)
+			var col := _seg_color(i)
+
+			if i < active_count:
+				# Fully lit
+				draw_rect(rect, col, true)
+			elif i == active_count and partial > 0.05:
+				# Partially lit (fade between ghost and full)
+				var blended := Color(col.r, col.g, col.b, 0.12 + partial * 0.88)
+				draw_rect(rect, blended, true)
+			else:
+				# Ghost bar — always visible, dark
+				var ghost := Color(col.r * 0.3, col.g * 0.3, col.b * 0.3, 0.15)
+				draw_rect(rect, ghost, true)

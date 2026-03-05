@@ -469,14 +469,15 @@ async def run_gemini_loop(pya):
             silence_duration_ms=500,
         )
     )
-    # Conversation: HIGH sensitivity = faster reactions, more responsive
+    # Conversation: LOW sensitivity = avoid phantom interruptions from ambient noise
+    # (was HIGH/300ms but Google kept interpreting clicks/breathing as speech)
     _vad_conversation = types.RealtimeInputConfig(
         automatic_activity_detection=types.AutomaticActivityDetection(
             disabled=False,
-            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
-            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
             prefix_padding_ms=20,
-            silence_duration_ms=300,
+            silence_duration_ms=500,
         )
     )
 
@@ -685,8 +686,8 @@ async def run_gemini_loop(pya):
                     # first syllable isn't clipped. Post-tail keeps sending ~500ms
                     # AFTER voice stops to capture sentence endings.
                     from collections import deque
-                    PRE_BUFFER_CHUNKS = 8    # ~512ms at 16kHz/1024
-                    POST_TAIL_CHUNKS = 8     # ~512ms after silence
+                    PRE_BUFFER_CHUNKS = 12   # ~768ms at 16kHz/1024 — captures context before speech
+                    POST_TAIL_CHUNKS = 24    # ~1.5s after silence — keeps stream alive during natural pauses
                     pre_buffer = deque(maxlen=PRE_BUFFER_CHUNKS)
                     is_streaming = False
                     silence_count = 0
