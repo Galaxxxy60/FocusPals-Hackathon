@@ -588,17 +588,12 @@ func _handle_message(raw: String) -> void:
 			settings_panel.update_key_valid(valid)
 		return
 	elif command == "USER_SPEAKING":
-		# Stage 1: Subtle acknowledgment — Tama glances at user, stays on wall
+		# Subtle acknowledgment — Tama looks at user, stays on wall
 		if conversation_active:
 			_convo_engagement += 1
 			print("👀 User speaking — engagement #%d" % _convo_engagement)
-			# Stage 3: Enough exchanges → get off the wall
-			if _convo_engagement >= CONVO_ENGAGE_THRESHOLD and phase == Phase.ON_WALL:
-				_play("OffThewall", false)
-				phase = Phase.TRANSITION_OFF
-				print("🧑 OffThewall: conversation engagée (#%d échanges)" % _convo_engagement)
-			else:
-				_on_user_speaking_ack()
+			# Toujours faire l'accusé de réception, on ne descend plus du mur
+			_on_user_speaking_ack()
 		return
 	elif command == "GAZE_AT":
 		# Python tells Tama where to look
