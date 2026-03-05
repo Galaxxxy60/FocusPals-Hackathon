@@ -243,6 +243,8 @@ _MOOD_ANIM_MAP = {
     "curious":      ("Peek",  "Suspicious", "Suspicious"),
     "amused":       ("Idle_wall", "Idle_wall", "Idle_wall"),
     "proud":        ("Idle_wall", "Idle_wall", "Idle_wall"),
+    "suspicious":   ("Peek",  "Suspicious", "Suspicious"),
+    "surprised":    ("Idle_wall", "Idle_wall", "Idle_wall"),
     "disappointed": ("Suspicious", "Suspicious", "Angry"),
     "sarcastic":    ("Suspicious", "Suspicious", "Angry"),
     "annoyed":      ("Suspicious", "Angry", "Angry"),

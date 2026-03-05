@@ -27,6 +27,8 @@ enum Phase { ON_WALL, TRANSITION_OFF, ACTIVE, STRIKING, TRANSITION_ON }
 var phase: int = Phase.ON_WALL
 var _started: bool = false  # True after first Idle_wall is played
 var conversation_active: bool = false  # True during casual chat (no deep work)
+var _convo_engagement: int = 0  # Number of speech exchanges — triggers OffTheWall at threshold
+const CONVO_ENGAGE_THRESHOLD: int = 3  # Back-and-forths before Tama gets off the wall
 var current_anim: String = ""
 var _anim_player: AnimationPlayer = null
 var _prev_suspicion_tier: int = -1
@@ -109,12 +111,12 @@ const VISEME_MAP = {
 # Mood → expression mapping
 const MOOD_EYES = {
 	"calm": "E0", "curious": "E0", "amused": "E4", "proud": "E7",
-	"suspicious": "E7", "disappointed": "E7", "sarcastic": "E7",
+	"suspicious": "E7", "surprised": "E3", "disappointed": "E7", "sarcastic": "E7",
 	"annoyed": "E5", "angry": "E5", "furious": "E8",
 }
 const MOOD_MOUTH = {
 	"calm": "M4", "curious": "M0", "amused": "M4", "proud": "M4",
-	"suspicious": "M7", "disappointed": "M5", "sarcastic": "M6",
+	"suspicious": "M7", "surprised": "M1", "disappointed": "M5", "sarcastic": "M6",
 	"annoyed": "M5", "angry": "M5", "furious": "M8",
 }
 
@@ -126,6 +128,7 @@ const MOOD_EYEBROWS = {
 	"amused": {},
 	"proud": {},
 	"suspicious": {"question": 1.0},
+	"surprised": {"surprise": 0.8},
 	"disappointed": {"sad": 0.8},
 	"sarcastic": {"question": 0.5},
 	"annoyed": {"angry": 0.6},
@@ -144,6 +147,22 @@ var _blink_next: float = 4.0  # seconds until next blink
 var _blink_phase: int = 0     # 0=idle, 1=closing, 2=closed, 3=opening
 var _blink_frame_timer: float = 0.0
 const BLINK_FRAME_DURATION: float = 0.03
+
+# ─── Eye Follow (Blend Shapes: LookLeft/Right/Up/Down) ───
+var _bs_look_left: int = -1
+var _bs_look_right: int = -1
+var _bs_look_up: int = -1
+var _bs_look_down: int = -1
+var _eye_follow_active: bool = false   # Master switch
+var _debug_eye_follow: bool = false    # F4 debug toggle (mouse follow)
+var _eye_follow_h: float = 0.0        # Current horizontal: -1=left, 0=center, +1=right
+var _eye_follow_v: float = 0.0        # Current vertical: -1=down, 0=center, +1=up
+var _eye_target_h: float = 0.0        # Target horizontal
+var _eye_target_v: float = 0.0        # Target vertical
+var _eye_saccade_timer: float = 0.0   # Timer between saccades
+const EYE_SACCADE_INTERVAL: float = 0.08  # Snap every ~80ms (like real saccades)
+const EYE_SACCADE_THRESHOLD: float = 0.03 # Dead zone: ignore tiny changes
+const EYE_RETURN_SPEED: float = 8.0       # Speed to return to center when deactivated
 
 # ─── Radial Settings Menu ─────────────────────────────────
 var radial_menu = null
@@ -164,9 +183,11 @@ var _headphones_node: Node3D = null
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
 var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
+var _ack_gaze_timer: float = 0.0 # Countdown to restore head gaze after ack
 
 # ─── Gaze System (post-process bone look-at) ───
 var _skeleton: Skeleton3D = null
+var _gaze_modifier: Node = null  # gaze_modifier.gd instance (SkeletonModifier3D)
 var _camera: Camera3D = null
 var _head_bone_idx: int = -1
 var _neck_bone_idx: int = -1
@@ -182,12 +203,7 @@ var _gaze_blend: float = 0.0        # 0 = pure animation, 1 = full gaze applied
 var _gaze_blend_target: float = 0.0 # What blend is transitioning toward
 const GAZE_BLEND_SPEED: float = 4.0 # How fast blend fades in/out
 
-# Base rotation: the animation's natural head/neck rotation, captured once
-# before gaze ever modifies the bones. Used instead of IDENTITY so that
-# blend=0 returns to the animation pose (not the bind pose / chin-up).
-var _head_base_rot: Quaternion = Quaternion.IDENTITY
-var _neck_base_rot: Quaternion = Quaternion.IDENTITY
-var _gaze_base_captured: bool = false
+# Base rotation capture now lives in gaze_modifier.gd (SkeletonModifier3D)
 
 # Gaze targets — procedural, no hardcoded angles
 enum GazeTarget { USER, SCREEN_CENTER, SCREEN_TOP, SCREEN_BOTTOM, OTHER_MONITOR, BOOK, AWAY, NEUTRAL }
@@ -208,6 +224,9 @@ var _debug_print_timer: float = 0.0
 # ─── Spring Bones (separate module) ───────────────────────
 var _spring_bones_node: Node3D = null  # spring_bones.gd instance
 
+# ─── Post-animation delta (for deferred gaze/spring bones) ──
+var _last_delta: float = 0.0
+
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
@@ -221,6 +240,8 @@ func _ready() -> void:
 	call_deferred("_setup_spring_bones_module")
 	# Start in Idle_wall — Tama is always visible
 	call_deferred("_start_idle_wall")
+	# Enable internal processing for eye follow blend shapes (not bone mods — those use SkeletonModifier3D)
+	set_process_internal(true)
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _start_idle_wall() -> void:
@@ -264,6 +285,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_debug_gaze_mouse = !_debug_gaze_mouse
 		if _debug_gaze_mouse:
 			print("👀 [DEBUG] Gaze → MOUSE FOLLOW ON")
+			print("👀 [DEBUG] _gaze_active=%s head_bone=%d neck_bone=%d" % [str(_gaze_active), _head_bone_idx, _neck_bone_idx])
+			print("👀 [DEBUG] _skeleton=%s _camera=%s" % [str(_skeleton != null), str(_camera != null)])
 			_show_status_indicator("👀 Debug Gaze: ON (F3)", Color(1, 0.8, 0.2))
 			# Show debug viz
 			if _debug_sphere: _debug_sphere.visible = true
@@ -277,7 +300,25 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _debug_sphere: _debug_sphere.visible = false
 			if _debug_line_node: _debug_line_node.visible = false
 			if _debug_depth_node: _debug_depth_node.visible = false
-	# F5 + numpad = collider debug (delegated to spring_bones module)
+	# F4 = debug eye follow: eyes track mouse via blend shapes
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F4:
+		_debug_eye_follow = !_debug_eye_follow
+		_eye_follow_active = _debug_eye_follow
+		if _debug_eye_follow:
+			_eye_target_h = 0.0
+			_eye_target_v = 0.0
+			print("👁️ [DEBUG] Eye Follow → ON (mouse)")
+			_show_status_indicator("👁️ Eye Follow: ON (F4)", Color(0.2, 0.8, 1.0))
+		else:
+			print("👁️ [DEBUG] Eye Follow → OFF")
+			_hide_status_indicator()
+	# F6 = Force head rotation test (no gaze system, raw bone write)
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F6:
+		if _skeleton and _head_bone_idx >= 0:
+			var current = _skeleton.get_bone_pose_rotation(_head_bone_idx)
+			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
+			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
+			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
 	if _spring_bones_node:
 		_spring_bones_node.handle_input(event)
 
@@ -395,22 +436,91 @@ func _process(delta: float) -> void:
 			# Restore to current mood eyes
 			var mood_eye = MOOD_EYES.get(_current_mood, "E0")
 			_set_expression_slot("eyes", mood_eye)
+			# Also return eye follow to center
+			_eye_follow_active = false
 
-	# Gaze system — smooth bone rotation each frame
-	if _debug_gaze_mouse and _gaze_active:
-		# Track global mouse cursor → convert to 3D → look at it
-		var mouse_pos = DisplayServer.mouse_get_position()
-		var target_3d = _screen_to_world(float(mouse_pos.x), float(mouse_pos.y))
-		_gaze_world_target = target_3d
-		_look_at_world_point(target_3d, 8.0)
-	_update_gaze(delta)
+	# Ack gaze timer — return head to reading pose after acknowledgment
+	if _ack_gaze_timer > 0:
+		_ack_gaze_timer -= delta
+		if _ack_gaze_timer <= 0:
+			set_gaze(GazeTarget.NEUTRAL, 6.0)  # Snappy return to book
+
+	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
+	_sync_gaze_to_modifier()
+
+	# Gaze + Spring bones delta stored for post-animation processing
+	_last_delta = delta
 
 
-	# Spring bones — secondary motion on hair & hoodie strings
-	if _spring_bones_node:
-		_spring_bones_node.update(delta)
+func _notification(what: int) -> void:
+	# INTERNAL_PROCESS: only eye follow (blend shapes — no bone conflict).
+	# Gaze bone rotation + spring bones are now in gaze_modifier.gd (SkeletonModifier3D)
+	# which processes AFTER AnimationPlayer automatically.
+	if what == NOTIFICATION_INTERNAL_PROCESS:
+		var delta = _last_delta
 
+		# Eye follow — blend shape based eye movement
+		if _debug_eye_follow and _eye_follow_active:
+			var mouse_pos = DisplayServer.mouse_get_position()
+			_set_eye_target_from_screen(float(mouse_pos.x), float(mouse_pos.y))
+		_update_eye_follow(delta)
 
+		# Gaze debug mouse tracking — compute targets (actual bone write is in modifier)
+		if _debug_gaze_mouse and _gaze_active:
+			var mouse_pos2 = DisplayServer.mouse_get_position()
+			var target_3d = _screen_to_world(float(mouse_pos2.x), float(mouse_pos2.y))
+			_gaze_world_target = target_3d
+			_look_at_world_point(target_3d, 8.0)
+			# Immediate sync for F3 mouse tracking (targets just computed)
+			_sync_gaze_to_modifier()
+
+# ─── Eye Follow (saccadic blend-shape eye movement) ──────
+func _set_eye_target_from_screen(screen_x: float, screen_y: float) -> void:
+	"""Convert screen mouse position to eye target direction (-1..+1)."""
+	var win_pos := DisplayServer.window_get_position()
+	var win_size := DisplayServer.window_get_size()
+	# Tama's eye center on screen (approximate: center-top of Godot window)
+	var eye_sx: float = float(win_pos.x) + float(win_size.x) * 0.5
+	var eye_sy: float = float(win_pos.y) + float(win_size.y) * 0.35
+	var dx: float = screen_x - eye_sx
+	var dy: float = screen_y - eye_sy
+	var screen_w: float = float(DisplayServer.screen_get_size().x)
+	var ref: float = screen_w * 0.4
+	_eye_target_h = clampf(dx / ref, -1.0, 1.0)
+	_eye_target_v = clampf(dy / ref, -1.0, 1.0)
+
+func _set_eye_look(h: float, v: float) -> void:
+	"""Public API: set eye direction. h: -1=left +1=right, v: -1=up +1=down."""
+	_eye_target_h = clampf(h, -1.0, 1.0)
+	_eye_target_v = clampf(v, -1.0, 1.0)
+	_eye_follow_active = true
+
+func _update_eye_follow(delta: float) -> void:
+	"""Smooth eye movement via blend shapes."""
+	if _body_mesh == null:
+		return
+	if _eye_follow_active:
+		# Smooth interpolation toward target (no saccade snapping)
+		var t: float = clampf(8.0 * delta, 0.0, 1.0)
+		_eye_follow_h = lerpf(_eye_follow_h, _eye_target_h, t)
+		_eye_follow_v = lerpf(_eye_follow_v, _eye_target_v, t)
+	else:
+		var t: float = clampf(EYE_RETURN_SPEED * delta, 0.0, 1.0)
+		_eye_follow_h = lerpf(_eye_follow_h, 0.0, t)
+		_eye_follow_v = lerpf(_eye_follow_v, 0.0, t)
+	# Compensate for head gaze: reduce eye movement as head turns
+	var head_comp: float = 1.0 - (_gaze_blend * 0.5)
+	var h: float = _eye_follow_h * head_comp
+	var v: float = _eye_follow_v * head_comp
+	# Horizontal: swapped because Tama faces the user (mirrored)
+	if _bs_look_left >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_left, clampf(h, 0.0, 1.0))
+	if _bs_look_right >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_right, clampf(-h, 0.0, 1.0))
+	if _bs_look_up >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_up, clampf(-v, 0.0, 1.0))
+	if _bs_look_down >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_down, clampf(v, 0.0, 1.0))
 
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
@@ -433,12 +543,13 @@ func _handle_message(raw: String) -> void:
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
-			print("💬 Mode conversation — Tama est déjà sur le mur")
-			# She stays on wall until speech starts (VISEME triggers OffTheWall)
+			_convo_engagement = 0  # Reset engagement counter
+			print("💬 Mode conversation — Tama reste sur le mur")
 		return
 	elif command == "END_CONVERSATION":
 		if conversation_active:
 			conversation_active = false
+			set_gaze(GazeTarget.NEUTRAL, 2.0)  # Stop looking at user
 			print("💬 Fin de conversation — Tama retourne au mur")
 			if phase == Phase.ACTIVE:
 				_play_reverse("OffThewall")
@@ -477,14 +588,17 @@ func _handle_message(raw: String) -> void:
 			settings_panel.update_key_valid(valid)
 		return
 	elif command == "USER_SPEAKING":
-		# Instant local reaction — Tama acknowledges user before Gemini responds
+		# Stage 1: Subtle acknowledgment — Tama glances at user, stays on wall
 		if conversation_active:
-			# If still on wall, get off first
-			if phase == Phase.ON_WALL:
+			_convo_engagement += 1
+			print("👀 User speaking — engagement #%d" % _convo_engagement)
+			# Stage 3: Enough exchanges → get off the wall
+			if _convo_engagement >= CONVO_ENGAGE_THRESHOLD and phase == Phase.ON_WALL:
 				_play("OffThewall", false)
 				phase = Phase.TRANSITION_OFF
-				print("🧑 OffThewall: user parle, Tama se lève")
-			_on_user_speaking_ack()
+				print("🧑 OffThewall: conversation engagée (#%d échanges)" % _convo_engagement)
+			else:
+				_on_user_speaking_ack()
 		return
 	elif command == "GAZE_AT":
 		# Python tells Tama where to look
@@ -557,20 +671,20 @@ func _handle_message(raw: String) -> void:
 		var mouth_slot = VISEME_MAP.get(shape, "M0")
 		# Track Tama speech
 		if shape != "REST":
-			# If on wall and speech starts → transition off the wall
-			if conversation_active and phase == Phase.ON_WALL:
-				_play("OffThewall", false)
-				phase = Phase.TRANSITION_OFF
-				print("🧑 OffThewall: Tama se lève pour parler")
+			# Stage 2: Confirmed contact — Tama looks at user fully (head turn)
 			if not _is_speaking and conversation_active:
-				set_gaze(GazeTarget.USER, 5.0)  # Look at user while talking
+				set_gaze(GazeTarget.USER, 5.0)  # Full head turn toward user
+				_ack_gaze_timer = 0.0  # Cancel ack timer — stay looking while talking
 		if shape == "REST":
 			_is_speaking = false
 			# Return to mood-based mouth expression
 			_set_mouth(_current_mouth_slot)
 			_set_jaw_open(0.0)
 			if conversation_active:
-				set_gaze(GazeTarget.NEUTRAL, 2.0)  # Relax gaze after speaking
+				# In conversation: return gaze to book after a short pause
+				_ack_gaze_timer = 2.0  # Look at user 2s more, then back to book
+			else:
+				set_gaze(GazeTarget.NEUTRAL, 2.0)
 		else:
 			_is_speaking = true
 			# Amplitude-based mouth selection for AH and OH
@@ -658,13 +772,13 @@ func _update_suspicion_anim() -> void:
 				_play("OffThewall", false)
 				phase = Phase.TRANSITION_OFF
 			elif phase == Phase.ACTIVE:
-				_play("Suspicious", true)
+				_play("Suspicious", false)
 		2: # En colère
 			if phase == Phase.ON_WALL:
 				_play("OffThewall", false)
 				phase = Phase.TRANSITION_OFF
 			elif phase == Phase.ACTIVE:
-				_play("Angry", true)
+				_play("Angry", false)
 		3: # Strike !
 			if phase == Phase.ON_WALL:
 				_play("OffThewall", false)
@@ -683,10 +797,10 @@ func _on_animation_finished(_anim_name: StringName) -> void:
 				_play("Strike_Base", false)
 				phase = Phase.STRIKING
 			elif tier >= 2:
-				_play("Angry", true)
+				_play("Angry", false)
 				phase = Phase.ACTIVE
 			elif tier >= 1:
-				_play("Suspicious", true)
+				_play("Suspicious", false)
 				phase = Phase.ACTIVE
 			else:
 				# Conversation mode or suspicion dropped during transition
@@ -851,6 +965,11 @@ func _scan_for_materials(node: Node) -> void:
 		if mesh_inst.mesh and mesh_inst.mesh is ArrayMesh:
 			var arr_mesh: ArrayMesh = mesh_inst.mesh as ArrayMesh
 			var bs_count: int = arr_mesh.get_blend_shape_count()
+			if bs_count > 0:
+				var all_names: Array = []
+				for scan_i in range(bs_count):
+					all_names.append(arr_mesh.get_blend_shape_name(scan_i))
+				print("  🦴 ALL blend shapes (%d): %s" % [bs_count, str(all_names)])
 			for bs_i in range(bs_count):
 				var bs_name: String = arr_mesh.get_blend_shape_name(bs_i)
 				if bs_name == "BS_HideLeftEye":
@@ -882,6 +1001,23 @@ func _scan_for_materials(node: Node) -> void:
 					_bs_eyebrow_surprise = bs_i
 					_body_mesh = mesh_inst
 					print("  😲 BS_Eyebrow_suprise found (index %d)" % bs_i)
+				# Eye gaze blend shapes
+				elif bs_name == "BS_LookLeft":
+					_bs_look_left = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_LookLeft found (index %d)" % bs_i)
+				elif bs_name == "BS_LookRight":
+					_bs_look_right = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_LookRight found (index %d)" % bs_i)
+				elif bs_name == "BS_LookUp":
+					_bs_look_up = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_LookUp found (index %d)" % bs_i)
+				elif bs_name == "BS_LookDown":
+					_bs_look_down = bs_i
+					_body_mesh = mesh_inst
+					print("  👁️ BS_LookDown found (index %d)" % bs_i)
 	for child in node.get_children():
 		_scan_for_materials(child)
 
@@ -1054,18 +1190,39 @@ func _setup_ack_audio() -> void:
 	add_child(_ack_audio_player)
 
 func _on_user_speaking_ack() -> void:
-	# Skip if Tama is already speaking (Gemini response playing)
-	if _is_speaking:
-		return
-	# Play soft acknowledgment sound
-	if _ack_audio_player and _ack_audio_player.stream:
+	# Only block the ack SOUND when Tama is speaking (avoid audio clash)
+	# But ALWAYS set the gaze — user must see Tama react even during barge-in
+	if _ack_audio_player and _ack_audio_player.stream and not _is_speaking:
 		_ack_audio_player.play()
 	# Change eyes to curious/attentive (E0 = wide eyes)
 	_set_expression_slot("eyes", "E0")
-	_ack_eye_timer = 2.0  # Restore after 2 seconds
-	# Look at the user
-	set_gaze(GazeTarget.USER, 4.0)
-	print("\ud83d\udc40 Ack: Tama heard you!")
+	_ack_eye_timer = 2.5  # Restore eyes after 2.5 seconds
+	# Stage 1: Eyes look toward user via blend shapes
+	_set_eye_look(-0.5, -0.1)  # Look left + slightly up
+	# Stage 1b: Subtle head glance toward user (bone-based)
+	set_gaze_subtle(GazeTarget.USER, 5.0, 0.5)
+	_ack_gaze_timer = 2.5  # Return head to reading pose after 2.5s
+	print("👀 Ack: subtle glance → blend_target=%.2f" % _gaze_blend_target)
+
+func set_gaze_subtle(target: GazeTarget, speed: float = 3.0, max_blend: float = 0.4) -> void:
+	"""Like set_gaze but with limited blend — subtle glance instead of full head turn."""
+	if not _gaze_active:
+		return
+	_gaze_lerp_speed = speed
+	if target == GazeTarget.NEUTRAL:
+		_gaze_target_head = Quaternion.IDENTITY
+		_gaze_target_neck = Quaternion.IDENTITY
+		_gaze_blend_target = 0.0
+	else:
+		var head_pos = _get_head_world_pos()
+		var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
+		var target_point = head_pos + offset
+		_gaze_world_target = target_point
+		_look_at_world_point(target_point, speed)
+		# Override blend target to partial (subtle glance)
+		_gaze_blend_target = max_blend
+	# Immediate sync to modifier (don't wait for next _process)
+	_sync_gaze_to_modifier()
 
 # ─── Gaze System ────────────────────────────────────────
 func _setup_gaze() -> void:
@@ -1119,9 +1276,25 @@ func _setup_gaze() -> void:
 
 	_gaze_active = _head_bone_idx >= 0 and _camera != null
 	if _gaze_active:
-		print("\u2705 Gaze system ready (additive post-process)!")
+		print("\u2705 Gaze system ready (SkeletonModifier3D post-process)!")
+		# Create SkeletonModifier3D for post-animation bone modifications
+		_setup_gaze_modifier()
 	elif _camera == null:
 		print("\u26a0\ufe0f Gaze: Camera3D not found — gaze disabled")
+
+func _setup_gaze_modifier() -> void:
+	"""Create a SkeletonModifier3D child of Skeleton3D for gaze bone mods.
+	This runs AFTER AnimationPlayer — the official Godot 4.4+ solution."""
+	var GazeModScript = load("res://gaze_modifier.gd")
+	_gaze_modifier = GazeModScript.new()
+	_gaze_modifier.name = "GazeModifier"
+	_gaze_modifier.head_bone_idx = _head_bone_idx
+	_gaze_modifier.neck_bone_idx = _neck_bone_idx
+	# Attach debug viz callback
+	_gaze_modifier.debug_callback = Callable(self, "_update_debug_viz")
+	# Must be child of Skeleton3D for SkeletonModifier3D to work
+	_skeleton.add_child(_gaze_modifier)
+	print("✅ GazeModifier attached to Skeleton3D (post-animation bone mods)")
 
 func _find_skeleton(node: Node) -> Skeleton3D:
 	if node is Skeleton3D:
@@ -1144,7 +1317,7 @@ const GAZE_PITCH_OFFSET_DEG: float = -20.0
 # Preset targets → 3D world offsets from head (X=right, Y=up, Z=toward camera)
 # These are relative to the head bone position
 var GAZE_PRESET_OFFSETS = {
-	GazeTarget.USER: Vector3(0, 0.1, 2.0),            # Straight at camera, slightly up
+	GazeTarget.USER: Vector3(0, 1.5, 2.0),            # Up toward user (4th wall — head is down in Idle_wall)
 	GazeTarget.SCREEN_CENTER: Vector3(-1.5, 0, 2.0),   # Left toward screen center
 	GazeTarget.SCREEN_TOP: Vector3(-1.5, 0.8, 2.0),    # Left + up
 	GazeTarget.SCREEN_BOTTOM: Vector3(-1.5, -0.5, 2.0),# Left + down
@@ -1168,6 +1341,8 @@ func set_gaze(target: GazeTarget, speed: float = 5.0) -> void:
 		var target_point = head_pos + offset
 		_gaze_world_target = target_point
 		_look_at_world_point(target_point, speed)
+	# Immediate sync to modifier (don't wait for next _process)
+	_sync_gaze_to_modifier()
 
 # ─── Screen → 3D World Conversion (Orthographic Camera) ──────
 func _screen_to_world(screen_x: float, screen_y: float) -> Vector3:
@@ -1304,8 +1479,19 @@ func _setup_gaze_debug() -> void:
 	_debug_depth_node.visible = false
 
 func _update_debug_viz(delta: float) -> void:
-	"""Update debug sphere + lines + console prints."""
-	if not _debug_gaze_mouse or _debug_sphere == null:
+	"""Update debug sphere + lines whenever gaze is active (not just F3)."""
+	if _debug_sphere == null:
+		return
+
+	# Auto-show/hide debug viz based on gaze activity
+	var show_viz: bool = _gaze_blend > 0.01 or _debug_gaze_mouse
+	if _debug_sphere:
+		_debug_sphere.visible = show_viz
+	if _debug_line_node:
+		_debug_line_node.visible = show_viz
+	if _debug_depth_node:
+		_debug_depth_node.visible = show_viz
+	if not show_viz:
 		return
 
 	var head_pos = _get_head_world_pos()
@@ -1347,53 +1533,27 @@ func _update_debug_viz(delta: float) -> void:
 			z_dist, z_label
 		])
 
-func _update_gaze(delta: float) -> void:
-	"""Gaze system — blends between animation's base rotation and gaze target."""
-	if not _gaze_active or _skeleton == null:
+# _post_animation_update() removed — SkeletonModifier3D handles this now.
+# See gaze_modifier.gd → _process_modification_with_delta()
+
+func _sync_gaze_to_modifier() -> void:
+	"""Push gaze targets to the SkeletonModifier3D immediately.
+	Called from set_gaze(), set_gaze_subtle(), and _process() so the modifier
+	sees updated targets BEFORE it runs (modifier processes after AnimationPlayer)."""
+	if not _gaze_active or _gaze_modifier == null:
 		return
 
-	# 0. Capture the animation's natural bone rotation ONCE (before gaze touches it)
-	#    This is the "base" that blend=0 returns to (not IDENTITY/bind-pose).
-	if not _gaze_base_captured:
-		if _head_bone_idx >= 0:
-			_head_base_rot = _skeleton.get_bone_pose_rotation(_head_bone_idx)
-		if _neck_bone_idx >= 0:
-			_neck_base_rot = _skeleton.get_bone_pose_rotation(_neck_bone_idx)
-		_gaze_base_captured = true
-		print("\ud83d\udc40 Gaze: captured animation base rotation (head=%s)" % str(_head_base_rot))
+	# Push gaze state → modifier
+	_gaze_modifier.gaze_active = _gaze_active
+	_gaze_modifier.gaze_blend_target = _gaze_blend_target
+	_gaze_modifier.gaze_target_head = _gaze_target_head
+	_gaze_modifier.gaze_target_neck = _gaze_target_neck
+	_gaze_modifier.gaze_lerp_speed = _gaze_lerp_speed
 
-	# 1. Smooth blend weight (fade in/out)
-	var blend_t: float = clampf(GAZE_BLEND_SPEED * delta, 0.0, 1.0)
-	_gaze_blend = lerpf(_gaze_blend, _gaze_blend_target, blend_t)
-
-	# 2. Slerp toward target rotation
-	var slerp_t: float = clampf(_gaze_lerp_speed * delta, 0.0, 1.0)
-	_gaze_delta_head = _gaze_delta_head.slerp(_gaze_target_head, slerp_t).normalized()
-	_gaze_delta_neck = _gaze_delta_neck.slerp(_gaze_target_neck, slerp_t).normalized()
-
-	# 3. Update debug visualization
-	_update_debug_viz(delta)
-
-	# 4. When blend ≈ 0, restore bone to animation base and stop
-	if _gaze_blend < 0.005:
-		# Ensure bone is at animation base (not stuck at some intermediate state)
-		if _head_bone_idx >= 0:
-			_skeleton.set_bone_pose_rotation(_head_bone_idx, _head_base_rot)
-		if _neck_bone_idx >= 0:
-			_skeleton.set_bone_pose_rotation(_neck_bone_idx, _neck_base_rot)
-		return
-
-	# 5. Blend between base rotation and base+gaze.
-	#    base_rot → the animation's natural head position (no chin-up)
-	#    base_rot * gaze_delta → gaze applied on top of animation
-	if _head_bone_idx >= 0:
-		var target_rot: Quaternion = (_head_base_rot * _gaze_delta_head).normalized()
-		var final_rot: Quaternion = _head_base_rot.slerp(target_rot, _gaze_blend).normalized()
-		_skeleton.set_bone_pose_rotation(_head_bone_idx, final_rot)
-	if _neck_bone_idx >= 0:
-		var target_rot: Quaternion = (_neck_base_rot * _gaze_delta_neck).normalized()
-		var final_rot: Quaternion = _neck_base_rot.slerp(target_rot, _gaze_blend).normalized()
-		_skeleton.set_bone_pose_rotation(_neck_bone_idx, final_rot)
+	# Read back blend state from modifier for eye compensation and debug
+	_gaze_blend = _gaze_modifier.gaze_blend
+	_gaze_delta_head = _gaze_modifier.gaze_delta_head
+	_gaze_delta_neck = _gaze_modifier.gaze_delta_neck
 
 # ─── Spring Bones Module Setup ─────────────────────────────
 func _setup_spring_bones_module() -> void:
@@ -1404,6 +1564,10 @@ func _setup_spring_bones_module() -> void:
 	_spring_bones_node.name = "SpringBones"
 	add_child(_spring_bones_node)
 	_spring_bones_node.setup(_skeleton)
+	# Register with the gaze modifier for post-animation timing
+	if _gaze_modifier:
+		_gaze_modifier.spring_bones_node = _spring_bones_node
+		print("🌿 Spring bones registered with GazeModifier (post-anim timing)")
 
 
 # ─── UI Module Setup ───────────────────────────────────

@@ -1,0 +1,114 @@
+extends SkeletonModifier3D
+## Gaze Modifier — Post-Animation Bone Rotation
+##
+## SkeletonModifier3D processes AFTER the AnimationPlayer writes bones.
+## This is the official Godot 4.4+ solution for additive bone control
+## that doesn't get overwritten by animation playback.
+##
+## Usage: attach as child of Skeleton3D, then set gaze_* vars from main.gd.
+
+# ─── Gaze State (set by main.gd) ──────────────────────────
+var gaze_active: bool = false
+var gaze_blend: float = 0.0              # 0 = pure animation, 1 = full gaze
+var gaze_blend_target: float = 0.0       # Target blend weight
+var gaze_delta_head: Quaternion = Quaternion.IDENTITY   # Current smoothed rotation
+var gaze_delta_neck: Quaternion = Quaternion.IDENTITY
+var gaze_target_head: Quaternion = Quaternion.IDENTITY   # Target to slerp toward
+var gaze_target_neck: Quaternion = Quaternion.IDENTITY
+var gaze_lerp_speed: float = 5.0         # Slerp speed toward target
+
+# Bone indices (set during setup)
+var head_bone_idx: int = -1
+var neck_bone_idx: int = -1
+
+# Base rotation capture: the animation's natural pose (no gaze overlay)
+var _head_base_rot: Quaternion = Quaternion.IDENTITY
+var _neck_base_rot: Quaternion = Quaternion.IDENTITY
+var _base_captured: bool = false
+var _was_blending: bool = false  # For one-shot debug print
+
+# Constants
+const BLEND_SPEED: float = 4.0
+
+# ─── Spring Bones Reference ──────────────────────────────
+# If set, spring bones update() will be called after gaze (same post-anim timing)
+var spring_bones_node: Node = null
+
+# ─── Debug callback (optional, set by main.gd) ───────────
+var debug_callback: Callable = Callable()
+
+func _ready() -> void:
+	active = true
+	influence = 1.0
+
+func _process_modification_with_delta(delta: float) -> void:
+	"""Called by Skeleton3D AFTER AnimationPlayer has written bone poses.
+	This is the perfect time to apply additive gaze rotations."""
+	var skel: Skeleton3D = get_skeleton()
+	if skel == null:
+		return
+
+	# ─── Gaze System ──────────────────────────────────────
+	if gaze_active and head_bone_idx >= 0:
+		_update_gaze(skel, delta)
+
+	# ─── Spring Bones ─────────────────────────────────────
+	# Spring bones also need post-animation timing (they read animated poses)
+	if spring_bones_node and spring_bones_node.has_method("update"):
+		spring_bones_node.update(delta)
+
+	# ─── Debug Callback ──────────────────────────────────
+	if debug_callback.is_valid():
+		debug_callback.call(delta)
+
+
+func _update_gaze(skel: Skeleton3D, delta: float) -> void:
+	"""Additive gaze: blend between animation's base rotation and gaze target."""
+
+	# 0. Capture the animation's bone rotation when gaze ISN'T active.
+	#    Here in _process_modification_with_delta, the bones contain the
+	#    ANIMATION'S output (not our previous modification) — this is the
+	#    key advantage of SkeletonModifier3D!
+	#    We still only capture when blend ≈ 0 to avoid feedback loops from
+	#    the influence system.
+	if gaze_blend < 0.01:
+		if head_bone_idx >= 0:
+			_head_base_rot = skel.get_bone_pose_rotation(head_bone_idx)
+		if neck_bone_idx >= 0:
+			_neck_base_rot = skel.get_bone_pose_rotation(neck_bone_idx)
+		if not _base_captured:
+			_base_captured = true
+			print("👀 GazeModifier: base rotation captured (head=%s)" % str(_head_base_rot))
+
+	# 1. Smooth blend weight (fade in/out)
+	var blend_t: float = clampf(BLEND_SPEED * delta, 0.0, 1.0)
+	gaze_blend = lerpf(gaze_blend, gaze_blend_target, blend_t)
+
+	# 2. Slerp toward target rotation
+	var slerp_t: float = clampf(gaze_lerp_speed * delta, 0.0, 1.0)
+	gaze_delta_head = gaze_delta_head.slerp(gaze_target_head, slerp_t).normalized()
+	gaze_delta_neck = gaze_delta_neck.slerp(gaze_target_neck, slerp_t).normalized()
+
+	# 3. When blend ≈ 0, no need to modify bones — animation pose is already correct
+	if gaze_blend < 0.005:
+		if _was_blending:
+			_was_blending = false
+			print("👀 GazeModifier: blend faded out (gaze inactive)")
+		return
+
+	# One-shot print when gaze starts affecting bones
+	if not _was_blending:
+		_was_blending = true
+		print("👀 GazeModifier: blend ACTIVE! blend=%.3f target=%.3f delta_head=%s" % [gaze_blend, gaze_blend_target, str(gaze_delta_head)])
+
+	# 4. Blend between base rotation and base+gaze.
+	#    base_rot → the animation's natural head position (no chin-up)
+	#    base_rot * gaze_delta → gaze applied on top of animation
+	if head_bone_idx >= 0:
+		var target_rot: Quaternion = (_head_base_rot * gaze_delta_head).normalized()
+		var final_rot: Quaternion = _head_base_rot.slerp(target_rot, gaze_blend).normalized()
+		skel.set_bone_pose_rotation(head_bone_idx, final_rot)
+	if neck_bone_idx >= 0:
+		var target_rot: Quaternion = (_neck_base_rot * gaze_delta_neck).normalized()
+		var final_rot: Quaternion = _neck_base_rot.slerp(target_rot, gaze_blend).normalized()
+		skel.set_bone_pose_rotation(neck_bone_idx, final_rot)

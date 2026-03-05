@@ -308,7 +308,7 @@ TOOLS = [
                     properties={
                         "mood": types.Schema(
                             type="STRING",
-                            description="Your current mood: calm, curious, amused, proud, disappointed, sarcastic, annoyed, angry, furious"
+                            description="Your current mood: calm, curious, amused, proud, suspicious, surprised, disappointed, sarcastic, annoyed, angry, furious"
                         ),
                         "intensity": types.Schema(
                             type="STRING",
@@ -1187,7 +1187,15 @@ async def run_gemini_loop(pya):
                                                 # Only change body animation if Tama is speaking
                                                 # When muzzled (S<3, no audio), don't make her appear/disappear
                                                 if is_speaking:
-                                                    send_mood_to_godot(mood, intensity)
+                                                    # In conversation: only send body anim for engaging moods
+                                                    # Calm/positive moods stay on Idle_wall (face-only via TAMA_MOOD)
+                                                    _ENGAGING_MOODS = {"annoyed", "angry", "furious"}
+                                                    if state["current_mode"] == "conversation":
+                                                        if mood in _ENGAGING_MOODS or (mood == "suspicious" and intensity >= 0.6):
+                                                            send_mood_to_godot(mood, intensity)
+                                                        # else: facial expression only (already sent via TAMA_MOOD above)
+                                                    else:
+                                                        send_mood_to_godot(mood, intensity)
 
                                                 await session.send_tool_response(
                                                     function_responses=[
