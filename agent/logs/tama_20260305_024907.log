@@ -1,0 +1,117 @@
+============================================================
+🥷 FocusPals / Tama — Session Log
+Started: 2026-03-05 02:49:07
+Python: 3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]
+PID: 29568
+Log file: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260305_024907.log
+============================================================
+
+📝 Logging to: C:\Users\xewi6\Desktop\FocusPals\FocusPals\agent\logs\tama_20260305_024907.log
+🎮 Lancement de Tama 3D: C:\Users\xewi6\Desktop\FocusPals\FocusPals\godot\focuspals.exe
+🎤 Micro restauré depuis les préférences: [7] Microphone Array (Technologie I
+🖱️ [EdgeMonitor] Démarré — écran: 1920px, zone Y: 532-1032
+02:49:11 [INFO] server listening on [::1]:8080
+02:49:11 [INFO] server listening on 127.0.0.1:8080
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Mode Libre — Tama est là 🥷"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+02:49:11 [INFO] connection open
+📐 Fenêtre repositionnée: (1520, 532) — taille 400x500
+✅ Click-through + position OK (handle: 3413584)
+02:49:12 [INFO] HTTP Request: GET https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash "HTTP/1.1 200 OK"
+✅ API key valid (key: AIzaSyBR...)
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 1029) screen_w=1920
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "🚀 SESSION COMMENCÉE via Radial Menu !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connecting to Google WebSocket..."
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+==========================================
+  FocusPals — Tama Agent 🥷 (LIVE API) 📡
+  Dual-Monitor Pulse Vision + Audio Voice
+==========================================
+
+    ╔══════════════════════════════════╗
+    ║                                  ║
+    ║         ╭─────────────╮          ║
+    ║         │   ^     ^   │          ║
+    ║         │             │          ║
+    ║         │    ╰───╯    │          ║
+    ║         │             │          ║
+    ║         ╰─────────────╯          ║
+    ║                                  ║
+    ║    🟢 Tama is watching you.      ║
+    ║       Live API connected.        ║
+    ╚══════════════════════════════════╝
+
+  💬 "Connected! Dis-moi bonjour !"
+
+  Press Ctrl+C to stop.
+──────────────────────────────────────────
+🎤 Micro actif: index 7
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 858) screen_w=1920
+  🔄 Session resume handle activé
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:-0.1 — Développement sur Godot et Blender.
+  🎭 Mood: calm (0.2)
+🖱️ [EdgeMonitor] SHOW_RADIAL (1919, 869) screen_w=1920
+  🔍 S:0/10 | A:1.0 | Cat:SANTE | ΔS:-2.0 | C:1.00 | Mood:-0.1 — L'utilisateur est sur Godot Engine et Blender, des outils de développement actifs pour le projet FocusPals.
+
+👋 Tama: Fermeture propre...

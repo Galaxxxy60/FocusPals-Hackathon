@@ -27,6 +27,7 @@ enum Phase { HIDDEN, PEEKING, HELLO, ACTIVE, STRIKING, LEAVING }
 var phase: int = Phase.HIDDEN
 var intro_done: bool = false
 var conversation_active: bool = false  # True during casual chat (no deep work)
+var _on_wall: bool = false              # True when Tama is leaning on the wall (Idle_wall)
 var current_anim: String = ""
 var _anim_player: AnimationPlayer = null
 var _prev_suspicion_tier: int = -1
@@ -46,6 +47,12 @@ var _body_mesh: MeshInstance3D = null
 var _bs_hide_left_eye: int = -1
 var _bs_hide_right_eye: int = -1
 var _bs_mouth_open: int = -1
+
+# ─── Eyebrow Blend Shapes ─────────────────────────────
+var _bs_eyebrow_question: int = -1
+var _bs_eyebrow_sad: int = -1
+var _bs_eyebrow_angry: int = -1
+var _bs_eyebrow_surprise: int = -1
 
 # ─── Eye Follow (Blend Shapes: LookLeft/Right/Up/Down) ───
 var _bs_look_left: int = -1
@@ -124,6 +131,21 @@ const MOOD_MOUTH = {
 	"calm": "M4", "curious": "M0", "amused": "M4", "proud": "M4",
 	"suspicious": "M7", "disappointed": "M5", "sarcastic": "M6",
 	"annoyed": "M5", "angry": "M5", "furious": "M8",
+}
+
+# Mood → eyebrow blend shape mapping {blend_shape_name: intensity}
+# Only one eyebrow shape is active at a time (others reset to 0)
+const MOOD_EYEBROWS = {
+	"calm": {},
+	"curious": {"question": 0.7},
+	"amused": {},
+	"proud": {},
+	"suspicious": {"question": 1.0},
+	"disappointed": {"sad": 0.8},
+	"sarcastic": {"question": 0.5},
+	"annoyed": {"angry": 0.6},
+	"angry": {"angry": 0.8},
+	"furious": {"angry": 1.0},
 }
 
 var _current_eye_slot: String = "E0"
@@ -205,6 +227,52 @@ var _debug_depth_mesh: ImmediateMesh = null   # Cyan Z-depth line
 var _debug_depth_node: MeshInstance3D = null
 var _debug_print_timer: float = 0.0
 
+# ─── Spring Bones (Verlet virtual-tail simulation) ─────────
+var _spring_bones: Array = []    # Array of spring bone dictionaries
+var _spring_colliders: Array = []  # Sphere colliders to prevent body clipping
+var _debug_colliders: bool = false  # F5 toggle: show collision spheres
+var _debug_collider_meshes: Array = []  # MeshInstance3D nodes for debug viz
+var _debug_selected_collider: int = 0  # Which collider is selected for tuning
+
+# Collision spheres: [anchor_bone_name, local_offset, radius]
+# anchor_bone_name: bone the sphere follows
+# local_offset: offset from bone origin in bone-local space
+# radius: sphere radius in world units
+const SPRING_COLLIDER_CONFIGS = [
+	# Head sphere — tuned via F5 debug
+	["Jnt_C_Head", Vector3(0, -0.16, 0), 0.23],
+	# Upper torso — tuned via F5 debug
+	["Jnt_C_Spine2", Vector3(0, -0.03, 0.01), 0.21],
+]
+
+# Spring bone configs: [bone_name, stiffness, drag, gravity, max_X°, max_Y°, max_Z°]
+# stiffness: constant force pulling tail back toward rest direction (higher = stiffer)
+# drag: fraction of velocity lost per frame (0 = no damping, 1 = fully damped)
+# gravity: world-space downward force strength
+# max_X/Y/Z: per-axis rotation limits from rest (Euler degrees, matching Blender)
+#   Y = bone-axis twist (keep tight for hair), X/Z = swing freedom
+const SPRING_BONE_CONFIGS = [
+	# Front hair — Y locked (no twist), X/Z free swing
+	["Jnt_L_FrontHair", 1.2, 0.08, 0.5, 60.0, 4.0, 60.0],
+	["Jnt_R_FrontHair", 1.2, 0.08, 0.5, 60.0, 4.0, 60.0],
+	# Side hair — long locks, much less stiffness ("gel"), strong gravity so they hang naturally
+	["Jnt_L_SideHair", 0.3, 0.05, 1.2, 70.0, 4.0, 70.0],
+	["Jnt_L_SideHair2", 0.1, 0.04, 1.5, 70.0, 4.0, 70.0],
+	["Jnt_R_SideHair", 0.3, 0.05, 1.2, 70.0, 4.0, 70.0],
+	["Jnt_R_SideHair2", 0.1, 0.04, 1.5, 70.0, 4.0, 70.0],
+	# Back hair — similar to side hair but slightly stiffer
+	["Jnt_C_HairBack", 0.4, 0.05, 1.0, 60.0, 4.0, 60.0],
+	# Hoodie strings — heavier pendulum, more freedom all axes
+	["Jnt_L_Strings", 0.7, 0.07, 1.0, 50.0, 20.0, 50.0],
+	["Jnt_L_Strings2", 0.5, 0.06, 1.2, 55.0, 20.0, 55.0],
+	["Jnt_L_strings3", 0.4, 0.06, 1.4, 55.0, 20.0, 55.0],
+	["Jnt_L_strings4", 0.3, 0.05, 1.6, 60.0, 20.0, 60.0],
+	["Jnt_R_strings", 0.7, 0.07, 1.0, 50.0, 20.0, 50.0],
+	["Jnt_R_strings2", 0.5, 0.06, 1.2, 55.0, 20.0, 55.0],
+	["Jnt_R_strings3", 0.4, 0.06, 1.4, 55.0, 20.0, 55.0],
+	["Jnt_L_Shoulder4", 0.3, 0.05, 1.6, 60.0, 20.0, 60.0],  # Last bone in R string chain
+]
+
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
@@ -216,6 +284,7 @@ func _ready() -> void:
 	_setup_ack_audio()
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_gaze_debug")
+	call_deferred("_setup_spring_bones")
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _setup_radial_menu() -> void:
@@ -348,6 +417,58 @@ func _unhandled_input(event: InputEvent) -> void:
 			# Reset eyes to center
 			_eye_target_h = 0.0
 			_eye_target_v = 0.0
+	# F5 = debug collider spheres: show/hide collision volumes
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F5:
+		_debug_colliders = !_debug_colliders
+		if _debug_colliders:
+			print("🛡️ [DEBUG] Colliders ON — +/- = resize, Arrows = move offset, Tab = switch collider")
+			_show_status_indicator("🛡️ Colliders: ON (F5)", Color(0.3, 1.0, 0.5))
+			_create_debug_collider_meshes()
+		else:
+			print("🛡️ [DEBUG] Colliders OFF")
+			_hide_status_indicator()
+			_remove_debug_collider_meshes()
+
+	# Interactive collider tuning (only when F5 debug is active)
+	if _debug_colliders and event is InputEventKey and event.pressed:
+		var changed := false
+		var sel := _debug_selected_collider
+		if sel >= 0 and sel < _spring_colliders.size():
+			var col = _spring_colliders[sel]
+			match event.keycode:
+				KEY_EQUAL, KEY_KP_ADD:  # + key = bigger
+					col["radius"] += 0.01
+					changed = true
+				KEY_MINUS, KEY_KP_SUBTRACT:  # - key = smaller
+					col["radius"] = maxf(0.01, col["radius"] - 0.01)
+					changed = true
+				KEY_UP:  # Move offset up (Y+)
+					col["offset"].y += 0.01
+					changed = true
+				KEY_DOWN:  # Move offset down (Y-)
+					col["offset"].y -= 0.01
+					changed = true
+				KEY_RIGHT:  # Move offset forward (Z+)
+					col["offset"].z += 0.01
+					changed = true
+				KEY_LEFT:  # Move offset backward (Z-)
+					col["offset"].z -= 0.01
+					changed = true
+				KEY_TAB:  # Switch collider
+					_debug_selected_collider = (_debug_selected_collider + 1) % _spring_colliders.size()
+					var new_name = SPRING_COLLIDER_CONFIGS[_debug_selected_collider][0]
+					print("🛡️ Selected: [%d] %s" % [_debug_selected_collider, new_name])
+					_show_status_indicator("🛡️ [%s] r=%.3f" % [new_name, _spring_colliders[_debug_selected_collider]["radius"]], Color(0.3, 1.0, 0.5))
+			if changed:
+				# Update debug mesh size
+				_remove_debug_collider_meshes()
+				_create_debug_collider_meshes()
+				# Print all values so user can copy to code
+				var name = SPRING_COLLIDER_CONFIGS[sel][0]
+				var r = col["radius"]
+				var o = col["offset"]
+				print("🛡️ [%s] radius=%.3f offset=Vector3(%.3f, %.3f, %.3f)" % [name, r, o.x, o.y, o.z])
+				_show_status_indicator("🛡️ [%s] r=%.3f" % [name, r], Color(0.3, 1.0, 0.5))
 
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
@@ -482,7 +603,56 @@ func _process(delta: float) -> void:
 		_set_eye_target_from_screen(float(mouse_pos.x), float(mouse_pos.y))
 	_update_eye_follow(delta)
 
+	# Spring bones — secondary motion on hair & hoodie strings
+	_update_spring_bones(delta)
 
+	# Debug collider sphere positions (follow bones each frame)
+	if _debug_colliders:
+		_update_debug_collider_meshes()
+
+
+func _create_debug_collider_meshes() -> void:
+	"""Create translucent sphere meshes to visualize collision volumes."""
+	_remove_debug_collider_meshes()
+	for i in range(_spring_colliders.size()):
+		var col = _spring_colliders[i]
+		var sphere_mesh := SphereMesh.new()
+		sphere_mesh.radius = col["radius"]
+		sphere_mesh.height = col["radius"] * 2.0
+		sphere_mesh.radial_segments = 16
+		sphere_mesh.rings = 8
+
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.2, 1.0, 0.3, 0.25)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		sphere_mesh.material = mat
+
+		var node := MeshInstance3D.new()
+		node.mesh = sphere_mesh
+		node.name = "DebugCollider_%d" % i
+		add_child(node)
+		_debug_collider_meshes.append(node)
+	_update_debug_collider_meshes()
+
+func _remove_debug_collider_meshes() -> void:
+	"""Remove all debug collider sphere meshes."""
+	for node in _debug_collider_meshes:
+		if is_instance_valid(node):
+			node.queue_free()
+	_debug_collider_meshes.clear()
+
+func _update_debug_collider_meshes() -> void:
+	"""Move debug spheres to match current collider bone positions."""
+	if _skeleton == null:
+		return
+	for i in range(mini(_spring_colliders.size(), _debug_collider_meshes.size())):
+		var col = _spring_colliders[i]
+		var node = _debug_collider_meshes[i]
+		var col_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(col["bone_idx"])
+		var center: Vector3 = col_global.origin + col_global.basis * col["offset"]
+		node.global_position = center
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if data == null:
@@ -506,6 +676,7 @@ func _handle_message(raw: String) -> void:
 		if not session_active and not conversation_active:
 			conversation_active = true
 			print("💬 Mode conversation — Tama arrive !")
+			_on_wall = true  # Will be on the wall until speech starts
 			_play("Peek", false)
 			phase = Phase.PEEKING
 		return
@@ -552,6 +723,12 @@ func _handle_message(raw: String) -> void:
 	elif command == "USER_SPEAKING":
 		# Instant local reaction — Tama acknowledges user before Gemini responds
 		if conversation_active:
+			# If still on wall, get off first
+			if _on_wall and phase == Phase.HELLO:
+				_on_wall = false
+				_play("OffThewall", false)
+				phase = Phase.ACTIVE
+				print("🧑 OffThewall: user parle, Tama se lève")
 			_on_user_speaking_ack()
 		return
 	elif command == "GAZE_AT":
@@ -616,6 +793,7 @@ func _handle_message(raw: String) -> void:
 		_set_eyes(eye_key)
 		if not _is_speaking:  # Don't override lip sync
 			_set_mouth(mouth_key)
+		_set_eyebrows(mood_name)
 		return
 	elif command == "VISEME":
 		var shape = data.get("shape", "REST")
@@ -623,6 +801,12 @@ func _handle_message(raw: String) -> void:
 		var mouth_slot = VISEME_MAP.get(shape, "M0")
 		# Track Tama speech
 		if shape != "REST":
+			# If on wall and speech starts → transition off the wall
+			if conversation_active and _on_wall and phase == Phase.HELLO:
+				_on_wall = false
+				_play("OffThewall", false)
+				phase = Phase.ACTIVE
+				print("🧑 OffThewall: Tama se lève pour parler")
 			if not _is_speaking and conversation_active:
 				set_gaze(GazeTarget.USER, 5.0)  # Look at user while talking
 		if shape == "REST":
@@ -746,6 +930,7 @@ func _on_animation_finished(_anim_name: StringName) -> void:
 		Phase.PEEKING:
 			if conversation_active:
 				# Conversation: Peek terminé → Idle_wall loop (elle attend la discussion)
+				_on_wall = true
 				_play("Idle_wall", true)
 				phase = Phase.HELLO
 			elif not intro_done:
@@ -778,6 +963,11 @@ func _on_animation_finished(_anim_name: StringName) -> void:
 				print("👋 Intro terminée — Tama se cache.")
 			else:
 				print("👋 Tama se cache.")
+		Phase.ACTIVE:
+			# OffThewall just finished → chain into Idle loop
+			if conversation_active and not _on_wall:
+				_play("Idle", true)
+				print("🧑 Idle: conversation en cours")
 		Phase.STRIKING:
 			pass  # Freeze sur la dernière frame — elle reste figée menaçante
 
@@ -928,6 +1118,23 @@ func _scan_for_materials(node: Node) -> void:
 					_bs_look_down = bs_i
 					_body_mesh = mesh_inst
 					print("  👁️ BS_LookDown found (index %d)" % bs_i)
+				# Eyebrow blend shapes
+				elif bs_name == "BS_Eyebrow_Question":
+					_bs_eyebrow_question = bs_i
+					_body_mesh = mesh_inst
+					print("  🤨 BS_Eyebrow_Question found (index %d)" % bs_i)
+				elif bs_name == "BS_Eyebrow_Sad":
+					_bs_eyebrow_sad = bs_i
+					_body_mesh = mesh_inst
+					print("  😢 BS_Eyebrow_Sad found (index %d)" % bs_i)
+				elif bs_name == "BS_Eyebrow_Angry":
+					_bs_eyebrow_angry = bs_i
+					_body_mesh = mesh_inst
+					print("  😠 BS_Eyebrow_Angry found (index %d)" % bs_i)
+				elif bs_name == "BS_Eyebrow_suprise":
+					_bs_eyebrow_surprise = bs_i
+					_body_mesh = mesh_inst
+					print("  😲 BS_Eyebrow_suprise found (index %d)" % bs_i)
 	for child in node.get_children():
 		_scan_for_materials(child)
 
@@ -937,9 +1144,23 @@ func _set_expression_slot(slot_type: String, slot: String) -> void:
 	elif slot_type == "mouth":
 		_set_mouth(slot)
 
+# How much to hide pupils (3D spheres) per eye slot. 0.0 = fully visible, 1.0 = fully hidden.
+# Slots not listed default to 0.0 (visible).
+const PUPIL_HIDE_AMOUNT = {
+	"E1": 0.8,   # Plissés fort — mostly hidden
+	"E2": 1.0,   # Fermés — fully hidden
+	"E4": 1.0,   # Happy ^^^ — fully hidden
+	"E6": 1.0,   # Semi-closed (blink) — fully hidden
+	"E7": 0.5,   # Plissés léger — half hidden
+	# E0, E3, E5, E8: pupils fully visible (not listed = 0.0)
+}
+
 func _set_eyes(slot: String) -> void:
 	_current_eye_slot = slot
 	_apply_eye_offset(slot)
+	# Set pupil visibility based on how much the expression covers them
+	var hide_val: float = PUPIL_HIDE_AMOUNT.get(slot, 0.0)
+	_set_pupil_hide(hide_val)
 
 # Apply UV offset without changing _current_eye_slot (used by blink)
 func _apply_eye_offset(slot: String) -> void:
@@ -960,11 +1181,52 @@ func _set_jaw_open(amount: float) -> void:
 	if _body_mesh and _bs_mouth_open >= 0:
 		_body_mesh.set_blend_shape_value(_bs_mouth_open, clampf(amount, 0.0, 1.0))
 
+func _set_eyebrows(mood: String) -> void:
+	"""Set eyebrow blend shapes based on mood. Resets all then applies the active one."""
+	if _body_mesh == null:
+		return
+	# Reset all eyebrows to 0
+	if _bs_eyebrow_question >= 0:
+		_body_mesh.set_blend_shape_value(_bs_eyebrow_question, 0.0)
+	if _bs_eyebrow_sad >= 0:
+		_body_mesh.set_blend_shape_value(_bs_eyebrow_sad, 0.0)
+	if _bs_eyebrow_angry >= 0:
+		_body_mesh.set_blend_shape_value(_bs_eyebrow_angry, 0.0)
+	if _bs_eyebrow_surprise >= 0:
+		_body_mesh.set_blend_shape_value(_bs_eyebrow_surprise, 0.0)
+	# Apply mood's eyebrow
+	var eyebrow_map = MOOD_EYEBROWS.get(mood, {})
+	for key in eyebrow_map:
+		var val: float = eyebrow_map[key]
+		match key:
+			"question":
+				if _bs_eyebrow_question >= 0:
+					_body_mesh.set_blend_shape_value(_bs_eyebrow_question, val)
+			"sad":
+				if _bs_eyebrow_sad >= 0:
+					_body_mesh.set_blend_shape_value(_bs_eyebrow_sad, val)
+			"angry":
+				if _bs_eyebrow_angry >= 0:
+					_body_mesh.set_blend_shape_value(_bs_eyebrow_angry, val)
+			"surprise":
+				if _bs_eyebrow_surprise >= 0:
+					_body_mesh.set_blend_shape_value(_bs_eyebrow_surprise, val)
+
 # ─── Blink System ────────────────────────────────────────
 func _set_pupils_visible(visible: bool) -> void:
 	if _body_mesh == null:
 		return
 	var val: float = 0.0 if visible else 1.0
+	if _bs_hide_left_eye >= 0:
+		_body_mesh.set_blend_shape_value(_bs_hide_left_eye, val)
+	if _bs_hide_right_eye >= 0:
+		_body_mesh.set_blend_shape_value(_bs_hide_right_eye, val)
+
+func _set_pupil_hide(amount: float) -> void:
+	"""Set pupil hide amount: 0.0 = fully visible, 1.0 = fully hidden."""
+	if _body_mesh == null:
+		return
+	var val: float = clampf(amount, 0.0, 1.0)
 	if _bs_hide_left_eye >= 0:
 		_body_mesh.set_blend_shape_value(_bs_hide_left_eye, val)
 	if _bs_hide_right_eye >= 0:
@@ -1456,6 +1718,209 @@ func _update_gaze(delta: float) -> void:
 		var target_rot: Quaternion = (_neck_base_rot * _gaze_delta_neck).normalized()
 		var final_rot: Quaternion = _neck_base_rot.slerp(target_rot, _gaze_blend).normalized()
 		_skeleton.set_bone_pose_rotation(_neck_bone_idx, final_rot)
+
+# ─── Spring Bones System (Verlet Virtual-Tail) ──────────
+func _setup_spring_bones() -> void:
+	"""Configure spring bones using Verlet virtual-tail simulation."""
+	if _skeleton == null:
+		return
+
+	_spring_bones.clear()
+	for config in SPRING_BONE_CONFIGS:
+		var bone_name: String = config[0]
+		var idx: int = _skeleton.find_bone(bone_name)
+		if idx < 0:
+			print("⚠️ Spring bone '%s' not found" % bone_name)
+			continue
+
+		var parent_idx: int = _skeleton.get_bone_parent(idx)
+		var base_rot: Quaternion = _skeleton.get_bone_pose_rotation(idx)
+
+		# Get world transforms
+		var bone_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(idx)
+
+		# Determine bone length and local axis by finding child bone
+		var bone_length: float = 0.0
+		var bone_local_dir: Vector3 = Vector3.ZERO
+
+		for c in range(_skeleton.get_bone_count()):
+			if _skeleton.get_bone_parent(c) == idx:
+				var child_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(c)
+				var world_dir: Vector3 = child_global.origin - bone_global.origin
+				var length: float = world_dir.length()
+				if length > 0.001:
+					bone_length = length
+					bone_local_dir = (bone_global.basis.inverse() * world_dir.normalized()).normalized()
+				break
+
+		# If no child (leaf bone), assume the bone points along its local +Y axis.
+		# In Godot 4 with Blender glTF imports, bones always point along +Y.
+		if bone_length <= 0.001:
+			bone_length = 0.06  # 6cm default for leaf tip
+			bone_local_dir = Vector3.UP  # +Y axis
+
+		# Initialize tail at rest position (bone tip in world space)
+		var tail_pos: Vector3 = bone_global.origin + bone_global.basis * bone_local_dir * bone_length
+
+		# Per-axis limits in radians (matching Blender Euler constraints)
+		var limit_x: float = deg_to_rad(config[4]) if config.size() > 4 else deg_to_rad(45.0)
+		var limit_y: float = deg_to_rad(config[5]) if config.size() > 5 else deg_to_rad(45.0)
+		var limit_z: float = deg_to_rad(config[6]) if config.size() > 6 else deg_to_rad(45.0)
+
+		var sb = {
+			"idx": idx,
+			"name": bone_name,
+			"stiffness": config[1],
+			"drag": config[2],
+			"gravity": config[3],
+			"limit_x": limit_x,
+			"limit_y": limit_y,
+			"limit_z": limit_z,
+			"base_rot": base_rot,
+			"bone_length": bone_length,
+			"bone_local_dir": bone_local_dir,
+			"tail_pos": tail_pos,
+			"prev_tail_pos": tail_pos,
+		}
+		_spring_bones.append(sb)
+
+	if _spring_bones.size() > 0:
+		print("🌿 Spring bones: %d configured (Verlet virtual-tail)" % _spring_bones.size())
+
+	# Setup collision spheres
+	_spring_colliders.clear()
+	for col_cfg in SPRING_COLLIDER_CONFIGS:
+		var col_bone_name: String = col_cfg[0]
+		var col_bone_idx: int = _skeleton.find_bone(col_bone_name)
+		if col_bone_idx < 0:
+			print("⚠️ Collider bone '%s' not found" % col_bone_name)
+			continue
+		_spring_colliders.append({
+			"bone_idx": col_bone_idx,
+			"offset": col_cfg[1],
+			"radius": col_cfg[2],
+		})
+	if _spring_colliders.size() > 0:
+		print("🛡️ Spring colliders: %d spheres" % _spring_colliders.size())
+
+func _update_spring_bones(delta: float) -> void:
+	"""Simulate virtual tail points with Verlet integration, then orient bones toward them."""
+	if _skeleton == null or _spring_bones.is_empty():
+		return
+
+	var dt: float = minf(delta, 0.033)
+
+	for sb in _spring_bones:
+		var idx: int = sb["idx"]
+		var parent_idx: int = _skeleton.get_bone_parent(idx)
+		var base_rot: Quaternion = sb["base_rot"]
+		var bone_length: float = sb["bone_length"]
+		var bone_local_dir: Vector3 = sb["bone_local_dir"]
+
+		# Parent transform (already includes spring mods for chain parents)
+		var parent_global: Transform3D
+		if parent_idx >= 0:
+			parent_global = _skeleton.global_transform * _skeleton.get_bone_global_pose(parent_idx)
+		else:
+			parent_global = _skeleton.global_transform
+
+		# Bone HEAD = pivot point in world space
+		var bone_head: Vector3 = (_skeleton.global_transform * _skeleton.get_bone_global_pose(idx)).origin
+
+		# Rest tail = where the tip WOULD be in rest pose
+		# rest direction in world = parent_basis * base_rot_basis * bone_local_dir
+		var rest_dir_world: Vector3 = (parent_global.basis * Basis(base_rot) * bone_local_dir).normalized()
+		var rest_tail: Vector3 = bone_head + rest_dir_world * bone_length
+
+		# Current and previous simulated tail positions
+		var tail: Vector3 = sb["tail_pos"]
+		var prev_tail: Vector3 = sb["prev_tail_pos"]
+
+		# ─── Verlet Integration ───
+		# 1) Inertia: velocity from previous frame, with drag
+		var inertia: Vector3 = (tail - prev_tail) * (1.0 - sb["drag"])
+
+		# 2) Stiffness: constant force pulling toward rest direction
+		#    (VRM-style: force in rest direction, not toward rest position)
+		var stiffness_force: Vector3 = rest_dir_world * sb["stiffness"] * dt
+
+		# 3) Gravity: world-space downward pull
+		var gravity_force: Vector3 = Vector3.DOWN * sb["gravity"] * dt
+
+		# Step the tail position
+		var new_tail: Vector3 = tail + inertia + stiffness_force + gravity_force
+
+		# ─── Distance Constraint ───
+		# Tail must stay exactly bone_length from bone_head (rigid bone)
+		var to_tail: Vector3 = new_tail - bone_head
+		if to_tail.length_squared() > 0.00001:
+			new_tail = bone_head + to_tail.normalized() * bone_length
+		else:
+			new_tail = rest_tail  # Fallback to rest if degenerate
+
+		# ─── Sphere Collision ───
+		# Push tail out of body collision spheres
+		for col in _spring_colliders:
+			var col_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(col["bone_idx"])
+			var sphere_center: Vector3 = col_global.origin + col_global.basis * col["offset"]
+			var sphere_radius: float = col["radius"]
+			var diff: Vector3 = new_tail - sphere_center
+			var dist: float = diff.length()
+			if dist < sphere_radius and dist > 0.0001:
+				# Push tail to sphere surface
+				new_tail = sphere_center + diff.normalized() * sphere_radius
+				# Re-apply distance constraint (keep bone length from head)
+				var to_tail2: Vector3 = new_tail - bone_head
+				if to_tail2.length_squared() > 0.00001:
+					new_tail = bone_head + to_tail2.normalized() * bone_length
+
+		# ─── Per-Axis Euler Constraint ───
+		# Decompose the swing from rest→current into Euler angles,
+		# clamp each axis independently, rebuild.
+		var curr_dir: Vector3 = (new_tail - bone_head).normalized()
+		var parent_inv_basis: Basis = parent_global.basis.inverse()
+		var local_rest: Vector3 = (parent_inv_basis * rest_dir_world).normalized()
+		var local_curr: Vector3 = (parent_inv_basis * curr_dir).normalized()
+
+		# Build swing quaternion: rest_dir → curr_dir in parent local space
+		var swing_axis: Vector3 = local_rest.cross(local_curr)
+		var swing_quat: Quaternion = Quaternion.IDENTITY
+		if swing_axis.length_squared() > 0.000001:
+			swing_axis = swing_axis.normalized()
+			var swing_angle: float = local_rest.angle_to(local_curr)
+			swing_quat = Quaternion(swing_axis, swing_angle)
+
+		# Decompose to Euler and clamp each axis
+		var euler: Vector3 = swing_quat.get_euler()
+		var clamped: bool = false
+		var ex: float = clampf(euler.x, -sb["limit_x"], sb["limit_x"])
+		var ey: float = clampf(euler.y, -sb["limit_y"], sb["limit_y"])
+		var ez: float = clampf(euler.z, -sb["limit_z"], sb["limit_z"])
+		if ex != euler.x or ey != euler.y or ez != euler.z:
+			clamped = true
+			var clamped_quat: Quaternion = Quaternion.from_euler(Vector3(ex, ey, ez))
+			var clamped_dir_local: Vector3 = (clamped_quat * local_rest).normalized()
+			var clamped_dir_world: Vector3 = (parent_global.basis * clamped_dir_local).normalized()
+			new_tail = bone_head + clamped_dir_world * bone_length
+
+		# Store for next frame
+		sb["prev_tail_pos"] = tail
+		sb["tail_pos"] = new_tail
+
+		# ─── Compute Bone Rotation ───
+		# Reuse local directions (updated if clamping occurred)
+		var final_dir_world: Vector3 = (new_tail - bone_head).normalized()
+		var local_final_dir: Vector3 = (parent_inv_basis * final_dir_world).normalized()
+
+		# Rotation from rest to final direction
+		var rot_axis: Vector3 = local_rest.cross(local_final_dir)
+		if rot_axis.length_squared() > 0.000001:
+			rot_axis = rot_axis.normalized()
+			var rot_angle: float = local_rest.angle_to(local_final_dir)
+			var swing: Quaternion = Quaternion(rot_axis, rot_angle)
+			_skeleton.set_bone_pose_rotation(idx, (swing * base_rot).normalized())
+		else:
+			_skeleton.set_bone_pose_rotation(idx, base_rot)
 
 # ─── Tama Status Indicator ──────────────────────────────
 func _setup_status_indicator() -> void:
