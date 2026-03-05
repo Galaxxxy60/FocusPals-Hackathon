@@ -54,21 +54,7 @@ var _bs_eyebrow_sad: int = -1
 var _bs_eyebrow_angry: int = -1
 var _bs_eyebrow_surprise: int = -1
 
-# ─── Eye Follow (Blend Shapes: LookLeft/Right/Up/Down) ───
-var _bs_look_left: int = -1
-var _bs_look_right: int = -1
-var _bs_look_up: int = -1
-var _bs_look_down: int = -1
-var _eye_follow_active: bool = false   # Master switch (set by Python or F4 debug)
-var _debug_eye_follow: bool = false    # F4 debug toggle (mouse follow)
-var _eye_follow_h: float = 0.0        # Current horizontal: -1=left, 0=center, +1=right
-var _eye_follow_v: float = 0.0        # Current vertical: -1=down, 0=center, +1=up
-var _eye_target_h: float = 0.0        # Target horizontal
-var _eye_target_v: float = 0.0        # Target vertical
-var _eye_saccade_timer: float = 0.0   # Timer between saccades
-const EYE_SACCADE_INTERVAL: float = 0.08  # Snap every ~80ms (like real saccades)
-const EYE_SACCADE_THRESHOLD: float = 0.03 # Dead zone: ignore tiny changes
-const EYE_RETURN_SPEED: float = 8.0       # Speed to return to center when deactivated
+
 
 # Jaw open amount per viseme (base values, modulated by amplitude)
 const JAW_OPEN_MAP = {
@@ -168,17 +154,10 @@ const RadialMenuScript = preload("res://settings_radial.gd")
 var settings_panel = null
 const SettingsPanelScript = preload("res://settings_panel.gd")
 
-# ─── Session Progress Arc ─────────────────────────────
-var _arc_canvas: CanvasLayer
-var _arc_control: Control
 
-# ─── Tama Status Indicator (connection state) ────────
-var _status_label: Label
-var _status_canvas: CanvasLayer
-var _status_visible: bool = false
-var _status_dots: int = 0
-var _status_timer: float = 0.0
-var _gemini_status: String = "disconnected"  # "disconnected", "connecting", "reconnecting", "connected"
+# ─── UI Module (separate script) ───────────────────────
+var _tama_ui: Node = null  # tama_ui.gd instance
+var _gemini_status: String = "disconnected"
 
 # ─── Headphones (visible when Tama can't hear/respond) ───
 var _headphones_node: Node3D = null
@@ -227,64 +206,20 @@ var _debug_depth_mesh: ImmediateMesh = null   # Cyan Z-depth line
 var _debug_depth_node: MeshInstance3D = null
 var _debug_print_timer: float = 0.0
 
-# ─── Spring Bones (Verlet virtual-tail simulation) ─────────
-var _spring_bones: Array = []    # Array of spring bone dictionaries
-var _spring_colliders: Array = []  # Sphere colliders to prevent body clipping
-var _debug_colliders: bool = false  # F5 toggle: show collision spheres
-var _debug_collider_meshes: Array = []  # MeshInstance3D nodes for debug viz
-var _debug_selected_collider: int = 0  # Which collider is selected for tuning
-
-# Collision spheres: [anchor_bone_name, local_offset, radius]
-# anchor_bone_name: bone the sphere follows
-# local_offset: offset from bone origin in bone-local space
-# radius: sphere radius in world units
-const SPRING_COLLIDER_CONFIGS = [
-	# Head sphere — tuned via F5 debug
-	["Jnt_C_Head", Vector3(0, -0.16, 0), 0.23],
-	# Upper torso — tuned via F5 debug
-	["Jnt_C_Spine2", Vector3(0, -0.03, 0.01), 0.21],
-]
-
-# Spring bone configs: [bone_name, stiffness, drag, gravity, max_X°, max_Y°, max_Z°]
-# stiffness: constant force pulling tail back toward rest direction (higher = stiffer)
-# drag: fraction of velocity lost per frame (0 = no damping, 1 = fully damped)
-# gravity: world-space downward force strength
-# max_X/Y/Z: per-axis rotation limits from rest (Euler degrees, matching Blender)
-#   Y = bone-axis twist (keep tight for hair), X/Z = swing freedom
-const SPRING_BONE_CONFIGS = [
-	# Front hair — Y locked (no twist), X/Z free swing
-	["Jnt_L_FrontHair", 1.2, 0.08, 0.5, 60.0, 4.0, 60.0],
-	["Jnt_R_FrontHair", 1.2, 0.08, 0.5, 60.0, 4.0, 60.0],
-	# Side hair — long locks, much less stiffness ("gel"), strong gravity so they hang naturally
-	["Jnt_L_SideHair", 0.3, 0.05, 1.2, 70.0, 4.0, 70.0],
-	["Jnt_L_SideHair2", 0.1, 0.04, 1.5, 70.0, 4.0, 70.0],
-	["Jnt_R_SideHair", 0.3, 0.05, 1.2, 70.0, 4.0, 70.0],
-	["Jnt_R_SideHair2", 0.1, 0.04, 1.5, 70.0, 4.0, 70.0],
-	# Back hair — similar to side hair but slightly stiffer
-	["Jnt_C_HairBack", 0.4, 0.05, 1.0, 60.0, 4.0, 60.0],
-	# Hoodie strings — heavier pendulum, more freedom all axes
-	["Jnt_L_Strings", 0.7, 0.07, 1.0, 50.0, 20.0, 50.0],
-	["Jnt_L_Strings2", 0.5, 0.06, 1.2, 55.0, 20.0, 55.0],
-	["Jnt_L_strings3", 0.4, 0.06, 1.4, 55.0, 20.0, 55.0],
-	["Jnt_L_strings4", 0.3, 0.05, 1.6, 60.0, 20.0, 60.0],
-	["Jnt_R_strings", 0.7, 0.07, 1.0, 50.0, 20.0, 50.0],
-	["Jnt_R_strings2", 0.5, 0.06, 1.2, 55.0, 20.0, 55.0],
-	["Jnt_R_strings3", 0.4, 0.06, 1.4, 55.0, 20.0, 55.0],
-	["Jnt_L_Shoulder4", 0.3, 0.05, 1.6, 60.0, 20.0, 60.0],  # Last bone in R string chain
-]
+# ─── Spring Bones (separate module) ───────────────────────
+var _spring_bones_node: Node3D = null  # spring_bones.gd instance
 
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
 	_setup_radial_menu()
-	_setup_arc()
 	_setup_expression_system()
-	_setup_status_indicator()
+	_setup_tama_ui()
 	call_deferred("_setup_headphones")
 	_setup_ack_audio()
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_gaze_debug")
-	call_deferred("_setup_spring_bones")
+	call_deferred("_setup_spring_bones_module")
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
 func _setup_radial_menu() -> void:
@@ -305,76 +240,6 @@ func _setup_radial_menu() -> void:
 	settings_panel.session_duration_changed.connect(_on_session_duration_changed)
 	print("🎛️ Radial menu + Settings panel initialisés OK")
 
-func _setup_arc() -> void:
-	_arc_canvas = CanvasLayer.new()
-	_arc_canvas.layer = 50  # Behind menus (100+), above 3D
-	add_child(_arc_canvas)
-	_arc_control = Control.new()
-	_arc_control.name = "SessionArc"
-	_arc_control.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_arc_control.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_arc_control.connect("draw", _draw_session_arc)
-	_arc_canvas.add_child(_arc_control)
-
-func _draw_session_arc() -> void:
-	if not session_active or session_duration_secs <= 0:
-		return
-
-	var vp := get_viewport().get_visible_rect().size
-	# Same center as radial menu (right edge, 70% down)
-	var center := Vector2(vp.x, vp.y * 0.7)
-	var radius := 36.0
-	var thickness := 4.0
-	var progress := clampf(float(session_elapsed_secs) / float(session_duration_secs), 0.0, 1.0)
-
-	# Semicircle opening LEFT: from top (PI/2) down to bottom (-PI/2)
-	# In Godot's coordinate system: PI/2 = down, -PI/2 = up
-	# We want the arc to open to the left, so angles go from PI/2 to 3*PI/2
-	var segments := 48
-	var start_angle := PI * 0.5    # bottom (6 o'clock on right edge)
-	var end_angle := PI * 1.5      # top (12 o'clock on right edge)
-	var arc_span := end_angle - start_angle  # PI — semicircle
-
-	# Track (dark, subtle)
-	for i in range(segments):
-		var a1 := start_angle + arc_span * (float(i) / float(segments))
-		var a2 := start_angle + arc_span * (float(i + 1) / float(segments))
-		var p1 := center + Vector2(cos(a1), sin(a1)) * radius
-		var p2 := center + Vector2(cos(a2), sin(a2)) * radius
-		_arc_control.draw_line(p1, p2, Color(0.15, 0.2, 0.3, 0.4), thickness, true)
-
-	# Fill (bright, based on progress)
-	if progress > 0.005:
-		var fill_segments := int(segments * progress)
-		var fill_color := Color(0.3, 0.7, 1.0, 0.85)
-		if progress > 0.9:
-			fill_color = Color(0.3, 1.0, 0.5, 0.9)
-		elif progress > 0.75:
-			fill_color = Color(0.4, 0.85, 0.6, 0.85)
-		for i in range(fill_segments):
-			var a1 := start_angle + arc_span * (float(i) / float(segments))
-			var a2 := start_angle + arc_span * (float(i + 1) / float(segments))
-			var p1 := center + Vector2(cos(a1), sin(a1)) * radius
-			var p2 := center + Vector2(cos(a2), sin(a2)) * radius
-			_arc_control.draw_line(p1, p2, fill_color, thickness + 1.5, true)
-
-		# Glow dot at tip
-		var tip_angle := start_angle + arc_span * progress
-		var tip := center + Vector2(cos(tip_angle), sin(tip_angle)) * radius
-		_arc_control.draw_circle(tip, 3.5, fill_color)
-		_arc_control.draw_circle(tip, 6.0, Color(fill_color.r, fill_color.g, fill_color.b, 0.25))
-
-	# Time remaining text, offset left of center
-	var remaining := maxi(session_duration_secs - session_elapsed_secs, 0)
-	var mins := remaining / 60
-	var secs := remaining % 60
-	var time_str := "%d:%02d" % [mins, secs]
-	var font := ThemeDB.fallback_font
-	var ts := font.get_string_size(time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 10)
-	_arc_control.draw_string(font,
-		Vector2(center.x - radius - ts.x - 6, center.y + ts.y * 0.3),
-		time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 10,
-		Color(0.6, 0.75, 0.9, 0.7))
 
 func _unhandled_input(event: InputEvent) -> void:
 	# F1 = debug toggle du menu radial (fonctionne même sans Python)
@@ -404,71 +269,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _debug_sphere: _debug_sphere.visible = false
 			if _debug_line_node: _debug_line_node.visible = false
 			if _debug_depth_node: _debug_depth_node.visible = false
-	# F4 = debug eye follow: eyes track mouse cursor
-	if event is InputEventKey and event.pressed and event.keycode == KEY_F4:
-		_debug_eye_follow = !_debug_eye_follow
-		_eye_follow_active = _debug_eye_follow
-		if _debug_eye_follow:
-			print("👁️ [DEBUG] Eye Follow → ON")
-			_show_status_indicator("👁️ Eye Follow: ON (F4)", Color(0.5, 1.0, 0.8))
-		else:
-			print("👁️ [DEBUG] Eye Follow → OFF")
-			_hide_status_indicator()
-			# Reset eyes to center
-			_eye_target_h = 0.0
-			_eye_target_v = 0.0
-	# F5 = debug collider spheres: show/hide collision volumes
-	if event is InputEventKey and event.pressed and event.keycode == KEY_F5:
-		_debug_colliders = !_debug_colliders
-		if _debug_colliders:
-			print("🛡️ [DEBUG] Colliders ON — +/- = resize, Arrows = move offset, Tab = switch collider")
-			_show_status_indicator("🛡️ Colliders: ON (F5)", Color(0.3, 1.0, 0.5))
-			_create_debug_collider_meshes()
-		else:
-			print("🛡️ [DEBUG] Colliders OFF")
-			_hide_status_indicator()
-			_remove_debug_collider_meshes()
-
-	# Interactive collider tuning (only when F5 debug is active)
-	if _debug_colliders and event is InputEventKey and event.pressed:
-		var changed := false
-		var sel := _debug_selected_collider
-		if sel >= 0 and sel < _spring_colliders.size():
-			var col = _spring_colliders[sel]
-			match event.keycode:
-				KEY_EQUAL, KEY_KP_ADD:  # + key = bigger
-					col["radius"] += 0.01
-					changed = true
-				KEY_MINUS, KEY_KP_SUBTRACT:  # - key = smaller
-					col["radius"] = maxf(0.01, col["radius"] - 0.01)
-					changed = true
-				KEY_UP:  # Move offset up (Y+)
-					col["offset"].y += 0.01
-					changed = true
-				KEY_DOWN:  # Move offset down (Y-)
-					col["offset"].y -= 0.01
-					changed = true
-				KEY_RIGHT:  # Move offset forward (Z+)
-					col["offset"].z += 0.01
-					changed = true
-				KEY_LEFT:  # Move offset backward (Z-)
-					col["offset"].z -= 0.01
-					changed = true
-				KEY_TAB:  # Switch collider
-					_debug_selected_collider = (_debug_selected_collider + 1) % _spring_colliders.size()
-					var new_name = SPRING_COLLIDER_CONFIGS[_debug_selected_collider][0]
-					print("🛡️ Selected: [%d] %s" % [_debug_selected_collider, new_name])
-					_show_status_indicator("🛡️ [%s] r=%.3f" % [new_name, _spring_colliders[_debug_selected_collider]["radius"]], Color(0.3, 1.0, 0.5))
-			if changed:
-				# Update debug mesh size
-				_remove_debug_collider_meshes()
-				_create_debug_collider_meshes()
-				# Print all values so user can copy to code
-				var name = SPRING_COLLIDER_CONFIGS[sel][0]
-				var r = col["radius"]
-				var o = col["offset"]
-				print("🛡️ [%s] radius=%.3f offset=Vector3(%.3f, %.3f, %.3f)" % [name, r, o.x, o.y, o.z])
-				_show_status_indicator("🛡️ [%s] r=%.3f" % [name, r], Color(0.3, 1.0, 0.5))
+	# F5 + numpad = collider debug (delegated to spring_bones module)
+	if _spring_bones_node:
+		_spring_bones_node.handle_input(event)
 
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
@@ -573,12 +376,9 @@ func _process(delta: float) -> void:
 	# Blink system
 	_update_blink(delta)
 
-	# Session progress arc redraw (only when session active)
-	if _arc_control and session_active:
-		_arc_control.queue_redraw()
-
-	# Tama status indicator
-	_update_status_indicator(delta)
+	# UI overlays (status indicator + session arc)
+	if _tama_ui:
+		_tama_ui.update(delta)
 
 	# Ack eye timer — restore eyes after acknowledgment
 	if _ack_eye_timer > 0:
@@ -597,62 +397,13 @@ func _process(delta: float) -> void:
 		_look_at_world_point(target_3d, 8.0)
 	_update_gaze(delta)
 
-	# Eye follow system — blend shape eye tracking
-	if _debug_eye_follow and _eye_follow_active:
-		var mouse_pos = DisplayServer.mouse_get_position()
-		_set_eye_target_from_screen(float(mouse_pos.x), float(mouse_pos.y))
-	_update_eye_follow(delta)
 
 	# Spring bones — secondary motion on hair & hoodie strings
-	_update_spring_bones(delta)
-
-	# Debug collider sphere positions (follow bones each frame)
-	if _debug_colliders:
-		_update_debug_collider_meshes()
+	if _spring_bones_node:
+		_spring_bones_node.update(delta)
 
 
-func _create_debug_collider_meshes() -> void:
-	"""Create translucent sphere meshes to visualize collision volumes."""
-	_remove_debug_collider_meshes()
-	for i in range(_spring_colliders.size()):
-		var col = _spring_colliders[i]
-		var sphere_mesh := SphereMesh.new()
-		sphere_mesh.radius = col["radius"]
-		sphere_mesh.height = col["radius"] * 2.0
-		sphere_mesh.radial_segments = 16
-		sphere_mesh.rings = 8
 
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.2, 1.0, 0.3, 0.25)
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		sphere_mesh.material = mat
-
-		var node := MeshInstance3D.new()
-		node.mesh = sphere_mesh
-		node.name = "DebugCollider_%d" % i
-		add_child(node)
-		_debug_collider_meshes.append(node)
-	_update_debug_collider_meshes()
-
-func _remove_debug_collider_meshes() -> void:
-	"""Remove all debug collider sphere meshes."""
-	for node in _debug_collider_meshes:
-		if is_instance_valid(node):
-			node.queue_free()
-	_debug_collider_meshes.clear()
-
-func _update_debug_collider_meshes() -> void:
-	"""Move debug spheres to match current collider bone positions."""
-	if _skeleton == null:
-		return
-	for i in range(mini(_spring_colliders.size(), _debug_collider_meshes.size())):
-		var col = _spring_colliders[i]
-		var node = _debug_collider_meshes[i]
-		var col_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(col["bone_idx"])
-		var center: Vector3 = col_global.origin + col_global.basis * col["offset"]
-		node.global_position = center
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if data == null:
@@ -1101,23 +852,6 @@ func _scan_for_materials(node: Node) -> void:
 					_bs_mouth_open = bs_i
 					_body_mesh = mesh_inst
 					print("  💥 BS_MoutOpen found (index %d)" % bs_i)
-				# Eye follow blend shapes
-				elif bs_name == "BS_LookLeft":
-					_bs_look_left = bs_i
-					_body_mesh = mesh_inst
-					print("  👁️ BS_LookLeft found (index %d)" % bs_i)
-				elif bs_name == "BS_LookRight":
-					_bs_look_right = bs_i
-					_body_mesh = mesh_inst
-					print("  👁️ BS_LookRight found (index %d)" % bs_i)
-				elif bs_name == "BS_LookUp":
-					_bs_look_up = bs_i
-					_body_mesh = mesh_inst
-					print("  👁️ BS_LookUp found (index %d)" % bs_i)
-				elif bs_name == "BS_LookDown":
-					_bs_look_down = bs_i
-					_body_mesh = mesh_inst
-					print("  👁️ BS_LookDown found (index %d)" % bs_i)
 				# Eyebrow blend shapes
 				elif bs_name == "BS_Eyebrow_Question":
 					_bs_eyebrow_question = bs_i
@@ -1262,74 +996,6 @@ func _update_blink(delta: float) -> void:
 				_apply_eye_offset(_current_eye_slot)  # Back to mood expression
 
 
-# ─── Eye Follow System (Blend Shape) ────────────────────
-func _set_eye_target_from_screen(screen_x: float, screen_y: float) -> void:
-	"""Convert screen mouse position to eye target direction (-1..+1)."""
-	var win_pos := DisplayServer.window_get_position()
-	var win_size := DisplayServer.window_get_size()
-
-	# Tama's eye center on screen (approximate: center-top of Godot window)
-	var eye_sx: float = float(win_pos.x) + float(win_size.x) * 0.5
-	var eye_sy: float = float(win_pos.y) + float(win_size.y) * 0.35
-
-	# Delta from eye center to mouse
-	var dx: float = screen_x - eye_sx
-	var dy: float = screen_y - eye_sy
-
-	# Normalize by a reference distance (half screen width)
-	var screen_w: float = float(DisplayServer.screen_get_size().x)
-	var ref: float = screen_w * 0.4
-
-	# H: negative = mouse to left of Tama, positive = to right
-	# V: negative = mouse above Tama, positive = below
-	_eye_target_h = clampf(dx / ref, -1.0, 1.0)
-	_eye_target_v = clampf(dy / ref, -1.0, 1.0)
-
-func _set_eye_look(h: float, v: float) -> void:
-	"""Public API: set eye direction. h: -1=left +1=right, v: -1=up +1=down."""
-	_eye_target_h = clampf(h, -1.0, 1.0)
-	_eye_target_v = clampf(v, -1.0, 1.0)
-	_eye_follow_active = true
-
-func _update_eye_follow(delta: float) -> void:
-	"""Saccadic eye movement — snaps between fixation points like real eyes."""
-	if _body_mesh == null:
-		return
-
-	if _eye_follow_active:
-		# Saccade: snap to target at intervals (not every frame)
-		_eye_saccade_timer += delta
-		if _eye_saccade_timer >= EYE_SACCADE_INTERVAL:
-			_eye_saccade_timer = 0.0
-			# Only snap if target has moved enough (dead zone prevents jitter)
-			var dh: float = absf(_eye_target_h - _eye_follow_h)
-			var dv: float = absf(_eye_target_v - _eye_follow_v)
-			if dh > EYE_SACCADE_THRESHOLD or dv > EYE_SACCADE_THRESHOLD:
-				_eye_follow_h = _eye_target_h
-				_eye_follow_v = _eye_target_v
-	else:
-		# Not active → smoothly return eyes to center
-		var t: float = clampf(EYE_RETURN_SPEED * delta, 0.0, 1.0)
-		_eye_follow_h = lerpf(_eye_follow_h, 0.0, t)
-		_eye_follow_v = lerpf(_eye_follow_v, 0.0, t)
-
-	# Apply blend shapes (only one direction per axis is non-zero)
-	# Compensate for head gaze: if head is already rotated toward target,
-	# reduce eye movement — they share the workload naturally
-	var head_comp: float = 1.0 - (_gaze_blend * 0.5)  # 1.0 → 0.5 as head engages
-	var h: float = _eye_follow_h * head_comp
-	var v: float = _eye_follow_v * head_comp
-
-	# Horizontal: swapped because Tama faces the user (mirrored)
-	if _bs_look_left >= 0:
-		_body_mesh.set_blend_shape_value(_bs_look_left, clampf(h, 0.0, 1.0))
-	if _bs_look_right >= 0:
-		_body_mesh.set_blend_shape_value(_bs_look_right, clampf(-h, 0.0, 1.0))
-	# Vertical
-	if _bs_look_up >= 0:
-		_body_mesh.set_blend_shape_value(_bs_look_up, clampf(-v, 0.0, 1.0))
-	if _bs_look_down >= 0:
-		_body_mesh.set_blend_shape_value(_bs_look_down, clampf(v, 0.0, 1.0))
 
 # ─── Headphones (deaf mode indicator) ───────────────────
 func _setup_headphones() -> void:
@@ -1565,11 +1231,6 @@ func _set_gaze_from_angles(yaw_deg: float, pitch_deg: float, speed: float) -> vo
 	"""Set gaze target from yaw/pitch angles in degrees."""
 	_gaze_lerp_speed = speed
 
-	# When eye follow is active, head shares the workload (does less)
-	if _eye_follow_active:
-		yaw_deg *= 0.5
-		pitch_deg *= 0.5
-
 	yaw_deg = clamp(yaw_deg, -GAZE_MAX_YAW, GAZE_MAX_YAW)
 	pitch_deg = clamp(pitch_deg, -GAZE_MAX_PITCH, GAZE_MAX_PITCH)
 
@@ -1719,252 +1380,29 @@ func _update_gaze(delta: float) -> void:
 		var final_rot: Quaternion = _neck_base_rot.slerp(target_rot, _gaze_blend).normalized()
 		_skeleton.set_bone_pose_rotation(_neck_bone_idx, final_rot)
 
-# ─── Spring Bones System (Verlet Virtual-Tail) ──────────
-func _setup_spring_bones() -> void:
-	"""Configure spring bones using Verlet virtual-tail simulation."""
+# ─── Spring Bones Module Setup ─────────────────────────────
+func _setup_spring_bones_module() -> void:
 	if _skeleton == null:
 		return
+	var SpringBones = load("res://spring_bones.gd")
+	_spring_bones_node = SpringBones.new()
+	_spring_bones_node.name = "SpringBones"
+	add_child(_spring_bones_node)
+	_spring_bones_node.setup(_skeleton)
 
-	_spring_bones.clear()
-	for config in SPRING_BONE_CONFIGS:
-		var bone_name: String = config[0]
-		var idx: int = _skeleton.find_bone(bone_name)
-		if idx < 0:
-			print("⚠️ Spring bone '%s' not found" % bone_name)
-			continue
 
-		var parent_idx: int = _skeleton.get_bone_parent(idx)
-		var base_rot: Quaternion = _skeleton.get_bone_pose_rotation(idx)
-
-		# Get world transforms
-		var bone_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(idx)
-
-		# Determine bone length and local axis by finding child bone
-		var bone_length: float = 0.0
-		var bone_local_dir: Vector3 = Vector3.ZERO
-
-		for c in range(_skeleton.get_bone_count()):
-			if _skeleton.get_bone_parent(c) == idx:
-				var child_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(c)
-				var world_dir: Vector3 = child_global.origin - bone_global.origin
-				var length: float = world_dir.length()
-				if length > 0.001:
-					bone_length = length
-					bone_local_dir = (bone_global.basis.inverse() * world_dir.normalized()).normalized()
-				break
-
-		# If no child (leaf bone), assume the bone points along its local +Y axis.
-		# In Godot 4 with Blender glTF imports, bones always point along +Y.
-		if bone_length <= 0.001:
-			bone_length = 0.06  # 6cm default for leaf tip
-			bone_local_dir = Vector3.UP  # +Y axis
-
-		# Initialize tail at rest position (bone tip in world space)
-		var tail_pos: Vector3 = bone_global.origin + bone_global.basis * bone_local_dir * bone_length
-
-		# Per-axis limits in radians (matching Blender Euler constraints)
-		var limit_x: float = deg_to_rad(config[4]) if config.size() > 4 else deg_to_rad(45.0)
-		var limit_y: float = deg_to_rad(config[5]) if config.size() > 5 else deg_to_rad(45.0)
-		var limit_z: float = deg_to_rad(config[6]) if config.size() > 6 else deg_to_rad(45.0)
-
-		var sb = {
-			"idx": idx,
-			"name": bone_name,
-			"stiffness": config[1],
-			"drag": config[2],
-			"gravity": config[3],
-			"limit_x": limit_x,
-			"limit_y": limit_y,
-			"limit_z": limit_z,
-			"base_rot": base_rot,
-			"bone_length": bone_length,
-			"bone_local_dir": bone_local_dir,
-			"tail_pos": tail_pos,
-			"prev_tail_pos": tail_pos,
-		}
-		_spring_bones.append(sb)
-
-	if _spring_bones.size() > 0:
-		print("🌿 Spring bones: %d configured (Verlet virtual-tail)" % _spring_bones.size())
-
-	# Setup collision spheres
-	_spring_colliders.clear()
-	for col_cfg in SPRING_COLLIDER_CONFIGS:
-		var col_bone_name: String = col_cfg[0]
-		var col_bone_idx: int = _skeleton.find_bone(col_bone_name)
-		if col_bone_idx < 0:
-			print("⚠️ Collider bone '%s' not found" % col_bone_name)
-			continue
-		_spring_colliders.append({
-			"bone_idx": col_bone_idx,
-			"offset": col_cfg[1],
-			"radius": col_cfg[2],
-		})
-	if _spring_colliders.size() > 0:
-		print("🛡️ Spring colliders: %d spheres" % _spring_colliders.size())
-
-func _update_spring_bones(delta: float) -> void:
-	"""Simulate virtual tail points with Verlet integration, then orient bones toward them."""
-	if _skeleton == null or _spring_bones.is_empty():
-		return
-
-	var dt: float = minf(delta, 0.033)
-
-	for sb in _spring_bones:
-		var idx: int = sb["idx"]
-		var parent_idx: int = _skeleton.get_bone_parent(idx)
-		var base_rot: Quaternion = sb["base_rot"]
-		var bone_length: float = sb["bone_length"]
-		var bone_local_dir: Vector3 = sb["bone_local_dir"]
-
-		# Parent transform (already includes spring mods for chain parents)
-		var parent_global: Transform3D
-		if parent_idx >= 0:
-			parent_global = _skeleton.global_transform * _skeleton.get_bone_global_pose(parent_idx)
-		else:
-			parent_global = _skeleton.global_transform
-
-		# Bone HEAD = pivot point in world space
-		var bone_head: Vector3 = (_skeleton.global_transform * _skeleton.get_bone_global_pose(idx)).origin
-
-		# Rest tail = where the tip WOULD be in rest pose
-		# rest direction in world = parent_basis * base_rot_basis * bone_local_dir
-		var rest_dir_world: Vector3 = (parent_global.basis * Basis(base_rot) * bone_local_dir).normalized()
-		var rest_tail: Vector3 = bone_head + rest_dir_world * bone_length
-
-		# Current and previous simulated tail positions
-		var tail: Vector3 = sb["tail_pos"]
-		var prev_tail: Vector3 = sb["prev_tail_pos"]
-
-		# ─── Verlet Integration ───
-		# 1) Inertia: velocity from previous frame, with drag
-		var inertia: Vector3 = (tail - prev_tail) * (1.0 - sb["drag"])
-
-		# 2) Stiffness: constant force pulling toward rest direction
-		#    (VRM-style: force in rest direction, not toward rest position)
-		var stiffness_force: Vector3 = rest_dir_world * sb["stiffness"] * dt
-
-		# 3) Gravity: world-space downward pull
-		var gravity_force: Vector3 = Vector3.DOWN * sb["gravity"] * dt
-
-		# Step the tail position
-		var new_tail: Vector3 = tail + inertia + stiffness_force + gravity_force
-
-		# ─── Distance Constraint ───
-		# Tail must stay exactly bone_length from bone_head (rigid bone)
-		var to_tail: Vector3 = new_tail - bone_head
-		if to_tail.length_squared() > 0.00001:
-			new_tail = bone_head + to_tail.normalized() * bone_length
-		else:
-			new_tail = rest_tail  # Fallback to rest if degenerate
-
-		# ─── Sphere Collision ───
-		# Push tail out of body collision spheres
-		for col in _spring_colliders:
-			var col_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(col["bone_idx"])
-			var sphere_center: Vector3 = col_global.origin + col_global.basis * col["offset"]
-			var sphere_radius: float = col["radius"]
-			var diff: Vector3 = new_tail - sphere_center
-			var dist: float = diff.length()
-			if dist < sphere_radius and dist > 0.0001:
-				# Push tail to sphere surface
-				new_tail = sphere_center + diff.normalized() * sphere_radius
-				# Re-apply distance constraint (keep bone length from head)
-				var to_tail2: Vector3 = new_tail - bone_head
-				if to_tail2.length_squared() > 0.00001:
-					new_tail = bone_head + to_tail2.normalized() * bone_length
-
-		# ─── Per-Axis Euler Constraint ───
-		# Decompose the swing from rest→current into Euler angles,
-		# clamp each axis independently, rebuild.
-		var curr_dir: Vector3 = (new_tail - bone_head).normalized()
-		var parent_inv_basis: Basis = parent_global.basis.inverse()
-		var local_rest: Vector3 = (parent_inv_basis * rest_dir_world).normalized()
-		var local_curr: Vector3 = (parent_inv_basis * curr_dir).normalized()
-
-		# Build swing quaternion: rest_dir → curr_dir in parent local space
-		var swing_axis: Vector3 = local_rest.cross(local_curr)
-		var swing_quat: Quaternion = Quaternion.IDENTITY
-		if swing_axis.length_squared() > 0.000001:
-			swing_axis = swing_axis.normalized()
-			var swing_angle: float = local_rest.angle_to(local_curr)
-			swing_quat = Quaternion(swing_axis, swing_angle)
-
-		# Decompose to Euler and clamp each axis
-		var euler: Vector3 = swing_quat.get_euler()
-		var clamped: bool = false
-		var ex: float = clampf(euler.x, -sb["limit_x"], sb["limit_x"])
-		var ey: float = clampf(euler.y, -sb["limit_y"], sb["limit_y"])
-		var ez: float = clampf(euler.z, -sb["limit_z"], sb["limit_z"])
-		if ex != euler.x or ey != euler.y or ez != euler.z:
-			clamped = true
-			var clamped_quat: Quaternion = Quaternion.from_euler(Vector3(ex, ey, ez))
-			var clamped_dir_local: Vector3 = (clamped_quat * local_rest).normalized()
-			var clamped_dir_world: Vector3 = (parent_global.basis * clamped_dir_local).normalized()
-			new_tail = bone_head + clamped_dir_world * bone_length
-
-		# Store for next frame
-		sb["prev_tail_pos"] = tail
-		sb["tail_pos"] = new_tail
-
-		# ─── Compute Bone Rotation ───
-		# Reuse local directions (updated if clamping occurred)
-		var final_dir_world: Vector3 = (new_tail - bone_head).normalized()
-		var local_final_dir: Vector3 = (parent_inv_basis * final_dir_world).normalized()
-
-		# Rotation from rest to final direction
-		var rot_axis: Vector3 = local_rest.cross(local_final_dir)
-		if rot_axis.length_squared() > 0.000001:
-			rot_axis = rot_axis.normalized()
-			var rot_angle: float = local_rest.angle_to(local_final_dir)
-			var swing: Quaternion = Quaternion(rot_axis, rot_angle)
-			_skeleton.set_bone_pose_rotation(idx, (swing * base_rot).normalized())
-		else:
-			_skeleton.set_bone_pose_rotation(idx, base_rot)
-
-# ─── Tama Status Indicator ──────────────────────────────
-func _setup_status_indicator() -> void:
-	_status_canvas = CanvasLayer.new()
-	_status_canvas.layer = 10
-	add_child(_status_canvas)
-	_status_label = Label.new()
-	_status_label.text = ""
-	_status_label.add_theme_font_size_override("font_size", 13)
-	_status_label.add_theme_color_override("font_color", Color(0.5, 0.7, 1.0, 0.9))
-	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_status_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	_status_label.offset_top = -40
-	_status_label.offset_bottom = -10
-	_status_canvas.add_child(_status_label)
-	_status_label.visible = false
+# ─── UI Module Setup ───────────────────────────────────
+func _setup_tama_ui() -> void:
+	var TamaUI = load("res://tama_ui.gd")
+	_tama_ui = TamaUI.new()
+	_tama_ui.name = "TamaUI"
+	add_child(_tama_ui)
+	_tama_ui.setup(self)
 
 func _show_status_indicator(text: String, color: Color) -> void:
-	_status_visible = true
-	_status_label.visible = true
-	_status_dots = 0
-	_status_timer = 0.0
-	_status_label.text = text + "..."
-	_status_label.add_theme_color_override("font_color", color)
+	if _tama_ui:
+		_tama_ui.show_status(text, color)
 
 func _hide_status_indicator() -> void:
-	_status_visible = false
-	_status_label.visible = false
-	_gemini_status = "connected"
-
-func _update_status_indicator(delta: float) -> void:
-	if not _status_visible:
-		return
-	_status_timer += delta
-	if _status_timer >= 0.5:
-		_status_timer = 0.0
-		_status_dots = (_status_dots + 1) % 4
-		var dots = ".".repeat(_status_dots + 1)
-		# Extract base text (before dots)
-		var base_text = _status_label.text
-		var dot_start = base_text.find(".")
-		if dot_start > 0:
-			base_text = base_text.substr(0, dot_start)
-		_status_label.text = base_text + dots
-	# Pulse alpha — gentle breathing effect
-	var alpha = 0.5 + 0.4 * sin(Time.get_ticks_msec() * 0.004)
-	_status_label.modulate = Color(1, 1, 1, alpha)
+	if _tama_ui:
+		_tama_ui.hide_status()
