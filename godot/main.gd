@@ -19,15 +19,14 @@ var session_elapsed_secs: int = 0
 var session_duration_secs: int = 3000  # 50 min default
 
 # ─── Animation State Machine ──────────────────────────────
-# Intro:  HIDDEN → PEEKING → HELLO (loop) → LEAVING → HIDDEN
-# Normal: HIDDEN → PEEKING → ACTIVE (Suspicious/Angry loop) → LEAVING → HIDDEN
-#         ou:      PEEKING → STRIKING (Strike once, freeze)
-# Conversation: HIDDEN → PEEKING → HELLO (loop, waiting) → LEAVING → HIDDEN
-enum Phase { HIDDEN, PEEKING, HELLO, ACTIVE, STRIKING, LEAVING }
-var phase: int = Phase.HIDDEN
-var intro_done: bool = false
+# Tama is ALWAYS visible. At rest she loops Idle_wall (on the wall).
+# ON_WALL (Idle_wall loop) → TRANSITION_OFF (OffTheWall forward) → ACTIVE (Suspicious/Angry/Idle)
+# ACTIVE → TRANSITION_ON (OffTheWall reverse) → ON_WALL (Idle_wall loop)
+# STRIKING: Strike_Base → Strike_Dab → freeze
+enum Phase { ON_WALL, TRANSITION_OFF, ACTIVE, STRIKING, TRANSITION_ON }
+var phase: int = Phase.ON_WALL
+var _started: bool = false  # True after first Idle_wall is played
 var conversation_active: bool = false  # True during casual chat (no deep work)
-var _on_wall: bool = false              # True when Tama is leaning on the wall (Idle_wall)
 var current_anim: String = ""
 var _anim_player: AnimationPlayer = null
 var _prev_suspicion_tier: int = -1
@@ -109,7 +108,7 @@ const VISEME_MAP = {
 
 # Mood → expression mapping
 const MOOD_EYES = {
-	"calm": "E4", "curious": "E0", "amused": "E4", "proud": "E4",
+	"calm": "E0", "curious": "E0", "amused": "E4", "proud": "E7",
 	"suspicious": "E7", "disappointed": "E7", "sarcastic": "E7",
 	"annoyed": "E5", "angry": "E5", "furious": "E8",
 }
@@ -220,7 +219,16 @@ func _ready() -> void:
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_gaze_debug")
 	call_deferred("_setup_spring_bones_module")
+	# Start in Idle_wall — Tama is always visible
+	call_deferred("_start_idle_wall")
 	print("🥷 FocusPals Godot — En attente de connexion...")
+
+func _start_idle_wall() -> void:
+	_ensure_anim_player()
+	_play("Idle_wall", true)
+	phase = Phase.ON_WALL
+	_started = true
+	print("🧱 Tama démarre en Idle_wall")
 
 func _setup_radial_menu() -> void:
 	radial_menu = CanvasLayer.new()
@@ -420,24 +428,21 @@ func _handle_message(raw: String) -> void:
 			session_active = true
 			conversation_active = false  # Session overrides conversation
 			print("🚀 Session Deep Work lancée !")
-			_play("Peek", false)
-			phase = Phase.PEEKING
+			# Tama is already on wall — session just enables suspicion tracking
 		return
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
-			print("💬 Mode conversation — Tama arrive !")
-			_on_wall = true  # Will be on the wall until speech starts
-			_play("Peek", false)
-			phase = Phase.PEEKING
+			print("💬 Mode conversation — Tama est déjà sur le mur")
+			# She stays on wall until speech starts (VISEME triggers OffTheWall)
 		return
 	elif command == "END_CONVERSATION":
 		if conversation_active:
 			conversation_active = false
-			print("💬 Fin de conversation — Tama repart.")
-			if phase != Phase.HIDDEN:
-				_play("bye", false)
-				phase = Phase.LEAVING
+			print("💬 Fin de conversation — Tama retourne au mur")
+			if phase == Phase.ACTIVE:
+				_play_reverse("OffThewall")
+				phase = Phase.TRANSITION_ON
 		return
 	elif command == "SHOW_RADIAL":
 		# If settings panel is open, close it first then open radial
@@ -475,10 +480,9 @@ func _handle_message(raw: String) -> void:
 		# Instant local reaction — Tama acknowledges user before Gemini responds
 		if conversation_active:
 			# If still on wall, get off first
-			if _on_wall and phase == Phase.HELLO:
-				_on_wall = false
+			if phase == Phase.ON_WALL:
 				_play("OffThewall", false)
-				phase = Phase.ACTIVE
+				phase = Phase.TRANSITION_OFF
 				print("🧑 OffThewall: user parle, Tama se lève")
 			_on_user_speaking_ack()
 		return
@@ -507,28 +511,29 @@ func _handle_message(raw: String) -> void:
 		var loop = data.get("loop", false)
 		_last_anim_command_time = Time.get_unix_time_from_system()
 		print("🎬 [ANIM CMD] " + anim_name + (" (loop)" if loop else ""))
-		if anim_name == "bye":
-			if phase != Phase.HIDDEN:
-				_play("bye", false)
-				phase = Phase.LEAVING
-		elif anim_name == "Peek":
-			if phase == Phase.HIDDEN:
-				_play("Peek", false)
-				phase = Phase.PEEKING
-		else:
-			# Suspicious, Angry, Strike, Hello — play directly
-			if phase == Phase.HIDDEN:
-				# Need to peek first, then the animation will be chosen in _on_animation_finished
-				_prev_suspicion_tier = _get_tier()  # Sync tier so peek leads to right anim
-				_play("Peek", false)
-				phase = Phase.PEEKING
+		if anim_name == "Idle_wall":
+			# Go back to wall
+			if phase == Phase.ACTIVE:
+				_play_reverse("OffThewall")
+				phase = Phase.TRANSITION_ON
 			else:
-				if anim_name == "Strike":
-					_play("Strike", false)
-					phase = Phase.STRIKING
-				else:
-					_play(anim_name, loop)
-					phase = Phase.ACTIVE
+				_play("Idle_wall", true)
+				phase = Phase.ON_WALL
+		elif anim_name in ["Strike", "Strike_Base"]:
+			if phase == Phase.ON_WALL:
+				_play("OffThewall", false)
+				phase = Phase.TRANSITION_OFF
+			else:
+				_play("Strike_Base", false)
+				phase = Phase.STRIKING
+		else:
+			# Suspicious, Angry, Idle — if on wall, transition first
+			if phase == Phase.ON_WALL:
+				_play("OffThewall", false)
+				phase = Phase.TRANSITION_OFF
+			else:
+				_play(anim_name, loop)
+				phase = Phase.ACTIVE
 		return
 	elif command == "TAMA_MOOD":
 		var mood_name = data.get("mood", "calm")
@@ -553,10 +558,9 @@ func _handle_message(raw: String) -> void:
 		# Track Tama speech
 		if shape != "REST":
 			# If on wall and speech starts → transition off the wall
-			if conversation_active and _on_wall and phase == Phase.HELLO:
-				_on_wall = false
+			if conversation_active and phase == Phase.ON_WALL:
 				_play("OffThewall", false)
-				phase = Phase.ACTIVE
+				phase = Phase.TRANSITION_OFF
 				print("🧑 OffThewall: Tama se lève pour parler")
 			if not _is_speaking and conversation_active:
 				set_gaze(GazeTarget.USER, 5.0)  # Look at user while talking
@@ -620,11 +624,6 @@ func _handle_message(raw: String) -> void:
 	session_elapsed_secs = data.get("session_elapsed_secs", 0)
 	session_duration_secs = data.get("session_duration_secs", 3000)
 
-	# Pendant l'intro : dès qu'on reçoit les premières données de l'agent,
-	# Tama dit bye et repart se cacher (elle a fini son coucou).
-	if not intro_done and phase == Phase.HELLO:
-		_play("bye", false)
-		phase = Phase.LEAVING
 
 # ─── Suspicion Tiers ──────────────────────────────────────
 func _get_tier() -> int:
@@ -637,10 +636,8 @@ func _get_tier() -> int:
 func _update_suspicion_anim() -> void:
 	if not session_active:
 		return
-	if not intro_done:
-		return
-	# Ne pas interférer pendant un Peek ou un Bye en cours
-	if phase == Phase.PEEKING or phase == Phase.LEAVING:
+	# Don't interrupt transitions
+	if phase == Phase.TRANSITION_OFF or phase == Phase.TRANSITION_ON:
 		return
 
 	var tier := _get_tier()
@@ -649,78 +646,68 @@ func _update_suspicion_anim() -> void:
 	_prev_suspicion_tier = tier
 
 	match tier:
-		0: # Calme → elle part
-			if phase != Phase.HIDDEN:
-				_play("bye", false)
-				phase = Phase.LEAVING
+		0: # Calme → retour au mur
+			if phase == Phase.ACTIVE:
+				_play_reverse("OffThewall")
+				phase = Phase.TRANSITION_ON
+			elif phase == Phase.STRIKING:
+				_play_reverse("OffThewall")
+				phase = Phase.TRANSITION_ON
 		1: # Suspecte
-			if phase == Phase.HIDDEN:
-				_play("Peek", false)
-				phase = Phase.PEEKING  # → _on_animation_finished choisira Suspicious
-			else:
+			if phase == Phase.ON_WALL:
+				_play("OffThewall", false)
+				phase = Phase.TRANSITION_OFF
+			elif phase == Phase.ACTIVE:
 				_play("Suspicious", true)
-				phase = Phase.ACTIVE
 		2: # En colère
-			if phase == Phase.HIDDEN:
-				_play("Peek", false)
-				phase = Phase.PEEKING
-			else:
+			if phase == Phase.ON_WALL:
+				_play("OffThewall", false)
+				phase = Phase.TRANSITION_OFF
+			elif phase == Phase.ACTIVE:
 				_play("Angry", true)
-				phase = Phase.ACTIVE
 		3: # Strike !
-			if phase == Phase.HIDDEN:
-				_play("Peek", false)
-				phase = Phase.PEEKING
-			else:
-				_play("Strike", false)
+			if phase == Phase.ON_WALL:
+				_play("OffThewall", false)
+				phase = Phase.TRANSITION_OFF
+			elif phase == Phase.ACTIVE:
+				_play("Strike_Base", false)
 				phase = Phase.STRIKING
 
 # ─── Callback quand une anim "play once" se termine ──────
 func _on_animation_finished(_anim_name: StringName) -> void:
 	match phase:
-		Phase.PEEKING:
-			if conversation_active:
-				# Conversation: Peek terminé → Idle_wall loop (elle attend la discussion)
-				_on_wall = true
-				_play("Idle_wall", true)
-				phase = Phase.HELLO
-			elif not intro_done:
-				# Intro : Peek terminé → Idle_wall (loop tant qu'on attend les données)
-				_play("Idle_wall", true)
-				phase = Phase.HELLO
+		Phase.TRANSITION_OFF:
+			# OffTheWall terminé → choisir l'anim selon suspicion
+			var tier := _get_tier()
+			if tier >= 3:
+				_play("Strike_Base", false)
+				phase = Phase.STRIKING
+			elif tier >= 2:
+				_play("Angry", true)
+				phase = Phase.ACTIVE
+			elif tier >= 1:
+				_play("Suspicious", true)
+				phase = Phase.ACTIVE
 			else:
-				# Normal : Peek terminé → animation selon la suspicion actuelle
-				var tier := _get_tier()
-				if tier >= 3:
-					_play("Strike", false)
-					phase = Phase.STRIKING
-				elif tier >= 2:
-					_play("Angry", true)
-					phase = Phase.ACTIVE
-				elif tier >= 1:
-					_play("Suspicious", true)
-					phase = Phase.ACTIVE
-				else:
-					# La suspicion est retombée pendant le peek → bye direct
-					_play("bye", false)
-					phase = Phase.LEAVING
-		Phase.LEAVING:
-			phase = Phase.HIDDEN
-			if conversation_active:
-				conversation_active = false
-				print("💬 Conversation terminée — Tama se cache.")
-			elif not intro_done:
-				intro_done = true
-				print("👋 Intro terminée — Tama se cache.")
-			else:
-				print("👋 Tama se cache.")
+				# Conversation mode or suspicion dropped during transition
+				_play("Idle", true)
+				phase = Phase.ACTIVE
+		Phase.TRANSITION_ON:
+			# OffTheWall reverse terminé → Idle_wall
+			_play("Idle_wall", true)
+			phase = Phase.ON_WALL
+			print("🧱 Retour au mur — Idle_wall")
 		Phase.ACTIVE:
 			# OffThewall just finished → chain into Idle loop
-			if conversation_active and not _on_wall:
+			if conversation_active:
 				_play("Idle", true)
 				print("🧑 Idle: conversation en cours")
 		Phase.STRIKING:
-			pass  # Freeze sur la dernière frame — elle reste figée menaçante
+			# Strike_Base terminé → enchaîner avec Strike_Dab
+			if "strike_base" in String(_anim_name).to_lower():
+				_play("Strike_Dab", false)
+			else:
+				pass  # Strike_Dab terminé → freeze sur la dernière frame
 
 # ─── Jouer une animation ─────────────────────────────────
 func _play(anim_name: String, loop: bool) -> void:
@@ -740,6 +727,24 @@ func _play(anim_name: String, loop: bool) -> void:
 	_anim_player.play(real_name, 0.2)
 	_anim_player.speed_scale = 1.0
 
+# ─── Jouer une animation en reverse ──────────────────────
+func _play_reverse(anim_name: String) -> void:
+	_ensure_anim_player()
+	if _anim_player == null:
+		return
+	var anims := _anim_player.get_animation_list()
+	var real_name := _find_best_anim(anims, [anim_name])
+	if real_name == "":
+		push_warning("⚠️ Animation introuvable (reverse): " + anim_name)
+		return
+	current_anim = real_name
+	var anim := _anim_player.get_animation(real_name)
+	if anim:
+		anim.loop_mode = Animation.LOOP_NONE
+	# Play from end → start (negative speed)
+	_anim_player.play(real_name, 0.2, -1.0, true)
+	print("⏪ Playing reverse: " + real_name)
+
 # ─── Utilitaires ─────────────────────────────────────────
 func _ensure_anim_player() -> void:
 	if _anim_player != null:
@@ -752,10 +757,18 @@ func _ensure_anim_player() -> void:
 		_anim_player.animation_finished.connect(_on_animation_finished)
 
 func _find_best_anim(available_anims: Array[StringName], priorities: Array) -> String:
+	# Pass 1: exact match (case-insensitive)
 	for p in priorities:
 		var p_lower := String(p).to_lower()
 		for a in available_anims:
 			if String(a).to_lower() == p_lower:
+				return String(a)
+	# Pass 2: substring match — handles GLB names like "F Strike_Base"
+	for p in priorities:
+		var p_lower := String(p).to_lower()
+		for a in available_anims:
+			var a_lower := String(a).to_lower()
+			if a_lower != "eeee" and p_lower in a_lower:
 				return String(a)
 	return ""
 
@@ -992,7 +1005,9 @@ func _update_blink(delta: float) -> void:
 				_apply_eye_offset("E6")  # Semi-closed (opening)
 			elif _blink_phase == 3:
 				_blink_phase = 0
-				_set_pupils_visible(true)  # Show pupils
+				# Restore pupil hide to match current expression (not always visible!)
+				var hide_val: float = PUPIL_HIDE_AMOUNT.get(_current_eye_slot, 0.0)
+				_set_pupil_hide(hide_val)
 				_apply_eye_offset(_current_eye_slot)  # Back to mood expression
 
 

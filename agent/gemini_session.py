@@ -718,6 +718,11 @@ async def run_gemini_loop(pya):
                                 if not is_streaming:
                                     # Voice just started → flush pre-buffer first
                                     is_streaming = True
+                                    # Track when user FIRST started speaking this turn
+                                    # (not updated on every frame — gives true latency)
+                                    if state.get("_user_speech_turn_start") is None:
+                                        state["_user_speech_turn_start"] = time.time()
+                                        print("  🎙️ User speaking...")
                                     for buffered in pre_buffer:
                                         await audio_in_queue.put(buffered)
                                     pre_buffer.clear()
@@ -745,6 +750,8 @@ async def run_gemini_loop(pya):
                                     if silence_count >= POST_TAIL_CHUNKS:
                                         is_streaming = False
                                         silence_count = 0
+                                        if state.get("_user_speech_turn_start") is not None:
+                                            print("  🤔 Gemini is thinking...")
                                 else:
                                     # Silent — just buffer, don't send
                                     pre_buffer.append(blob)
@@ -989,23 +996,35 @@ async def run_gemini_loop(pya):
                             async for response in turn:
                                 server = response.server_content
 
-                                # Fix 1: Handle interruptions — user barged in
                                 if server and server.interrupted:
+                                    print("  ⚡ Interrupted — user barged in")
                                     while not audio_out_queue.empty():
                                         audio_out_queue.get_nowait()
                                     is_speaking = False
                                     state["_tama_is_speaking"] = False
                                     continue
 
+                                # ── Transcription logs: PROOF Google heard us ──
+                                if server and hasattr(server, 'input_transcription') and server.input_transcription:
+                                    txt = getattr(server.input_transcription, 'text', '')
+                                    if txt and txt.strip():
+                                        print(f"  👂 Google heard: \"{txt.strip()}\"")
+                                if server and hasattr(server, 'output_transcription') and server.output_transcription:
+                                    txt = getattr(server.output_transcription, 'text', '')
+                                    if txt and txt.strip():
+                                        print(f"  💬 Tama said: \"{txt.strip()}\"")
+
                                 if server and server.model_turn:
                                     for part in server.model_turn.parts:
                                         if part.inline_data and isinstance(part.inline_data.data, bytes):
                                             if not is_speaking:
-                                                # Fix 8: Measure response latency
-                                                if state.get("user_spoke_at"):
-                                                    latency = time.time() - state["user_spoke_at"]
-                                                    if 0.5 < latency < 30:
+                                                # Fix 8: Measure response latency (from first word, not last)
+                                                turn_start = state.get("_user_speech_turn_start")
+                                                if turn_start:
+                                                    latency = time.time() - turn_start
+                                                    if 0.5 < latency < 60:
                                                         print(f"  ⏱️ Response latency: {latency:.1f}s")
+                                                    state["_user_speech_turn_start"] = None  # Reset for next turn
 
                                                 speech_allowed = state["force_speech"] or state["break_reminder_active"]
                                                 if state["current_mode"] == "conversation":
@@ -1024,6 +1043,7 @@ async def run_gemini_loop(pya):
                                                 if speech_allowed:
                                                     is_speaking = True
                                                     state["_tama_is_speaking"] = True  # Fix 7
+                                                    print("  🗣️ Tama starts speaking")
                                                     # Fallback animation — used only if report_mood hasn't arrived yet.
                                                     # Once report_mood fires, it overrides this with the correct mood anim.
                                                     if not state.get("_mood_anim_set"):
@@ -1056,6 +1076,7 @@ async def run_gemini_loop(pya):
                                     is_speaking = False
                                     state["_tama_is_speaking"] = False  # Fix 7
                                     state["_mood_anim_set"] = False  # Reset for next speech turn
+                                    print("  ✅ Tama done speaking")
 
                                 if response.tool_call:
                                     try:
