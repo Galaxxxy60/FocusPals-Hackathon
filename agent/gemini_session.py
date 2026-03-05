@@ -691,6 +691,7 @@ async def run_gemini_loop(pya):
                     pre_buffer = deque(maxlen=PRE_BUFFER_CHUNKS)
                     is_streaming = False
                     silence_count = 0
+                    voice_streak = 0
 
                     try:
                         while True:
@@ -713,37 +714,46 @@ async def run_gemini_loop(pya):
                             blob = types.Blob(data=data, mime_type="audio/pcm")
 
                             if voice_active:
-                                state["user_spoke_at"] = time.time()
-                                silence_count = 0
+                                voice_streak += 1
+                                
+                                # Require 3 consecutive chunks (~192ms) of voice to start streaming,
+                                # OR if we are already streaming, keep streaming.
+                                if is_streaming or voice_streak >= 3:
+                                    state["user_spoke_at"] = time.time()
+                                    silence_count = 0
 
-                                if not is_streaming:
-                                    # Voice just started → flush pre-buffer first
-                                    is_streaming = True
-                                    # Track when user FIRST started speaking this turn
-                                    # (not updated on every frame — gives true latency)
-                                    if state.get("_user_speech_turn_start") is None:
-                                        state["_user_speech_turn_start"] = time.time()
-                                        print("  🎙️ User speaking...")
-                                    for buffered in pre_buffer:
-                                        await audio_in_queue.put(buffered)
-                                    pre_buffer.clear()
+                                    if not is_streaming:
+                                        # Voice just started → flush pre-buffer first
+                                        is_streaming = True
+                                        # Track when user FIRST started speaking this turn
+                                        # (not updated on every frame — gives true latency)
+                                        if state.get("_user_speech_turn_start") is None:
+                                            state["_user_speech_turn_start"] = time.time()
+                                            print("  🎙️ User speaking...")
+                                        for buffered in pre_buffer:
+                                            await audio_in_queue.put(buffered)
+                                        pre_buffer.clear()
 
-                                    # Notify Godot: user is speaking → instant local reaction
-                                    if state["current_mode"] == "conversation":
-                                        _last_ack = state.get("_last_user_speaking_ack", 0)
-                                        if time.time() - _last_ack > 3.0:  # 3s cooldown
-                                            state["_last_user_speaking_ack"] = time.time()
-                                            ack_msg = json.dumps({"command": "USER_SPEAKING"})
-                                            for ws_client in list(state["connected_ws_clients"]):
-                                                try:
-                                                    main_loop = state["main_loop"]
-                                                    if main_loop and main_loop.is_running():
-                                                        asyncio.run_coroutine_threadsafe(ws_client.send(ack_msg), main_loop)
-                                                except Exception:
-                                                    pass
+                                        # Notify Godot: user is speaking → instant local reaction
+                                        if state["current_mode"] == "conversation":
+                                            _last_ack = state.get("_last_user_speaking_ack", 0)
+                                            if time.time() - _last_ack > 3.0:  # 3s cooldown
+                                                state["_last_user_speaking_ack"] = time.time()
+                                                ack_msg = json.dumps({"command": "USER_SPEAKING"})
+                                                for ws_client in list(state["connected_ws_clients"]):
+                                                    try:
+                                                        main_loop = state["main_loop"]
+                                                        if main_loop and main_loop.is_running():
+                                                            asyncio.run_coroutine_threadsafe(ws_client.send(ack_msg), main_loop)
+                                                    except Exception:
+                                                        pass
 
-                                await audio_in_queue.put(blob)
+                                    await audio_in_queue.put(blob)
+                                else:
+                                    # Still building streak, just buffer
+                                    pre_buffer.append(blob)
                             else:
+                                voice_streak = 0  # Reset streak on any silence
                                 if is_streaming:
                                     # Post-tail: keep sending briefly after voice stops
                                     silence_count += 1

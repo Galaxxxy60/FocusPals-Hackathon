@@ -149,7 +149,7 @@ def resolve_default_mic():
     print(f"🎤 Micro auto-sélectionné: [{state['selected_mic_index']}]")
 
 
-def detect_voice_activity(pcm_data: bytes, threshold: float = 500.0) -> bool:
+def detect_voice_activity(pcm_data: bytes, threshold: float = 1200.0) -> bool:
     """Simple energy-based Voice Activity Detection on 16-bit PCM mono."""
     try:
         n_samples = len(pcm_data) // 2
