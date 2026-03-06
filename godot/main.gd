@@ -1557,27 +1557,32 @@ func _screen_to_arm_target(screen_x: float, screen_y: float) -> Vector3:
 	var dx: float = screen_x - arm_screen_x  # positive = right on screen
 	var dy: float = -(screen_y - arm_screen_y)  # positive = up (screen Y inverted)
 
-	# Normalize by screen height for consistent scaling
-	var screen_h: float = float(DisplayServer.screen_get_size().y)
-	var norm_dx: float = dx / screen_h
-	var norm_dy: float = dy / screen_h
+	# Normalize by PHYSICAL screen size (cm) using DPI
+	# This makes pointing physically accurate regardless of screen size/resolution
+	var dpi: int = DisplayServer.screen_get_dpi()
+	if dpi <= 0:
+		dpi = 96  # Fallback
+	var px_per_cm: float = float(dpi) / 2.54  # DPI → pixels per cm
+	var norm_dx: float = dx / px_per_cm  # Distance in real-world cm
+	var norm_dy: float = dy / px_per_cm
 
 	# Get right arm bone position in world space
 	var arm_pos := Vector3(0, 1.2, 0)  # Fallback
 	if _arm1_bone_idx >= 0 and _skeleton != null:
 		arm_pos = (_skeleton.global_transform * _skeleton.get_bone_global_pose(_arm1_bone_idx)).origin
 
-	# Map screen direction to world direction:
-	# Ortho camera faces -Z. Screen-right = +X, Screen-left = -X (no flip!)
-	# Screen-up = +Y, Screen-down = -Y
-	var reach: float = 3.0  # How far the target is from the arm
+	# Map physical direction to world direction:
+	# Ortho camera faces -Z. Screen-right = +X, Screen-left = -X
+	# norm_dx/dy are now in CM — scale to reasonable 3D reach
+	var scale: float = 0.1  # 1 cm on screen ≈ 0.1 world units of offset
+	var reach_z: float = 1.5  # Forward depth component
 	var target := arm_pos + Vector3(
-		norm_dx * reach,    # Screen-right → world +X (no negation!)
-		norm_dy * reach,    # Screen-up → world +Y
-		-reach * 0.5        # Slightly forward (into the screen)
+		norm_dx * scale,    # Physical horizontal offset
+		norm_dy * scale,    # Physical vertical offset
+		-reach_z            # Slightly forward (into the screen)
 	)
 
-	print("💪 arm_target: dx=%.2f dy=%.2f → world=%s" % [norm_dx, norm_dy, str(target)])
+	print("💪 arm_target: %.1fcm × %.1fcm (dpi=%d) → %s" % [norm_dx, norm_dy, dpi, str(target)])
 	return target
 
 func _get_head_world_pos() -> Vector3:
