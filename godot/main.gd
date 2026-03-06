@@ -381,18 +381,18 @@ func _spawn_hand_window() -> void:
 	var src_label := "BONE" if used_bone else "FALLBACK"
 	print("🪟   [%s] Start=(%d,%d) → Target=(%d,%d)" % [src_label, start_x, start_y, mouse.x, mouse.y])
 
-	# ── Create window ──
-	# ── Create window offscreen (avoids white flash) ──
+	# ── Create window hidden (avoids white flash) ──
 	_hand_window = Window.new()
 	_hand_window.title = "TamaHand"
 	_hand_window.size = Vector2i(120, 120)
-	_hand_window.position = Vector2i(-300, -300)  # Offscreen initially
+	_hand_window.position = Vector2i(start_x - 60, start_y - 60)
 	_hand_window.borderless = true
 	_hand_window.transparent_bg = true
 	_hand_window.always_on_top = true
 	_hand_window.unfocusable = true
 	_hand_window.transparent = true
 	_hand_window.gui_embed_subwindows = false
+	_hand_window.visible = false  # Hidden until transparency is ready
 
 	var label := Label.new()
 	label.text = "🖐️"
@@ -403,16 +403,15 @@ func _spawn_hand_window() -> void:
 	_hand_window.add_child(label)
 	add_child(_hand_window)
 
-	# Wait 2 frames for transparency to take effect, THEN show + animate
-	var start_pos := Vector2i(start_x - 60, start_y - 60)
-	var target_pos := Vector2i(mouse.x - 60, mouse.y - 60)
+	# Wait 2 frames for transparency to take effect, THEN show
 	await get_tree().process_frame
 	await get_tree().process_frame
 	if not is_instance_valid(_hand_window):
 		return
-	_hand_window.position = start_pos  # Teleport to real position (now transparent)
+	_hand_window.visible = true  # Now transparent — safe to show
 
 	# ── Animate ──
+	var target_pos := Vector2i(mouse.x - 60, mouse.y - 60)
 	var tween := create_tween()
 	tween.set_ease(Tween.EASE_IN_OUT)
 	tween.set_trans(Tween.TRANS_CUBIC)
