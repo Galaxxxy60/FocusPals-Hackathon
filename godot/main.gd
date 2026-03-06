@@ -47,10 +47,10 @@ const ANIM_COMMAND_COOLDOWN: float = 5.0  # Don't auto-anim if Python sent one r
 #
 # HOW TO ADD A NEW STRIKE ANIMATION:
 #   1. Create the animation in Blender (e.g. "Strike_Snap")
-#   2. Keyframe Jnt_R_Hand scale to (0,0,0) on all frames
-#   3. At the exact fire frame → keyframe scale to (0.1, 0.1, 0.1)
-#   4. That's it! Export GLB, Godot auto-detects it.
-const STRIKE_FIRE_SCALE_THRESHOLD: float = 0.01  # Anything > this = FIRE
+#   The hand bone rests at scale (1,1,1). During Strike animations,
+#   the hand "bounces" by scaling above 1.0 — that's the fire signal.
+#   Threshold is 1.05 to catch the exact moment the bounce starts.
+const STRIKE_FIRE_SCALE_THRESHOLD: float = 1.05  # Hand bone rests at 1.0 — bounce goes above 1
 var _strike_hand_bone_idx: int = -1  # Jnt_R_Hand, auto-discovered in _setup_gaze
 var _strike_fire_sent: bool = false  # Prevent duplicate fires per strike
 var _strike_frame_count: int = 0     # Frames elapsed since entering STRIKING (warm-up delay)
@@ -339,45 +339,86 @@ func _unhandled_input(event: InputEvent) -> void:
 			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
 			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
-	# F7 = Debug Strike Fire: launch magic hand from Tama's hand → mouse cursor
+	# F7 = Debug Strike: play Strike_Base + launch Godot hand window → mouse cursor
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F7:
-		print("🎯 [DEBUG] F7 → Debug Strike Fire!")
-		# Play Strike animation for visual reference (ACTIVE phase = no Dab chain)
+		print("🎯 [DEBUG] F7 → Strike + Hand Window")
 		_play("Strike_Base", false)
 		phase = Phase.ACTIVE
 		_strike_fire_sent = true  # Prevent real fire system from also firing
-		_strike_frame_count = 0
-		# Project Jnt_R_Hand bone position to screen coords
-		var hand_x: int = -1
-		var hand_y: int = -1
-		var win_pos := DisplayServer.window_get_position()
-		var win_size := DisplayServer.window_get_size()
-		if _strike_hand_bone_idx >= 0 and _skeleton != null and _camera != null:
-			var bone_global_pos := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx).origin
-			var screen_pos := _camera.unproject_position(bone_global_pos)
-			hand_x = int(screen_pos.x) + win_pos.x
-			hand_y = int(screen_pos.y) + win_pos.y
-			print("🎯 [DEBUG]   Bone projection: (%d, %d)" % [hand_x, hand_y])
-		# Fallback: window center
-		if hand_x < 0 or hand_x > DisplayServer.screen_get_size().x:
-			hand_x = win_pos.x + int(win_size.x * 0.5)
-			hand_y = win_pos.y + int(win_size.y * 0.45)
-			print("🎯 [DEBUG]   Fallback to window center: (%d, %d)" % [hand_x, hand_y])
-		# Get OS mouse position
-		var mouse_pos := DisplayServer.mouse_get_position()
-		print("🎯 [DEBUG]   Mouse target: (%d, %d)" % [mouse_pos.x, mouse_pos.y])
-		# Send to Python
-		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-			ws.send_text(JSON.stringify({
-				"command": "DEBUG_STRIKE",
-				"hand_x": hand_x,
-				"hand_y": hand_y,
-				"target_x": mouse_pos.x,
-				"target_y": mouse_pos.y
-			}))
-		_show_status_indicator("🎯 Strike Debug (F7)", Color(1, 0.3, 0.3))
+		# Delay hand window spawn to sync with the hand "bounce" in Strike_Base
+		get_tree().create_timer(0.6).timeout.connect(_spawn_hand_window)
 	if _spring_bones_node:
 		_spring_bones_node.handle_input(event)
+
+
+# ─── Multi-Window Hand Animation ─────────────────────────────
+var _hand_window: Window = null
+
+func _spawn_hand_window() -> void:
+	# Clean up any existing hand window
+	if _hand_window and is_instance_valid(_hand_window):
+		_hand_window.queue_free()
+		_hand_window = null
+
+	# ── Start position: Tama's hand bone ──
+	var win_pos := DisplayServer.window_get_position()
+	var win_size := DisplayServer.window_get_size()
+	var start_x: int = win_pos.x + int(win_size.x * 0.5)
+	var start_y: int = win_pos.y + int(win_size.y * 0.45)
+	var used_bone := false
+	if _strike_hand_bone_idx >= 0 and _skeleton != null and _camera != null:
+		var bone_global := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx)
+		var bone_world_pos := bone_global.origin
+		var screen_pos := _camera.unproject_position(bone_world_pos)
+		# viewport coords → screen coords (just add window position)
+		start_x = int(screen_pos.x) + win_pos.x
+		start_y = int(screen_pos.y) + win_pos.y
+		used_bone = true
+		print("🪟   [BONE] viewport=(%.0f,%.0f) → screen=(%d,%d)" % [screen_pos.x, screen_pos.y, start_x, start_y])
+
+	# ── Target: mouse cursor ──
+	var mouse := DisplayServer.mouse_get_position()
+	var src_label := "BONE" if used_bone else "FALLBACK"
+	print("🪟   [%s] Start=(%d,%d) → Target=(%d,%d)" % [src_label, start_x, start_y, mouse.x, mouse.y])
+
+	# ── Create window ──
+	_hand_window = Window.new()
+	_hand_window.title = "TamaHand"
+	_hand_window.size = Vector2i(120, 120)
+	_hand_window.position = Vector2i(start_x - 60, start_y - 60)
+	_hand_window.borderless = true
+	_hand_window.transparent_bg = true
+	_hand_window.always_on_top = true
+	_hand_window.unfocusable = true
+	_hand_window.transparent = true
+	_hand_window.gui_embed_subwindows = false
+
+	var label := Label.new()
+	label.text = "🖐️"
+	label.add_theme_font_size_override("font_size", 64)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_hand_window.add_child(label)
+	add_child(_hand_window)
+
+	# ── Animate ──
+	var target_pos := Vector2i(mouse.x - 60, mouse.y - 60)
+	var tween := create_tween()
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(_hand_window, "position", target_pos, 0.7)
+	tween.tween_callback(func():
+		if is_instance_valid(label):
+			label.text = "👆"
+	)
+	tween.tween_interval(0.5)
+	tween.tween_callback(func():
+		if _hand_window and is_instance_valid(_hand_window):
+			_hand_window.queue_free()
+			_hand_window = null
+	)
+
 
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
@@ -505,45 +546,24 @@ func _process(delta: float) -> void:
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
 	_sync_gaze_to_modifier()
 
-	# ─── Strike Fire (Jnt_R_Hand Position) ───────────────────
-	# Wait a few frames after entering STRIKING so AnimationPlayer
-	# has time to pose the bones before we project to screen coords.
+	# ─── Strike Fire (Jnt_R_Hand Scale) ──────────────────────
+	# Wait a few frames for animation to settle, then:
+	#   1. Spawn Godot hand window (visual animation)
+	#   2. Send STRIKE_FIRE to Python (triggers the actual tab close)
 	if phase == Phase.STRIKING and not _strike_fire_sent:
 		_strike_frame_count += 1
-		# Wait 10 frames (~170ms at 60fps) for animation to settle
-		if _strike_frame_count >= 10:
+		# Wait 5 frames then check if hand bone scale exceeded 1.0 (the bounce)
+		if _strike_frame_count >= 5:
 			if _strike_hand_bone_idx >= 0 and _skeleton != null:
 				var bone_scale := _skeleton.get_bone_pose_scale(_strike_hand_bone_idx)
 				if bone_scale.x > STRIKE_FIRE_SCALE_THRESHOLD:
 					_strike_fire_sent = true
-					# Get Godot window position on screen
-					var win_pos := DisplayServer.window_get_position()
-					var win_size := DisplayServer.window_get_size()
-					var hand_screen_x: int = -1
-					var hand_screen_y: int = -1
-					# Try bone projection first
-					if _camera != null:
-						var bone_global_pos := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx).origin
-						var screen_pos := _camera.unproject_position(bone_global_pos)
-						var sx := int(screen_pos.x) + win_pos.x
-						var sy := int(screen_pos.y) + win_pos.y
-						# Validate: must be on-screen and within reason
-						var total_w := DisplayServer.screen_get_size().x
-						var total_h := DisplayServer.screen_get_size().y
-						if sx > 0 and sx < total_w and sy > 0 and sy < total_h:
-							hand_screen_x = sx
-							hand_screen_y = sy
-					# Fallback: estimate from window position (Tama is centered, hand extends right)
-					if hand_screen_x < 0:
-						hand_screen_x = win_pos.x + int(win_size.x * 0.5)
-						hand_screen_y = win_pos.y + int(win_size.y * 0.45)
-					print("🎯 STRIKE_FIRE! pos=(%d,%d) — envoi à Python" % [hand_screen_x, hand_screen_y])
+					# Visual: Godot multi-window hand animation
+					_spawn_hand_window()
+					# Functional: tell Python to close the tab
+					print("🎯 STRIKE_FIRE! — hand window + close signal sent")
 					if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-						ws.send_text(JSON.stringify({
-							"command": "STRIKE_FIRE",
-							"hand_x": hand_screen_x,
-							"hand_y": hand_screen_y
-						}))
+						ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
 
 	# Gaze + Spring bones delta stored for post-animation processing
 	_last_delta = delta

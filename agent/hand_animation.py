@@ -181,56 +181,18 @@ def animate(hwnd, mode="app", start_x=None, start_y=None):
         # WM_CLOSE = ferme toute la fenêtre
         user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
         print(f"✅ WM_CLOSE envoyé (app fermée) hwnd={hwnd}")
-    
+
     time.sleep(0.2)
     root.destroy()
 
-# ─── Debug Animation (no close, just visual) ────────────────
-def animate_debug(start_x, start_y, target_x, target_y):
-    """Visual-only: animate hand from start → target, no window close."""
-    root = tk.Tk()
-    root.overrideredirect(True)
-    root.attributes("-topmost", True)
-    root.attributes("-transparentcolor", "white")
-    root.configure(bg="white")
-    
-    label = tk.Label(root, text="🖐️", font=("Segoe UI Emoji", 45), bg="white")
-    label.pack()
-    
-    steps = 45
-    
-    for i in range(steps + 1):
-        t = i / float(steps)
-        eased_t = ease_in_out(t)
-        curve_offset = math.sin(t * math.pi) * 120
-        
-        current_x = int(start_x + (target_x - start_x) * eased_t - curve_offset)
-        current_y = int(start_y + (target_y - start_y) * eased_t)
-        current_x -= 35
-        current_y -= 30
-        
-        root.geometry(f"+{current_x}+{current_y}")
-        root.update()
-        time.sleep(0.015)
-    
-    # Arrived — show pointer, no close action
-    label.config(text="👆")
-    root.update()
-    time.sleep(0.5)
-    root.destroy()
-    print(f"✅ [DEBUG] Animation terminée: ({start_x},{start_y}) → ({target_x},{target_y})")
-
 # ─── CLI ─────────────────────────────────────────────────────
 if __name__ == '__main__':
-    if len(sys.argv) >= 7 and sys.argv[2] == "debug":
-        # Debug mode: hwnd debug start_x start_y target_x target_y
-        animate_debug(int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]))
-    elif len(sys.argv) >= 5:
-        # Normal mode: hwnd mode start_x start_y
+    if len(sys.argv) >= 5:
+        # hwnd mode start_x start_y
         animate(sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]))
     elif len(sys.argv) >= 3:
         animate(sys.argv[1], sys.argv[2])
     elif len(sys.argv) == 2:
         animate(sys.argv[1], "app")
     else:
-        print("Usage: hand_animation.py <hwnd> [browser|app|debug] [start_x] [start_y] [target_x] [target_y]")
+        print("Usage: hand_animation.py <hwnd> [browser|app] [start_x] [start_y]")

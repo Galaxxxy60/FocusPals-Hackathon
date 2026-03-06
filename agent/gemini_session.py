@@ -366,11 +366,10 @@ def prepare_close_tab(reason: str, target_window: str = None):
         return {"status": "error", "message": str(e)}
 
 
-def fire_hand_animation(hand_x: int = -1, hand_y: int = -1):
+def fire_hand_animation():
     """
-    Lance la main magique avec les infos du _pending_strike.
-    Appelé quand Godot envoie STRIKE_FIRE à la frame clé de l'animation.
-    hand_x, hand_y = screen coords of Tama's right hand (from Godot).
+    Ferme l'onglet/fenêtre stocké dans _pending_strike.
+    Appelé quand Godot envoie STRIKE_FIRE (la partie visuelle est gérée par Godot's multi-window).
     """
     pending = state.pop("_pending_strike", None)
     if not pending:
@@ -383,11 +382,10 @@ def fire_hand_animation(hand_x: int = -1, hand_y: int = -1):
     title = pending["title"]
 
     hand_script = os.path.join(application_path, "hand_animation.py")
-    cmd = [sys.executable, hand_script, str(hwnd), mode, str(hand_x), str(hand_y)]
-    subprocess.Popen(cmd)
+    subprocess.Popen([sys.executable, hand_script, str(hwnd), mode])
 
     action = "Ctrl+W (onglet)" if mode == "browser" else "WM_CLOSE (app)"
-    print(f"  🖐️ STRIKE_FIRE! Main lancée → '{title}' [{action}] start=({hand_x},{hand_y})")
+    print(f"  🖐️ STRIKE_FIRE! Tab close → '{title}' [{action}]")
 
 
 async def grace_then_close(session, audio_out_queue, reason, target_window):
