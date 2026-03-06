@@ -330,6 +330,7 @@ La langue de Tama est contrôlée par le **system prompt** (FR ou EN, configurab
 | `GET_SETTINGS` | — | Demande settings (micros + API key status) |
 | `SELECT_MIC` | `{index: 3}` | Changement de micro |
 | `SET_API_KEY` | `{key: "AIza..."}` | Mettre à jour la clé API Gemini |
+| `STRIKE_FIRE` | — | Strike anim frame atteinte → lance main magique |
 
 ---
 
@@ -410,6 +411,41 @@ Gemini parle → report_mood({mood: "sarcastic", intensity: 0.8})
 - Tier 1 (S 3-5) → Suspicious loop
 - Tier 2 (S 6-8) → Angry loop
 - Tier 3 (S ≥ 9) → Strike (freeze)
+
+### Strike Fire Sync (synchronisation frame-précise via bone marker)
+
+La "main magique" (`hand_animation.py`) est synchronisée avec l'animation Strike de Tama via un **bone marqueur** dans le rig Blender.
+
+#### Principe
+Un bone `StrikeMarker` est à **scale (0,0,0)** par défaut dans toutes les animations.
+À la frame **exacte** où la main doit partir → son scale passe à **(0.1, 0.1, 0.1)**.
+Godot détecte ce changement de scale → envoie `STRIKE_FIRE` à Python.
+
+```
+grace_then_close() → prepare_close_tab() → state["_pending_strike"] = {hwnd, mode, title}
+  → send_anim_to_godot("Strike") → Godot joue Strike_Base
+  → Godot _process() vérifie StrikeMarker bone scale
+  → Scale > 0.01 → STRIKE_FIRE via WebSocket
+  → Python ws_handler() → fire_hand_animation() → subprocess hand_animation.py
+```
+
+#### Comment ajouter un nouveau Strike dans Blender
+1. Créer l'animation (ex: `Strike_Snap`)
+2. Keyframer `StrikeMarker` à scale (0,0,0) sur toutes les frames
+3. À la frame du fire → keyframer scale à (0.1, 0.1, 0.1)
+4. Exporter le GLB — Godot détecte automatiquement
+
+| Variable | Côté | Description |
+|----------|------|-------------|
+| `STRIKE_MARKER_SCALE_THRESHOLD` | Godot | Seuil de détection (0.01 par défaut) |
+| `_strike_marker_bone_idx` | Godot | Index du bone (auto-découvert au lancement) |
+| `_strike_fire_sent` | Godot | Flag anti-doublon (reset à chaque entrée en STRIKING) |
+| `_pending_strike` | Python | Dict `{hwnd, mode, title, reason}` — consommé par `fire_hand_animation()` |
+
+> **Noms de bone acceptés** (case-insensitive) : `StrikeMarker`, `Strike_Marker`, `FireMarker`, `Fire_Marker`
+
+> **Safety timeout** : Si Godot ne renvoie pas `STRIKE_FIRE` dans les 5 secondes (bone absent, bug anim), Python lance la main en fallback.
+
 
 ---
 

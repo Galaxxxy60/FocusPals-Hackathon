@@ -35,6 +35,26 @@ var _prev_suspicion_tier: int = -1
 var _last_anim_command_time: float = 0.0  # Timestamp of last Python anim command
 const ANIM_COMMAND_COOLDOWN: float = 5.0  # Don't auto-anim if Python sent one recently
 
+# ─── Strike Fire Sync (Jnt_R_Hand Scale) ──────────────────
+# The magic hand (hand_animation.py) is synchronized with Tama's
+# Strike animation via the RIGHT HAND BONE (Jnt_R_Hand) scale.
+#
+# HOW IT WORKS:
+#   In Blender, Jnt_R_Hand has scale (0,0,0) by default (hand hidden).
+#   At the EXACT frame where the magic hand should fire, keyframe
+#   its scale to (0.1, 0.1, 0.1) — the hand appears AND fires.
+#   Godot detects scale > 0 → sends STRIKE_FIRE to Python.
+#
+# HOW TO ADD A NEW STRIKE ANIMATION:
+#   1. Create the animation in Blender (e.g. "Strike_Snap")
+#   2. Keyframe Jnt_R_Hand scale to (0,0,0) on all frames
+#   3. At the exact fire frame → keyframe scale to (0.1, 0.1, 0.1)
+#   4. That's it! Export GLB, Godot auto-detects it.
+const STRIKE_FIRE_SCALE_THRESHOLD: float = 0.01  # Anything > this = FIRE
+var _strike_hand_bone_idx: int = -1  # Jnt_R_Hand, auto-discovered in _setup_gaze
+var _strike_fire_sent: bool = false  # Prevent duplicate fires per strike
+var _strike_frame_count: int = 0     # Frames elapsed since entering STRIKING (warm-up delay)
+
 # ─── Expression System (UV Swap) ─────────────────────────
 var _eyes_material: StandardMaterial3D = null
 var _mouth_material: StandardMaterial3D = null
@@ -319,6 +339,43 @@ func _unhandled_input(event: InputEvent) -> void:
 			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
 			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
+	# F7 = Debug Strike Fire: launch magic hand from Tama's hand → mouse cursor
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F7:
+		print("🎯 [DEBUG] F7 → Debug Strike Fire!")
+		# Play Strike animation for visual reference (ACTIVE phase = no Dab chain)
+		_play("Strike_Base", false)
+		phase = Phase.ACTIVE
+		_strike_fire_sent = true  # Prevent real fire system from also firing
+		_strike_frame_count = 0
+		# Project Jnt_R_Hand bone position to screen coords
+		var hand_x: int = -1
+		var hand_y: int = -1
+		var win_pos := DisplayServer.window_get_position()
+		var win_size := DisplayServer.window_get_size()
+		if _strike_hand_bone_idx >= 0 and _skeleton != null and _camera != null:
+			var bone_global_pos := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx).origin
+			var screen_pos := _camera.unproject_position(bone_global_pos)
+			hand_x = int(screen_pos.x) + win_pos.x
+			hand_y = int(screen_pos.y) + win_pos.y
+			print("🎯 [DEBUG]   Bone projection: (%d, %d)" % [hand_x, hand_y])
+		# Fallback: window center
+		if hand_x < 0 or hand_x > DisplayServer.screen_get_size().x:
+			hand_x = win_pos.x + int(win_size.x * 0.5)
+			hand_y = win_pos.y + int(win_size.y * 0.45)
+			print("🎯 [DEBUG]   Fallback to window center: (%d, %d)" % [hand_x, hand_y])
+		# Get OS mouse position
+		var mouse_pos := DisplayServer.mouse_get_position()
+		print("🎯 [DEBUG]   Mouse target: (%d, %d)" % [mouse_pos.x, mouse_pos.y])
+		# Send to Python
+		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			ws.send_text(JSON.stringify({
+				"command": "DEBUG_STRIKE",
+				"hand_x": hand_x,
+				"hand_y": hand_y,
+				"target_x": mouse_pos.x,
+				"target_y": mouse_pos.y
+			}))
+		_show_status_indicator("🎯 Strike Debug (F7)", Color(1, 0.3, 0.3))
 	if _spring_bones_node:
 		_spring_bones_node.handle_input(event)
 
@@ -447,6 +504,46 @@ func _process(delta: float) -> void:
 
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
 	_sync_gaze_to_modifier()
+
+	# ─── Strike Fire (Jnt_R_Hand Position) ───────────────────
+	# Wait a few frames after entering STRIKING so AnimationPlayer
+	# has time to pose the bones before we project to screen coords.
+	if phase == Phase.STRIKING and not _strike_fire_sent:
+		_strike_frame_count += 1
+		# Wait 10 frames (~170ms at 60fps) for animation to settle
+		if _strike_frame_count >= 10:
+			if _strike_hand_bone_idx >= 0 and _skeleton != null:
+				var bone_scale := _skeleton.get_bone_pose_scale(_strike_hand_bone_idx)
+				if bone_scale.x > STRIKE_FIRE_SCALE_THRESHOLD:
+					_strike_fire_sent = true
+					# Get Godot window position on screen
+					var win_pos := DisplayServer.window_get_position()
+					var win_size := DisplayServer.window_get_size()
+					var hand_screen_x: int = -1
+					var hand_screen_y: int = -1
+					# Try bone projection first
+					if _camera != null:
+						var bone_global_pos := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx).origin
+						var screen_pos := _camera.unproject_position(bone_global_pos)
+						var sx := int(screen_pos.x) + win_pos.x
+						var sy := int(screen_pos.y) + win_pos.y
+						# Validate: must be on-screen and within reason
+						var total_w := DisplayServer.screen_get_size().x
+						var total_h := DisplayServer.screen_get_size().y
+						if sx > 0 and sx < total_w and sy > 0 and sy < total_h:
+							hand_screen_x = sx
+							hand_screen_y = sy
+					# Fallback: estimate from window position (Tama is centered, hand extends right)
+					if hand_screen_x < 0:
+						hand_screen_x = win_pos.x + int(win_size.x * 0.5)
+						hand_screen_y = win_pos.y + int(win_size.y * 0.45)
+					print("🎯 STRIKE_FIRE! pos=(%d,%d) — envoi à Python" % [hand_screen_x, hand_screen_y])
+					if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+						ws.send_text(JSON.stringify({
+							"command": "STRIKE_FIRE",
+							"hand_x": hand_screen_x,
+							"hand_y": hand_screen_y
+						}))
 
 	# Gaze + Spring bones delta stored for post-animation processing
 	_last_delta = delta
@@ -635,6 +732,8 @@ func _handle_message(raw: String) -> void:
 			else:
 				_play("Strike_Base", false)
 				phase = Phase.STRIKING
+				_strike_fire_sent = false
+				_strike_frame_count = 0
 		else:
 			# Suspicious, Angry, Idle — if on wall, transition first
 			if phase == Phase.ON_WALL:
@@ -774,24 +873,21 @@ func _update_suspicion_anim() -> void:
 				phase = Phase.TRANSITION_OFF
 			elif phase == Phase.ACTIVE:
 				_play("Angry", false)
-		3: # Strike !
+		3: # Très suspicieux — Angry (le Strike ne vient QUE de Python via TAMA_ANIM)
 			if phase == Phase.ON_WALL:
 				_play("OffThewall", false)
 				phase = Phase.TRANSITION_OFF
 			elif phase == Phase.ACTIVE:
-				_play("Strike_Base", false)
-				phase = Phase.STRIKING
+				_play("Angry", false)
 
 # ─── Callback quand une anim "play once" se termine ──────
 func _on_animation_finished(_anim_name: StringName) -> void:
 	match phase:
 		Phase.TRANSITION_OFF:
 			# OffTheWall terminé → choisir l'anim selon suspicion
+			# Note: Strike ne vient JAMAIS d'ici — Python l'envoie via TAMA_ANIM
 			var tier := _get_tier()
-			if tier >= 3:
-				_play("Strike_Base", false)
-				phase = Phase.STRIKING
-			elif tier >= 2:
+			if tier >= 2:
 				_play("Angry", false)
 				phase = Phase.ACTIVE
 			elif tier >= 1:
@@ -1243,13 +1339,15 @@ func _setup_gaze() -> void:
 		return
 	_skeleton = skel
 
-	# Find Head and Neck bones
+	# Find Head, Neck, and Right Hand bones
 	for i in range(_skeleton.get_bone_count()):
 		var bname = _skeleton.get_bone_name(i).to_lower()
 		if bname == "head":
 			_head_bone_idx = i
 		elif bname == "neck":
 			_neck_bone_idx = i
+		elif bname == "jnt_r_hand":
+			_strike_hand_bone_idx = i
 
 	# Partial match fallback
 	if _head_bone_idx < 0:
@@ -1262,12 +1360,22 @@ func _setup_gaze() -> void:
 			if "neck" in _skeleton.get_bone_name(i).to_lower():
 				_neck_bone_idx = i
 				break
+	if _strike_hand_bone_idx < 0:
+		for i in range(_skeleton.get_bone_count()):
+			var bname = _skeleton.get_bone_name(i).to_lower()
+			if "r_hand" in bname:
+				_strike_hand_bone_idx = i
+				break
 
 	# Log bone discovery
 	if _head_bone_idx >= 0:
 		print("\ud83d\udc40 Gaze: Head bone [%d] '%s'" % [_head_bone_idx, _skeleton.get_bone_name(_head_bone_idx)])
 	if _neck_bone_idx >= 0:
 		print("\ud83d\udc40 Gaze: Neck bone [%d] '%s'" % [_neck_bone_idx, _skeleton.get_bone_name(_neck_bone_idx)])
+	if _strike_hand_bone_idx >= 0:
+		print("🎯 Strike hand bone [%d] '%s' — Strike Fire sync active!" % [_strike_hand_bone_idx, _skeleton.get_bone_name(_strike_hand_bone_idx)])
+	else:
+		print("⚠️ Jnt_R_Hand bone NOT FOUND — Strike Fire will use timeout fallback")
 
 	_gaze_active = _head_bone_idx >= 0 and _camera != null
 	if _gaze_active:

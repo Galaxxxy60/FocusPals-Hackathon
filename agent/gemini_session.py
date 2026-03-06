@@ -325,15 +325,12 @@ TOOLS = [
 
 # ─── Close Tab Logic ────────────────────────────────────────
 
-def execute_close_tab(reason: str, target_window: str = None):
+def prepare_close_tab(reason: str, target_window: str = None):
     """
-    Ferme la fenêtre/onglet ciblé avec le système UIA-guided.
-    - Navigateurs → mode 'browser' (UIA TabItem tracking + Ctrl+W = ferme UN onglet)
-    - Apps standalone → mode 'app' (WM_CLOSE = ferme toute la fenêtre)
+    Prépare la fermeture sans la lancer — stocke les infos dans state["_pending_strike"].
+    La main magique sera lancée quand Godot envoie STRIKE_FIRE (synchronisé à la frame).
     """
     try:
-        import subprocess
-
         target = None
         if target_window:
             target = get_cached_window_by_title(target_window)
@@ -354,14 +351,43 @@ def execute_close_tab(reason: str, target_window: str = None):
                 mode = "browser"
                 break
 
-        hand_script = os.path.join(application_path, "hand_animation.py")
-        subprocess.Popen([sys.executable, hand_script, str(hwnd), mode])
+        # Store pending strike info — Godot will trigger via STRIKE_FIRE
+        state["_pending_strike"] = {
+            "hwnd": hwnd,
+            "mode": mode,
+            "title": target.title,
+            "reason": reason,
+        }
 
         action = "Ctrl+W (onglet)" if mode == "browser" else "WM_CLOSE (app)"
-        print(f"  🖐️ Main lancée → '{target.title}' [{action}]")
-        return {"status": "success", "message": f"Closing '{target.title}' via {action}: {reason}"}
+        print(f"  🎯 Strike préparé → '{target.title}' [{action}] — en attente de STRIKE_FIRE")
+        return {"status": "success", "message": f"Strike prepared for '{target.title}' via {action}: {reason}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def fire_hand_animation(hand_x: int = -1, hand_y: int = -1):
+    """
+    Lance la main magique avec les infos du _pending_strike.
+    Appelé quand Godot envoie STRIKE_FIRE à la frame clé de l'animation.
+    hand_x, hand_y = screen coords of Tama's right hand (from Godot).
+    """
+    pending = state.pop("_pending_strike", None)
+    if not pending:
+        print("  ⚠️ STRIKE_FIRE reçu mais pas de _pending_strike")
+        return
+
+    import subprocess
+    hwnd = pending["hwnd"]
+    mode = pending["mode"]
+    title = pending["title"]
+
+    hand_script = os.path.join(application_path, "hand_animation.py")
+    cmd = [sys.executable, hand_script, str(hwnd), mode, str(hand_x), str(hand_y)]
+    subprocess.Popen(cmd)
+
+    action = "Ctrl+W (onglet)" if mode == "browser" else "WM_CLOSE (app)"
+    print(f"  🖐️ STRIKE_FIRE! Main lancée → '{title}' [{action}] start=({hand_x},{hand_y})")
 
 
 async def grace_then_close(session, audio_out_queue, reason, target_window):
@@ -403,11 +429,24 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             except Exception:
                 pass
         else:
-            # No intervention — execute close
-            result = execute_close_tab(reason, target_window)
+            # No intervention — prepare close + launch Strike animation
+            result = prepare_close_tab(reason, target_window)
             if result.get("status") == "success":
+                # Send Strike anim — Godot will fire STRIKE_FIRE at the right frame
+                # which triggers fire_hand_animation() via ws_handler
                 send_anim_to_godot("Strike", False)
                 update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
+
+                # Safety timeout: if Godot doesn't send STRIKE_FIRE within 5s, fire anyway
+                # (handles: animation glitch, Godot disconnected, etc.)
+                STRIKE_FIRE_TIMEOUT = 5.0
+                timeout_start = time.time()
+                while state.get("_pending_strike") is not None:
+                    if time.time() - timeout_start > STRIKE_FIRE_TIMEOUT:
+                        print("  ⚠️ STRIKE_FIRE timeout (5s) — lancement fallback de la main")
+                        fire_hand_animation()
+                        break
+                    await asyncio.sleep(0.1)
 
                 # ── Post-close reset: prevent "ghost tab" re-trigger ──
                 # Drop S from STRIKE zone to SUSPICIOUS (Tama stays alert, doesn't re-strike)
@@ -953,17 +992,17 @@ async def run_gemini_loop(pya):
                                 speak_directive = "CURIOUS: L'utilisateur est sur une app ambiguë depuis un moment. Tu PEUX poser UNE question courte et naturelle. Appelle aussi classify_screen."
 
                             # ── Escalation stages (highest priority first) ──
-                            # STAGE 4 — STRIKE (S≥9 for >30s): EXECUTE the close
-                            if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 30):
+                            # STAGE 4 — STRIKE (S≥9 for >15s): EXECUTE the close
+                            if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
                                 speak_directive = "STRIKE: C'est le moment. Dis ta réplique finale de fermeture (courte, percutante, en français) ET appelle close_distracting_tab avec la fenêtre cible de open_windows."
-                            # STAGE 3 — ULTIMATUM (S≥9 for >15s): Final warning
-                            elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
+                            # STAGE 3 — ULTIMATUM (S≥9 for >8s): Final warning
+                            elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 8):
                                 speak_directive = "ULTIMATUM: Dernier avertissement. Dis à l'utilisateur que tu vas fermer la fenêtre s'il ne réagit pas. Sois naturelle et dramatique. N'appelle PAS close_distracting_tab maintenant."
-                            # STAGE 2 — WARNING (S≥6 for >20s): Verbal warning
-                            elif state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 20):
+                            # STAGE 2 — WARNING (S≥6 for >8s): Verbal warning
+                            elif state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 8):
                                 speak_directive = "WARNING: L'utilisateur procrastine depuis trop longtemps. Dis-lui de retourner travailler. Sois directe et naturelle en français."
-                            # STAGE 1 — SUSPICIOUS (S≥3 for >5s): First contact
-                            elif state["suspicion_above_3_start"] and (time.time() - state["suspicion_above_3_start"] > 5):
+                            # STAGE 1 — SUSPICIOUS (S≥3 for >3s): First contact
+                            elif state["suspicion_above_3_start"] and (time.time() - state["suspicion_above_3_start"] > 3):
                                 speak_directive = "SUSPICIOUS: Tu vois l'utilisateur sur une appli. Fais UN commentaire court et CONTEXTUEL sur ce que tu vois à l'écran. Sois curieuse, pas encore en colère. Appelle aussi classify_screen."
 
                         task_info = f"scheduled_task: {state['current_task']}" if state["current_task"] else "scheduled_task: NOT SET (ask the user!)"

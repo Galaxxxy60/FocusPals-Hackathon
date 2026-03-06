@@ -16,6 +16,17 @@ import math
 import ctypes
 import ctypes.wintypes
 
+# ─── DPI Awareness (fix coordinate mismatch with Godot) ─────
+# Without this, Tkinter uses logical pixels while Godot sends physical pixels,
+# causing a constant offset (~500px) on screens with DPI scaling (125%, 150%, etc.)
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()  # Fallback for older Windows
+    except Exception:
+        pass
+
 # ─── Windows API ─────────────────────────────────────────────
 user32 = ctypes.windll.user32
 WM_CLOSE = 0x0010
@@ -70,7 +81,7 @@ def ease_in_out(t):
         return 1 - math.pow(-2 * t + 2, 3) / 2
 
 # ─── Animation Principale ───────────────────────────────────
-def animate(hwnd, mode="app"):
+def animate(hwnd, mode="app", start_x=None, start_y=None):
     hwnd = int(hwnd)
     
     if not user32.IsWindow(hwnd):
@@ -98,8 +109,15 @@ def animate(hwnd, mode="app"):
     
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
-    start_x = screen_width - 150
-    start_y = screen_height - 150
+    # Use provided start position (from Tama's hand) or fallback to bottom-right corner
+    if start_x is not None and start_x >= 0:
+        sx = start_x
+    else:
+        sx = screen_width - 150
+    if start_y is not None and start_y >= 0:
+        sy = start_y
+    else:
+        sy = screen_height - 150
     
     steps = 45
     
@@ -128,8 +146,8 @@ def animate(hwnd, mode="app"):
             target_x = wr - 25
             target_y = wt + 15
         
-        current_x = int(start_x + (target_x - start_x) * eased_t - curve_offset)
-        current_y = int(start_y + (target_y - start_y) * eased_t)
+        current_x = int(sx + (target_x - sx) * eased_t - curve_offset)
+        current_y = int(sy + (target_y - sy) * eased_t)
         # Compense la taille de l'emoji : le "doigt" est au centre, pas en haut-gauche
         current_x -= 35
         current_y -= 30
@@ -167,11 +185,52 @@ def animate(hwnd, mode="app"):
     time.sleep(0.2)
     root.destroy()
 
+# ─── Debug Animation (no close, just visual) ────────────────
+def animate_debug(start_x, start_y, target_x, target_y):
+    """Visual-only: animate hand from start → target, no window close."""
+    root = tk.Tk()
+    root.overrideredirect(True)
+    root.attributes("-topmost", True)
+    root.attributes("-transparentcolor", "white")
+    root.configure(bg="white")
+    
+    label = tk.Label(root, text="🖐️", font=("Segoe UI Emoji", 45), bg="white")
+    label.pack()
+    
+    steps = 45
+    
+    for i in range(steps + 1):
+        t = i / float(steps)
+        eased_t = ease_in_out(t)
+        curve_offset = math.sin(t * math.pi) * 120
+        
+        current_x = int(start_x + (target_x - start_x) * eased_t - curve_offset)
+        current_y = int(start_y + (target_y - start_y) * eased_t)
+        current_x -= 35
+        current_y -= 30
+        
+        root.geometry(f"+{current_x}+{current_y}")
+        root.update()
+        time.sleep(0.015)
+    
+    # Arrived — show pointer, no close action
+    label.config(text="👆")
+    root.update()
+    time.sleep(0.5)
+    root.destroy()
+    print(f"✅ [DEBUG] Animation terminée: ({start_x},{start_y}) → ({target_x},{target_y})")
+
 # ─── CLI ─────────────────────────────────────────────────────
 if __name__ == '__main__':
-    if len(sys.argv) >= 3:
+    if len(sys.argv) >= 7 and sys.argv[2] == "debug":
+        # Debug mode: hwnd debug start_x start_y target_x target_y
+        animate_debug(int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]))
+    elif len(sys.argv) >= 5:
+        # Normal mode: hwnd mode start_x start_y
+        animate(sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]))
+    elif len(sys.argv) >= 3:
         animate(sys.argv[1], sys.argv[2])
     elif len(sys.argv) == 2:
         animate(sys.argv[1], "app")
     else:
-        print("Usage: hand_animation.py <hwnd> [browser|app]")
+        print("Usage: hand_animation.py <hwnd> [browser|app|debug] [start_x] [start_y] [target_x] [target_y]")

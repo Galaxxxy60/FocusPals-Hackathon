@@ -10,6 +10,7 @@ import ctypes.wintypes
 import json
 import os
 import subprocess
+import sys
 import time
 import threading
 
@@ -327,6 +328,36 @@ async def ws_handler(websocket):
                     duration = int(data.get("duration", 50))
                     state["session_duration_minutes"] = max(5, min(180, duration))
                     print(f"⏱️ Durée de session réglée sur : {state['session_duration_minutes']} min")
+                elif cmd == "STRIKE_FIRE":
+                    # Godot sends this at the precise Strike animation frame
+                    # with the screen position of Tama's right hand
+                    from gemini_session import fire_hand_animation
+                    hand_x = data.get("hand_x", -1)
+                    hand_y = data.get("hand_y", -1)
+                    print(f"🎯 STRIKE_FIRE reçu de Godot — pos=({hand_x},{hand_y})")
+                    await asyncio.to_thread(fire_hand_animation, hand_x, hand_y)
+                elif cmd == "DEBUG_STRIKE":
+                    # F7 debug: launch magic hand from bone position → mouse cursor
+                    hand_x = data.get("hand_x", -1)
+                    hand_y = data.get("hand_y", -1)
+                    # Get mouse position from Win32 API (same coord space as Tkinter)
+                    # instead of Godot coords which may have DPI mismatch
+                    import ctypes.wintypes
+                    pt = ctypes.wintypes.POINT()
+                    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+                    target_x = pt.x
+                    target_y = pt.y
+                    # Also log Godot's reported coords for comparison
+                    godot_tx = data.get("target_x", -1)
+                    godot_ty = data.get("target_y", -1)
+                    print(f"🎯 [DEBUG] Strike: hand=({hand_x},{hand_y}) → target=({target_x},{target_y}) [Godot said ({godot_tx},{godot_ty})]")
+                    hand_script = os.path.join(application_path, "hand_animation.py")
+                    subprocess.Popen([
+                        sys.executable, hand_script,
+                        "0", "debug",
+                        str(hand_x), str(hand_y),
+                        str(target_x), str(target_y)
+                    ])
             except Exception as e:
                 print(f"⚠️ [WS] Erreur commande: {e}")
                 import traceback; traceback.print_exc()

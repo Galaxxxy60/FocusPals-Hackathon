@@ -142,6 +142,8 @@ state = {
     "_resuming_from_crash": False,    # True when reconnecting after a crash
     "_last_audio_play_time": 0,       # Timestamp of last audio chunk played
     "_last_speech_ended": 0,          # Timestamp of last speech turn end
+    # Strike fire sync (frame-precise hand animation trigger)
+    "_pending_strike": None,          # Dict with hwnd/mode/title/reason — set by prepare_close_tab, consumed by fire_hand_animation
 }
 
 
@@ -160,24 +162,24 @@ def compute_delta_s(alignment: float, category: str) -> float:
     """Deterministic ΔS formula based on A.S.C. spec."""
     if alignment >= 1.0:  # Aligned
         if category == "BANNIE":
-            return 0.2
-        return -2.0
+            return 0.3
+        return -3.0       # Fast decay when working — reward compliance
     elif alignment >= 0.5:  # Doubt — category matters!
         if category == "BANNIE":
-            return 0.8   # Banned app even in doubt → fast escalation
+            return 1.5   # Banned app even in doubt → fast escalation
         elif category in ("FLUX", "ZONE_GRISE"):
-            return 0.5   # Foreground music/messaging → meaningful buildup
+            return 0.8   # Foreground music/messaging → meaningful buildup
         elif category == "PROCRASTINATION_PRODUCTIVE":
-            return 0.4
-        return 0.2        # SANTE in doubt → minimal
+            return 0.6
+        return 0.3        # SANTE in doubt → minimal
     else:  # Misaligned (A = 0.0)
         if category == "BANNIE":
-            return 2.0
+            return 3.0    # ~3 pulses to S=9 (15 seconds)
         elif category == "ZONE_GRISE":
-            return 1.0
+            return 1.5
         elif category == "FLUX":
-            return 0.5
+            return 0.8
         elif category == "PROCRASTINATION_PRODUCTIVE":
-            return 0.5
+            return 0.8
         else:
-            return 1.0
+            return 1.5
