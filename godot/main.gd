@@ -59,6 +59,19 @@ var _strike_frame_count: int = 0     # Frames elapsed since entering STRIKING (w
 var _arm1_bone_idx: int = -1   # Jnt_R_Arm1 (upper arm)
 var _arm2_bone_idx: int = -1   # Jnt_R_Arm2 (forearm)
 
+# ─── IMBA Mode (Super Saiyan Levels) ─────────────────────
+# Level 0: Normal
+# Level 1: White glasses (BS_WhiteGlasses)
+# Level 2: (future — aura particles?)
+# Level 3: (future — full glow?)
+var _imba_level: int = 0
+var _imba_blend: float = 0.0           # Current BS_WhiteGlasses blend value
+var _bs_white_glasses: int = -1        # Blend shape index
+var _imba_tween: Tween = null          # For smooth transitions
+
+# Strike target coordinates from Python (tab/window close button position)
+var _strike_target: Vector2i = Vector2i(-1, -1)  # -1 = use mouse fallback
+
 # ─── Expression System (UV Swap) ─────────────────────────
 var _eyes_material: StandardMaterial3D = null
 var _mouth_material: StandardMaterial3D = null
@@ -139,7 +152,7 @@ const MOOD_EYES = {
 	"annoyed": "E5", "angry": "E5", "furious": "E8",
 }
 const MOOD_MOUTH = {
-	"calm": "M4", "curious": "M0", "amused": "M4", "proud": "M4",
+	"calm": "M0", "curious": "M0", "amused": "M4", "proud": "M4",
 	"suspicious": "M7", "surprised": "M1", "disappointed": "M5", "sarcastic": "M6",
 	"annoyed": "M5", "angry": "M5", "furious": "M8",
 }
@@ -349,6 +362,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_play("Strike_Base", false)
 		phase = Phase.ACTIVE
 		_strike_fire_sent = true  # Prevent real fire system from also firing
+		_activate_imba(1)  # IMBA level 1!
 		# Activate arm IK pointing towards mouse
 		if _gaze_modifier:
 			var mouse := DisplayServer.mouse_get_position()
@@ -423,7 +437,13 @@ func _spawn_hand_window() -> void:
 	_hand_window.visible = true  # Now transparent — safe to show
 
 	# ── Animate ──
-	var target_pos := Vector2i(mouse.x - 60, mouse.y - 60)
+	# Target: tab/window close button from Python, or mouse fallback
+	var aim: Vector2i
+	if _strike_target.x >= 0:
+		aim = _strike_target
+	else:
+		aim = mouse
+	var target_pos := Vector2i(aim.x - 60, aim.y - 60)
 	var tween := create_tween()
 	tween.set_ease(Tween.EASE_IN_OUT)
 	tween.set_trans(Tween.TRANS_CUBIC)
@@ -438,7 +458,54 @@ func _spawn_hand_window() -> void:
 			_hand_window.queue_free()
 			_hand_window = null
 		# Keep arm IK active — it fades out when animation changes
+		# Start IMBA fade out after hand window disappears
+		_deactivate_imba()
+		# Reset strike target for next time
+		_strike_target = Vector2i(-1, -1)
 	)
+
+
+# ─── IMBA Mode (Super Saiyan Power-Up) ──────────────────────
+func _activate_imba(level: int) -> void:
+	"""Power up! Activate IMBA visual effects for the given level."""
+	if _bs_white_glasses < 0 or _body_mesh == null:
+		return
+	_imba_level = level
+	# Kill any existing tween
+	if _imba_tween and _imba_tween.is_valid():
+		_imba_tween.kill()
+
+	print("🔥 IMBA LEVEL %d ACTIVATED!" % level)
+
+	if level >= 1:
+		# Level 1: White glasses — fast power-up glow
+		_imba_tween = create_tween()
+		_imba_tween.set_ease(Tween.EASE_OUT)
+		_imba_tween.set_trans(Tween.TRANS_BACK)
+		_imba_tween.tween_method(_set_imba_blend, _imba_blend, 1.0, 0.3)
+
+func _deactivate_imba() -> void:
+	"""Power down — smooth fade out."""
+	if _bs_white_glasses < 0 or _body_mesh == null:
+		return
+	if _imba_level == 0:
+		return
+
+	print("🔥 IMBA fade out...")
+	_imba_level = 0
+	if _imba_tween and _imba_tween.is_valid():
+		_imba_tween.kill()
+
+	_imba_tween = create_tween()
+	_imba_tween.set_ease(Tween.EASE_IN_OUT)
+	_imba_tween.set_trans(Tween.TRANS_CUBIC)
+	_imba_tween.tween_method(_set_imba_blend, _imba_blend, 0.0, 0.8)
+
+func _set_imba_blend(value: float) -> void:
+	"""Tween callback — update BS_WhiteGlasses blend shape."""
+	_imba_blend = value
+	if _body_mesh and _bs_white_glasses >= 0:
+		_body_mesh.set_blend_shape_value(_bs_white_glasses, clampf(value, 0.0, 1.0))
 
 
 func _on_radial_action(action_id: String) -> void:
@@ -579,10 +646,21 @@ func _process(delta: float) -> void:
 				var bone_scale := _skeleton.get_bone_pose_scale(_strike_hand_bone_idx)
 				if bone_scale.x > STRIKE_FIRE_SCALE_THRESHOLD:
 					_strike_fire_sent = true
+					# Arm IK: point at target tab (from Python) or mouse fallback
+					if _gaze_modifier:
+						var aim: Vector2i
+						if _strike_target.x >= 0:
+							aim = _strike_target
+						else:
+							aim = DisplayServer.mouse_get_position()
+						var target_3d := _screen_to_arm_target(float(aim.x), float(aim.y))
+						_gaze_modifier.arm_ik_target = target_3d
+						_gaze_modifier.arm_ik_active = true
+						_gaze_modifier.arm_ik_blend_target = 1.0
 					# Visual: Godot multi-window hand animation
 					_spawn_hand_window()
 					# Functional: tell Python to close the tab
-					print("🎯 STRIKE_FIRE! — hand window + close signal sent")
+					print("🎯 STRIKE_FIRE! — hand window + arm IK + close signal sent")
 					if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 						ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
 
@@ -752,6 +830,13 @@ func _handle_message(raw: String) -> void:
 				"away": set_gaze(GazeTarget.AWAY, spd)
 				"neutral": set_gaze(GazeTarget.NEUTRAL, spd)
 		return
+	elif command == "STRIKE_TARGET":
+		# Python sends target coordinates (tab/window close button)
+		var tx := int(data.get("x", -1))
+		var ty := int(data.get("y", -1))
+		_strike_target = Vector2i(tx, ty)
+		print("🎯 STRIKE_TARGET received: (%d, %d)" % [tx, ty])
+		return
 	elif command == "TAMA_ANIM":
 		# Python tells Godot exactly which animation to play
 		var anim_name = data.get("anim", "")
@@ -775,6 +860,7 @@ func _handle_message(raw: String) -> void:
 				phase = Phase.STRIKING
 				_strike_fire_sent = false
 				_strike_frame_count = 0
+				_activate_imba(1)  # IMBA level 1 before strike!
 		else:
 			# Suspicious, Angry, Idle — if on wall, transition first
 			if phase == Phase.ON_WALL:
@@ -896,30 +982,30 @@ func _update_suspicion_anim() -> void:
 
 	match tier:
 		0: # Calme → retour au mur
-			if phase == Phase.ACTIVE:
-				_play_reverse("OffThewall")
-				phase = Phase.TRANSITION_ON
-			elif phase == Phase.STRIKING:
+			if phase == Phase.ACTIVE or phase == Phase.STRIKING:
 				_play_reverse("OffThewall")
 				phase = Phase.TRANSITION_ON
 		1: # Suspecte
 			if phase == Phase.ON_WALL:
 				_play("OffThewall", false)
 				phase = Phase.TRANSITION_OFF
-			elif phase == Phase.ACTIVE:
+			elif phase == Phase.ACTIVE or phase == Phase.STRIKING:
 				_play("Suspicious", false)
+				phase = Phase.ACTIVE
 		2: # En colère
 			if phase == Phase.ON_WALL:
 				_play("OffThewall", false)
 				phase = Phase.TRANSITION_OFF
-			elif phase == Phase.ACTIVE:
+			elif phase == Phase.ACTIVE or phase == Phase.STRIKING:
 				_play("Angry", false)
+				phase = Phase.ACTIVE
 		3: # Très suspicieux — Angry (le Strike ne vient QUE de Python via TAMA_ANIM)
 			if phase == Phase.ON_WALL:
 				_play("OffThewall", false)
 				phase = Phase.TRANSITION_OFF
-			elif phase == Phase.ACTIVE:
+			elif phase == Phase.ACTIVE or phase == Phase.STRIKING:
 				_play("Angry", false)
+				phase = Phase.ACTIVE
 
 # ─── Callback quand une anim "play once" se termine ──────
 func _on_animation_finished(_anim_name: StringName) -> void:
@@ -949,11 +1035,21 @@ func _on_animation_finished(_anim_name: StringName) -> void:
 				_play("Idle", true)
 				print("🧑 Idle: conversation en cours")
 		Phase.STRIKING:
-			# Strike_Base terminé → enchaîner avec Strike_Dab
-			if "strike_base" in String(_anim_name).to_lower():
-				_play("Strike_Dab", false)
+			# N'importe quel strike (Base, Dab, etc.) terminé → retour à l'état normal
+			var tier := _get_tier()
+			if tier >= 2:
+				_play("Angry", false)
+				phase = Phase.ACTIVE
+				print("🥊 Strike terminé → Angry (tier %d)" % tier)
+			elif tier >= 1:
+				_play("Suspicious", false)
+				phase = Phase.ACTIVE
+				print("🥊 Strike terminé → Suspicious")
 			else:
-				pass  # Strike_Dab terminé → freeze sur la dernière frame
+				# Suspicion tombée à 0 → retour au mur
+				_play_reverse("OffThewall")
+				phase = Phase.TRANSITION_ON
+				print("🥊 Strike terminé → Retour au mur")
 
 # ─── Jouer une animation ─────────────────────────────────
 func _play(anim_name: String, loop: bool) -> void:
@@ -1153,6 +1249,11 @@ func _scan_for_materials(node: Node) -> void:
 					_bs_look_down = bs_i
 					_body_mesh = mesh_inst
 					print("  👁️ BS_LookDown found (index %d)" % bs_i)
+				# IMBA mode
+				elif bs_name == "BS_WhiteGlasses":
+					_bs_white_glasses = bs_i
+					_body_mesh = mesh_inst
+					print("  🔥 BS_WhiteGlasses found (index %d) — IMBA ready!" % bs_i)
 	for child in node.get_children():
 		_scan_for_materials(child)
 

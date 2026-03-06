@@ -351,12 +351,66 @@ def prepare_close_tab(reason: str, target_window: str = None):
                 mode = "browser"
                 break
 
+        # Compute target coordinates (window's close button area)
+        import ctypes
+        import ctypes.wintypes
+        rect = ctypes.wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+
+        # Default: top-right corner (app close button)
+        target_x = rect.right - 25
+        target_y = rect.top + 15
+
+        if mode == "browser":
+            # Use UIA to find the exact selected tab position
+            try:
+                # DPI scale factor (high-DPI screens report larger pixel values)
+                try:
+                    dpi = ctypes.windll.user32.GetDpiForWindow(hwnd)
+                    scale = dpi / 96.0
+                except Exception:
+                    scale = 1.0
+                max_dist = int(80 * scale)  # 80 logical px from window top
+
+                from pywinauto.application import Application
+                app = Application(backend="uia").connect(handle=hwnd)
+                win = app.window(handle=hwnd)
+                tabs = win.descendants(control_type="TabItem")
+                for tab in tabs:
+                    try:
+                        tab_rect = tab.rectangle()
+                        tab_name = tab.window_text()[:40] if tab.window_text() else "?"
+                        tab_h = tab_rect.bottom - tab_rect.top
+                        tab_w = tab_rect.right - tab_rect.left
+                        dist_from_top = tab_rect.top - rect.top
+
+                        # Real browser tabs: within max_dist of window top
+                        if dist_from_top > max_dist:
+                            continue  # Too far from top = page element, not a tab
+                        if tab_w < 30:
+                            continue  # Too narrow = not a real tab
+
+                        print(f"  📑 Tab: '{tab_name}' dist={dist_from_top}px size={tab_w}x{tab_h} selected={tab.is_selected()}")
+
+                        if tab.is_selected():
+                            # Target: close button area (50px from right edge, like old code)
+                            target_x = tab_rect.right - 50
+                            target_y = tab_rect.top + tab_h // 2
+                            print(f"  🎯 UIA: SELECTED tab → target=({target_x}, {target_y})")
+                            break
+                    except Exception:
+                        continue
+            except Exception as e:
+                print(f"  ⚠️ UIA tab detection failed: {e} — using window corner")
+
         # Store pending strike info — Godot will trigger via STRIKE_FIRE
         state["_pending_strike"] = {
             "hwnd": hwnd,
             "mode": mode,
             "title": target.title,
             "reason": reason,
+            "target_x": target_x,
+            "target_y": target_y,
         }
 
         action = "Ctrl+W (onglet)" if mode == "browser" else "WM_CLOSE (app)"
@@ -430,6 +484,20 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             # No intervention — prepare close + launch Strike animation
             result = prepare_close_tab(reason, target_window)
             if result.get("status") == "success":
+                # Send target coordinates to Godot BEFORE the Strike anim
+                pending = state.get("_pending_strike", {})
+                tx = pending.get("target_x", 0)
+                ty = pending.get("target_y", 0)
+                target_msg = json.dumps({"command": "STRIKE_TARGET", "x": tx, "y": ty})
+                main_loop = state["main_loop"]
+                for ws_client in list(state["connected_ws_clients"]):
+                    try:
+                        if main_loop and main_loop.is_running():
+                            asyncio.run_coroutine_threadsafe(ws_client.send(target_msg), main_loop)
+                    except Exception:
+                        pass
+                print(f"  🎯 STRIKE_TARGET sent to Godot: ({tx}, {ty})")
+
                 # Send Strike anim — Godot will fire STRIKE_FIRE at the right frame
                 # which triggers fire_hand_animation() via ws_handler
                 send_anim_to_godot("Strike", False)
@@ -1111,7 +1179,7 @@ async def run_gemini_loop(pya):
                                         # Don't hide Tama after speaking in conversation mode
                                         # She should stay visible for the whole chat
                                         if si < 3 and state["current_mode"] != "conversation":
-                                            send_anim_to_godot("bye", False)
+                                            send_anim_to_godot("Idle_wall", False)
                                         # Reset mouth to neutral
                                         rest_msg = json.dumps({"command": "VISEME", "shape": "REST"})
                                         for ws_client in list(state["connected_ws_clients"]):

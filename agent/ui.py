@@ -267,8 +267,8 @@ def send_mood_to_godot(mood: str, intensity: float):
     else:
         anim = anims[2]
 
-    # Loop for sustained moods, one-shot for strikes
-    loop = anim not in ("Strike", "bye", "Peek")
+    # Loop for sustained moods, one-shot for dramatic poses (play once → freeze on last frame)
+    loop = anim not in ("Strike", "bye", "Peek", "Suspicious", "Angry")
 
     send_anim_to_godot(anim, loop)
 
