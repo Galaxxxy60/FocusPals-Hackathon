@@ -55,6 +55,10 @@ var _strike_hand_bone_idx: int = -1  # Jnt_R_Hand, auto-discovered in _setup_gaz
 var _strike_fire_sent: bool = false  # Prevent duplicate fires per strike
 var _strike_frame_count: int = 0     # Frames elapsed since entering STRIKING (warm-up delay)
 
+# Arm IK bones (auto-discovered in _setup_gaze)
+var _arm1_bone_idx: int = -1   # Jnt_R_Arm1 (upper arm)
+var _arm2_bone_idx: int = -1   # Jnt_R_Arm2 (forearm)
+
 # ─── Expression System (UV Swap) ─────────────────────────
 var _eyes_material: StandardMaterial3D = null
 var _mouth_material: StandardMaterial3D = null
@@ -341,10 +345,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
 	# F7 = Debug Strike: play Strike_Base + launch Godot hand window → mouse cursor
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F7:
-		print("🎯 [DEBUG] F7 → Strike + Hand Window")
+		print("🎯 [DEBUG] F7 → Strike + Hand Window + Arm IK")
 		_play("Strike_Base", false)
 		phase = Phase.ACTIVE
 		_strike_fire_sent = true  # Prevent real fire system from also firing
+		# Activate arm IK pointing towards mouse
+		if _gaze_modifier:
+			var mouse := DisplayServer.mouse_get_position()
+			var target_3d := _screen_to_arm_target(float(mouse.x), float(mouse.y))
+			_gaze_modifier.arm_ik_target = target_3d
+			_gaze_modifier.arm_ik_active = true
+			_gaze_modifier.arm_ik_blend_target = 1.0
+			print("💪 Arm IK target: %s" % str(target_3d))
 		# Delay hand window spawn to sync with the hand "bounce" in Strike_Base
 		get_tree().create_timer(0.6).timeout.connect(_spawn_hand_window)
 	if _spring_bones_node:
@@ -425,6 +437,7 @@ func _spawn_hand_window() -> void:
 		if _hand_window and is_instance_valid(_hand_window):
 			_hand_window.queue_free()
 			_hand_window = null
+		# Keep arm IK active — it fades out when animation changes
 	)
 
 
@@ -959,6 +972,9 @@ func _play(anim_name: String, loop: bool) -> void:
 		anim.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
 	_anim_player.play(real_name, 0.2)
 	_anim_player.speed_scale = 1.0
+	# Deactivate arm IK when leaving Strike animations
+	if _gaze_modifier and not "strike" in real_name.to_lower():
+		_gaze_modifier.arm_ik_blend_target = 0.0
 
 # ─── Jouer une animation en reverse ──────────────────────
 func _play_reverse(anim_name: String) -> void:
@@ -1377,6 +1393,14 @@ func _setup_gaze() -> void:
 		elif bname == "jnt_r_hand":
 			_strike_hand_bone_idx = i
 
+	# Also find arm bones for IK
+	for i in range(_skeleton.get_bone_count()):
+		var bname = _skeleton.get_bone_name(i).to_lower()
+		if bname == "jnt_r_arm1":
+			_arm1_bone_idx = i
+		elif bname == "jnt_r_arm2":
+			_arm2_bone_idx = i
+
 	# Partial match fallback
 	if _head_bone_idx < 0:
 		for i in range(_skeleton.get_bone_count()):
@@ -1404,6 +1428,10 @@ func _setup_gaze() -> void:
 		print("🎯 Strike hand bone [%d] '%s' — Strike Fire sync active!" % [_strike_hand_bone_idx, _skeleton.get_bone_name(_strike_hand_bone_idx)])
 	else:
 		print("⚠️ Jnt_R_Hand bone NOT FOUND — Strike Fire will use timeout fallback")
+	if _arm1_bone_idx >= 0 and _arm2_bone_idx >= 0:
+		print("💪 Arm IK bones: Arm1[%d] Arm2[%d] — procedural pointing ready!" % [_arm1_bone_idx, _arm2_bone_idx])
+	else:
+		print("⚠️ Arm IK bones NOT FOUND — pointing disabled")
 
 	_gaze_active = _head_bone_idx >= 0 and _camera != null
 	if _gaze_active:
@@ -1421,6 +1449,10 @@ func _setup_gaze_modifier() -> void:
 	_gaze_modifier.name = "GazeModifier"
 	_gaze_modifier.head_bone_idx = _head_bone_idx
 	_gaze_modifier.neck_bone_idx = _neck_bone_idx
+	# Arm IK bones
+	_gaze_modifier.arm1_bone_idx = _arm1_bone_idx
+	_gaze_modifier.arm2_bone_idx = _arm2_bone_idx
+	_gaze_modifier.hand_bone_idx = _strike_hand_bone_idx
 	# Attach debug viz callback
 	_gaze_modifier.debug_callback = Callable(self, "_update_debug_viz")
 	# Must be child of Skeleton3D for SkeletonModifier3D to work
@@ -1503,6 +1535,50 @@ func _screen_to_world(screen_x: float, screen_y: float) -> Vector3:
 	var world_z: float = cam_pos.z - 1.0
 
 	return Vector3(world_x, world_y, world_z)
+
+# ─── Screen → 3D Arm Target (for procedural pointing) ────────
+func _screen_to_arm_target(screen_x: float, screen_y: float) -> Vector3:
+	"""Convert screen coords to a 3D target for arm IK.
+	Uses a simple direction approach: compute the direction on screen from
+	Tama's center to the target, then map it to a 3D offset from the arm."""
+	var win_pos := DisplayServer.window_get_position()
+	var win_size := DisplayServer.window_get_size()
+
+	# Use the arm bone's projected screen position as origin (not window center!)
+	# This way "same level" = pointing horizontal, not upward
+	var arm_screen_x: float = float(win_pos.x) + float(win_size.x) * 0.5
+	var arm_screen_y: float = float(win_pos.y) + float(win_size.y) * 0.65  # Arm is ~65% down
+	if _arm1_bone_idx >= 0 and _skeleton != null and _camera != null:
+		var arm_world := (_skeleton.global_transform * _skeleton.get_bone_global_pose(_arm1_bone_idx)).origin
+		var arm_viewport := _camera.unproject_position(arm_world)
+		arm_screen_x = float(win_pos.x) + arm_viewport.x
+		arm_screen_y = float(win_pos.y) + arm_viewport.y
+
+	var dx: float = screen_x - arm_screen_x  # positive = right on screen
+	var dy: float = -(screen_y - arm_screen_y)  # positive = up (screen Y inverted)
+
+	# Normalize by screen height for consistent scaling
+	var screen_h: float = float(DisplayServer.screen_get_size().y)
+	var norm_dx: float = dx / screen_h
+	var norm_dy: float = dy / screen_h
+
+	# Get right arm bone position in world space
+	var arm_pos := Vector3(0, 1.2, 0)  # Fallback
+	if _arm1_bone_idx >= 0 and _skeleton != null:
+		arm_pos = (_skeleton.global_transform * _skeleton.get_bone_global_pose(_arm1_bone_idx)).origin
+
+	# Map screen direction to world direction:
+	# Ortho camera faces -Z. Screen-right = +X, Screen-left = -X (no flip!)
+	# Screen-up = +Y, Screen-down = -Y
+	var reach: float = 3.0  # How far the target is from the arm
+	var target := arm_pos + Vector3(
+		norm_dx * reach,    # Screen-right → world +X (no negation!)
+		norm_dy * reach,    # Screen-up → world +Y
+		-reach * 0.5        # Slightly forward (into the screen)
+	)
+
+	print("💪 arm_target: dx=%.2f dy=%.2f → world=%s" % [norm_dx, norm_dy, str(target)])
+	return target
 
 func _get_head_world_pos() -> Vector3:
 	"""Get head bone position in world space."""
