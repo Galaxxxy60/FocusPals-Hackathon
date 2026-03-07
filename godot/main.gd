@@ -263,6 +263,15 @@ var _spring_bones_node: Node3D = null  # spring_bones.gd instance
 
 # ─── Animation Tree (separate module) ─────────────────────
 var _anim_tree_module = null  # tama_anim_tree.gd instance
+var _wall_talk_mouse_follow: bool = false  # Track mouse during WALL_TALK (deep work)
+
+# ─── Screen Scan Glance (periodic "checking" look) ────────
+var _scan_glance_timer: float = 0.0       # Countdown: when >0, head is turned
+var _scan_glance_cooldown: float = 0.0    # Time until next glance is allowed
+var _scan_eye_active: bool = false        # Bypass eye head-compensation during scan
+const SCAN_GLANCE_DURATION: float = 1.8   # How long she looks at screen
+const SCAN_GLANCE_MIN_CD: float = 8.0     # Min seconds between glances
+const SCAN_GLANCE_MAX_CD: float = 15.0    # Max seconds between glances
 
 # ─── Post-animation delta (for deferred gaze/spring bones) ──
 var _last_delta: float = 0.0
@@ -323,6 +332,32 @@ func _setup_anim_tree() -> void:
 
 func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 	print("🎬 State: %s → %s" % [old_state, new_state])
+
+	# ── Gaze follows animation state ──
+	if new_state == "WALL_TALK":
+		# She's leaning in to talk — look at what matters
+		if conversation_active:
+			# Conversation: look at the user (they're talking to her)
+			set_gaze(GazeTarget.USER, 4.0)
+			_wall_talk_mouse_follow = false
+		else:
+			# Deep work: follow the mouse cursor (that's where the user works)
+			_wall_talk_mouse_follow = true
+			_gaze_active = true
+			_gaze_blend_target = 1.0
+			# Initial direction: glance at screen center, mouse tracking takes over
+			var mouse_pos := DisplayServer.mouse_get_position()
+			set_gaze_at_screen_point(float(mouse_pos.x), float(mouse_pos.y), 3.0)
+	elif new_state == "WALL_TALK":
+		pass  # unreachable but keeps match clean
+	elif (new_state == "ON_WALL" and old_state == "WALL_TALK") or \
+		 (new_state == "ON_WALL" and old_state == "RETURNING_WALL"):
+		# Done talking or returned from standing — back to book
+		_wall_talk_mouse_follow = false
+		set_gaze(GazeTarget.NEUTRAL, 2.0)
+	elif new_state == "LEAVING_WALL" or new_state == "STANDING":
+		# Leaving wall for real (suspicion escalation) — stop mouse follow
+		_wall_talk_mouse_follow = false
 
 
 func _on_tree_strike_fire() -> void:
@@ -704,6 +739,17 @@ func _process(delta: float) -> void:
 		if _ack_gaze_timer <= 0:
 			set_gaze(GazeTarget.NEUTRAL, 6.0)  # Snappy return to book
 
+	# Scan glance timer — auto-return after glance duration
+	if _scan_glance_cooldown > 0:
+		_scan_glance_cooldown -= delta
+	if _scan_glance_timer > 0:
+		_scan_glance_timer -= delta
+		if _scan_glance_timer <= 0:
+			# Glance over — smoothly return to book + eyes to center
+			set_gaze(GazeTarget.NEUTRAL, 2.0)
+			_set_eye_look(0.0, 0.0)  # Eyes back to center
+			_scan_eye_active = false
+
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
 	_sync_gaze_to_modifier()
 
@@ -728,12 +774,14 @@ func _notification(what: int) -> void:
 		_update_eye_follow(delta)
 
 		# Gaze debug mouse tracking — compute targets (actual bone write is in modifier)
-		if _debug_gaze_mouse and _gaze_active:
+		if (_debug_gaze_mouse or _wall_talk_mouse_follow) and _gaze_active:
 			var mouse_pos2 = DisplayServer.mouse_get_position()
 			var target_3d = _screen_to_world(float(mouse_pos2.x), float(mouse_pos2.y))
 			_gaze_world_target = target_3d
-			_look_at_world_point(target_3d, 8.0)
-			# Immediate sync for F3 mouse tracking (targets just computed)
+			# Smoother tracking for wall_talk (3.0) vs debug (8.0)
+			var track_speed: float = 3.0 if _wall_talk_mouse_follow else 8.0
+			_look_at_world_point(target_3d, track_speed)
+			# Immediate sync for mouse tracking (targets just computed)
 			_sync_gaze_to_modifier()
 
 # ─── Eye Follow (saccadic blend-shape eye movement) ──────
@@ -771,7 +819,8 @@ func _update_eye_follow(delta: float) -> void:
 		_eye_follow_h = lerpf(_eye_follow_h, 0.0, t)
 		_eye_follow_v = lerpf(_eye_follow_v, 0.0, t)
 	# Compensate for head gaze: reduce eye movement as head turns
-	var head_comp: float = 1.0 - (_gaze_blend * 0.5)
+	# BUT during scan glance, bypass: we want the side-eye to stay crisp
+	var head_comp: float = 1.0 if _scan_eye_active else (1.0 - (_gaze_blend * 0.5))
 	var h: float = _eye_follow_h * head_comp
 	var v: float = _eye_follow_v * head_comp
 	# Horizontal: swapped because Tama faces the user (mirrored)
@@ -895,7 +944,11 @@ func _handle_message(raw: String) -> void:
 				_anim_tree_module.play_strike()
 				_activate_imba(1)
 			elif key in ["idle_wall_talk"]:
-				_anim_tree_module.play_wall_talk()
+				if _anim_tree_module.is_on_wall():
+					_anim_tree_module.play_wall_talk()
+				else:
+					# Already standing — can't wall_talk, fallback to idle
+					_anim_tree_module.set_standing_anim("idle")
 			elif key == "suspicious":
 				_anim_tree_module.set_standing_anim("suspicious")
 			elif key == "angry":
@@ -965,6 +1018,48 @@ func _handle_message(raw: String) -> void:
 			var base_jaw: float = JAW_OPEN_MAP.get(shape, 0.3)
 			_set_jaw_open(base_jaw * clampf(amp, 0.3, 1.0))
 		return
+	elif command == "SCREEN_SCAN":
+		# Tama just analyzed the screen — visually show she's looking
+		var scan_s: float = data.get("suspicion", 0.0)
+		# Only glance when on wall and not already engaged
+		if _anim_tree_module and _anim_tree_module.is_on_wall() \
+				and not _wall_talk_mouse_follow and not _is_speaking:
+			# Three look styles based on suspicion:
+			# Eyes ALWAYS at full intensity — the primary visual cue
+			# Only HEAD movement scales with suspicion level
+			# ──────────────────────────────────────────────────────
+			# SIDE-EYE (S<3): eyes dart to screen, head barely moves
+			# APPUYÉ (S 3-5): eyes full + head turns noticeably
+			# FULL STARE (S≥6): eyes locked + head fully turned
+			# ──────────────────────────────────────────────────────
+			var head_blend: float
+			var look_duration: float
+			var head_speed: float
+			if scan_s < 3.0:
+				# SIDE-EYE: eyes do ALL the work, head barely moves
+				head_blend = 0.15
+				look_duration = 1.5
+				head_speed = 1.5
+			elif scan_s < 6.0:
+				# APPUYÉ: eyes full + head follows
+				head_blend = 0.5
+				look_duration = 2.2
+				head_speed = 3.0
+			else:
+				# FULL STARE: everything maxed
+				head_blend = 1.0
+				look_duration = 2.8
+				head_speed = 4.0
+			# Head turn (subtle to full)
+			set_gaze_subtle(GazeTarget.SCREEN_CENTER, head_speed, head_blend)
+			# Eyes ALWAYS at full: -1.0 horizontal = toward screen, -0.3 vertical = slightly up
+			# (contrasts with book-reading pose where eyes look down)
+			_set_eye_look(-1.0, -0.3)
+			_scan_eye_active = true
+			_scan_glance_timer = look_duration
+			# Reset cooldown so periodic glance doesn't fight
+			_scan_glance_cooldown = SCAN_GLANCE_MAX_CD
+		return
 	elif command == "CONNECTION_STATUS":
 		var conn_status = data.get("status", "")
 		_gemini_status = conn_status
@@ -994,8 +1089,37 @@ func _handle_message(raw: String) -> void:
 	session_elapsed_secs = data.get("session_elapsed_secs", 0)
 	session_duration_secs = data.get("session_duration_secs", 3000)
 
+	# ── Screen scan glance — periodic "I'm watching" head turn ──
+	_try_scan_glance()
 
-# ─── Suspicion Tiers ──────────────────────────────────────
+
+# ─── Screen Scan Glance ──────────────────────────────────
+func _try_scan_glance() -> void:
+	"""Periodically glance at the screen during deep work.
+	Makes Tama feel alive — she 'checks' what you're doing."""
+	if _scan_glance_cooldown > 0:
+		return
+	# Only glance when on the wall, idle, not talking, not already looking
+	if not _anim_tree_module:
+		return
+	if not _anim_tree_module.is_on_wall():
+		return
+	if _anim_tree_module.current_state != 0:  # 0 = ON_WALL (not WALL_TALK etc)
+		return
+	if _wall_talk_mouse_follow:
+		return
+	if _gaze_blend > 0.1:  # Already gazing somewhere (ack, conversation, etc)
+		return
+	if _is_speaking:
+		return
+
+	# Trigger a subtle glance toward screen center
+	set_gaze_subtle(GazeTarget.SCREEN_CENTER, 3.0, 0.6)
+	_scan_glance_timer = SCAN_GLANCE_DURATION
+	# Randomize next cooldown for natural feel
+	_scan_glance_cooldown = randf_range(SCAN_GLANCE_MIN_CD, SCAN_GLANCE_MAX_CD)
+
+
 func _get_tier() -> int:
 	if suspicion_index >= 9.0: return 3  # STRIKE
 	if suspicion_index >= 6.0: return 2  # ANGRY

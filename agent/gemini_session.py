@@ -1227,13 +1227,18 @@ async def run_gemini_loop(pya):
                                                     is_speaking = True
                                                     state["_tama_is_speaking"] = True  # Fix 7
                                                     print("  🗣️ Tama starts speaking")
-                                                    # Fallback animation — used only if report_mood hasn't arrived yet.
-                                                    # Once report_mood fires, it overrides this with the correct mood anim.
-                                                    if not state.get("_mood_anim_set"):
-                                                        if state["current_mode"] == "conversation":
-                                                            send_anim_to_godot("Idle_wall_Talk", False)
-                                                        else:
-                                                            send_anim_to_godot("Peek", False)
+                                                    # Apply body animation now that speech is confirmed.
+                                                    # Race condition fix: report_mood often arrives BEFORE the first
+                                                    # audio chunk (is_speaking was still False when mood was received).
+                                                    # So we check: if mood was already stored, apply it now.
+                                                    if state.get("_mood_anim_set"):
+                                                        # report_mood arrived before audio — apply stored mood
+                                                        _m = state.get("_current_mood", "calm")
+                                                        _i = state.get("_current_mood_intensity", 0.5)
+                                                        send_mood_to_godot(_m, _i)
+                                                    else:
+                                                        # No mood yet — use wall_talk as safe fallback
+                                                        send_anim_to_godot("Idle_wall_Talk", False)
 
                                             if is_speaking:
                                                 audio_out_queue.put_nowait(part.inline_data.data)
@@ -1327,6 +1332,22 @@ async def run_gemini_loop(pya):
                                                         )
                                                     ]
                                                 )
+
+                                                # Notify Godot: Tama just looked at the screen
+                                                # She should visually glance toward it (intensity scales with suspicion)
+                                                scan_msg = json.dumps({
+                                                    "command": "SCREEN_SCAN",
+                                                    "suspicion": round(state["current_suspicion_index"], 1),
+                                                    "alignment": ali,
+                                                    "category": cat
+                                                })
+                                                for ws_client in list(state["connected_ws_clients"]):
+                                                    try:
+                                                        main_loop = state["main_loop"]
+                                                        if main_loop and main_loop.is_running():
+                                                            asyncio.run_coroutine_threadsafe(ws_client.send(scan_msg), main_loop)
+                                                    except Exception:
+                                                        pass
 
                                             elif fc.name == "close_distracting_tab":
                                                 reason = fc.args.get("reason", "Distraction")

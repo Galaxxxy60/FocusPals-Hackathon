@@ -19,6 +19,7 @@ extends Node
 signal state_changed(old_state: String, new_state: String)
 signal strike_fire_point()        # Bone trigger detected → fire hand
 signal off_wall_complete()        # OffThewall forward done → now standing
+signal strike_sequence_started()  # Strike sequence just kicked off
 
 # ─── States ───────────────────────────────────────────────────
 enum State { ON_WALL, WALL_TALK, LEAVING_WALL, STANDING, RETURNING_WALL, STRIKING }
@@ -81,7 +82,7 @@ func setup(tama_node: Node, anim_player: AnimationPlayer, skeleton: Skeleton3D =
 		return false
 
 	# 1. Resolve real names from GLB
-	var avail: Array[StringName] = _player.get_animation_list()
+	var avail := _player.get_animation_list()
 	var found := 0
 	for key in WANTED:
 		var real := _match_anim(avail, WANTED[key])
@@ -121,7 +122,7 @@ func setup(tama_node: Node, anim_player: AnimationPlayer, skeleton: Skeleton3D =
 	return true
 
 
-func _match_anim(available: Array[StringName], target: String) -> String:
+func _match_anim(available, target: String) -> String:
 	var t := target.to_lower()
 	# Pass 1: exact
 	for a in available:
@@ -454,8 +455,8 @@ func _process(delta: float) -> void:
 
 	# ── Detect when strike_dab ends → choose next state ──
 	if current_state == State.STRIKING and cur_node == "strike_dab":
-		var pos := _playback.get_current_play_position()
-		var length := _playback.get_current_length()
+		var pos: float = _playback.get_current_play_position()
+		var length: float = _playback.get_current_length()
 		if length > 0 and pos >= length - 0.05:
 			_on_strike_complete()
 
@@ -508,7 +509,7 @@ func _on_strike_complete() -> void:
 func _set_state(new_state: int) -> void:
 	if current_state == new_state:
 		return
-	var old_name := State.keys()[current_state]
-	var new_name := State.keys()[new_state]
+	var old_name: String = State.keys()[current_state]
+	var new_name: String = State.keys()[new_state]
 	current_state = new_state
 	state_changed.emit(old_name, new_name)
