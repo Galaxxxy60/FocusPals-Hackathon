@@ -888,7 +888,7 @@ func _handle_message(raw: String) -> void:
 		_last_anim_command_time = Time.get_unix_time_from_system()
 		print("🎬 [ANIM CMD] " + anim_name)
 		if _anim_tree_module:
-			var key := anim_name.to_lower()
+			var key: String = str(anim_name).to_lower()
 			if key in ["idle_wall", "bye"]:
 				_anim_tree_module.return_to_wall()
 			elif key in ["strike", "strike_base"]:
