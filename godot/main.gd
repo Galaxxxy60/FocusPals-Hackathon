@@ -355,7 +355,11 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 			_pending_leave_wall = false
 			_suspicion_staring = false
 			# Small delay then leave wall for real
-			_anim_tree_module.set_standing_anim("suspicious")
+			var tier := _get_tier()
+			if tier >= 2:
+				_anim_tree_module.set_standing_anim("angry")
+			else:
+				_anim_tree_module.set_standing_anim("suspicious")
 		else:
 			_suspicion_staring = false
 			_scan_eye_active = false
@@ -1167,7 +1171,7 @@ func _update_suspicion_anim() -> void:
 				_anim_tree_module.end_wall_talk()
 			elif _anim_tree_module.is_on_wall():
 				_suspicion_staring = false
-				_anim_tree_module.set_standing_anim("suspicious")
+				_anim_tree_module.set_standing_anim("angry")
 			else:
 				_anim_tree_module.set_standing_anim("angry")
 		3:

@@ -44,7 +44,6 @@ const WANTED = {
 	"suspicious": "Suspicious",
 	"angry": "Angry",
 	"strike_base": "Strike_Base",
-	"strike_dab": "Strike_Dab",
 	"peek": "Peek",
 	"bye": "bye",
 }
@@ -151,7 +150,6 @@ func _build_tree() -> void:
 		"angry": Vector2(400, 200),
 		"return_wall": Vector2(200, 250),
 		"strike_base": Vector2(600, 100),
-		"strike_dab": Vector2(800, 100),
 		"peek": Vector2(400, -100),
 		"bye": Vector2(200, -100),
 	}
@@ -493,7 +491,7 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 
 
 func _on_strike_complete() -> void:
-	"""Called when strike_dab animation finishes."""
+	"""Called when strike_base animation finishes."""
 	# Don't process more than once
 	if current_state != State.STRIKING:
 		return
