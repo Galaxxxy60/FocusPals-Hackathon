@@ -327,6 +327,7 @@ func _setup_anim_tree() -> void:
 	if ok:
 		_anim_tree_module.state_changed.connect(_on_tree_state_changed)
 		_anim_tree_module.strike_fire_point.connect(_on_tree_strike_fire)
+		_anim_tree_module.strike_sequence_started.connect(_on_tree_strike_started)
 		_anim_tree_module.off_wall_complete.connect(_on_tree_off_wall_done)
 		print("🎬 AnimTree module wired OK")
 	else:
@@ -387,10 +388,14 @@ func _on_tree_strike_fire() -> void:
 		_gaze_modifier.arm_ik_active = true
 		_gaze_modifier.arm_ik_blend_target = 1.0
 	_spawn_hand_window()
-	_activate_imba(1)
 	print("🎯 STRIKE_FIRE (via AnimTree) — hand window + arm IK + close signal")
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
+
+
+func _on_tree_strike_started() -> void:
+	print("🎬 Strike sequence started — activate IMBA early")
+	_activate_imba(1)
 
 
 func _on_tree_off_wall_done() -> void:
@@ -577,39 +582,29 @@ func _spawn_hand_window() -> void:
 
 # ─── IMBA Mode (Super Saiyan Power-Up) ──────────────────────
 func _activate_imba(level: int) -> void:
-	"""Power up! Activate IMBA visual effects for the given level."""
+	"""Power up! Activate IMBA visual effects instantly (1 or 0)."""
 	if _bs_white_glasses < 0 or _body_mesh == null:
 		return
 	_imba_level = level
-	# Kill any existing tween
 	if _imba_tween and _imba_tween.is_valid():
 		_imba_tween.kill()
 
-	print("🔥 IMBA LEVEL %d ACTIVATED!" % level)
-
+	print("🔥 IMBA LEVEL %d ACTIVATED! (Instant)" % level)
 	if level >= 1:
-		# Level 1: White glasses — fast power-up glow
-		_imba_tween = create_tween()
-		_imba_tween.set_ease(Tween.EASE_OUT)
-		_imba_tween.set_trans(Tween.TRANS_BACK)
-		_imba_tween.tween_method(_set_imba_blend, _imba_blend, 1.0, 0.3)
+		_set_imba_blend(1.0)
 
 func _deactivate_imba() -> void:
-	"""Power down — smooth fade out."""
+	"""Power down — instant fade out."""
 	if _bs_white_glasses < 0 or _body_mesh == null:
 		return
 	if _imba_level == 0:
 		return
 
-	print("🔥 IMBA fade out...")
+	print("🔥 IMBA mode off. (Instant)")
 	_imba_level = 0
 	if _imba_tween and _imba_tween.is_valid():
 		_imba_tween.kill()
-
-	_imba_tween = create_tween()
-	_imba_tween.set_ease(Tween.EASE_IN_OUT)
-	_imba_tween.set_trans(Tween.TRANS_CUBIC)
-	_imba_tween.tween_method(_set_imba_blend, _imba_blend, 0.0, 0.8)
+	_set_imba_blend(0.0)
 
 func _set_imba_blend(value: float) -> void:
 	"""Tween callback — update BS_WhiteGlasses blend shape."""
