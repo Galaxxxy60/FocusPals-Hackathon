@@ -321,16 +321,6 @@ func _setup_anim_tree() -> void:
 		_anim_tree_module = null
 
 
-func _find_skeleton(node: Node) -> Skeleton3D:
-	if node is Skeleton3D:
-		return node
-	for child in node.get_children():
-		var found := _find_skeleton(child)
-		if found:
-			return found
-	return null
-
-
 func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 	print("🎬 State: %s → %s" % [old_state, new_state])
 
