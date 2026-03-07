@@ -263,7 +263,7 @@ var _spring_bones_node: Node3D = null  # spring_bones.gd instance
 
 # ─── Animation Tree (separate module) ─────────────────────
 var _anim_tree_module = null  # tama_anim_tree.gd instance
-var _wall_talk_mouse_follow: bool = false  # Track mouse during WALL_TALK (deep work)
+
 
 # ─── Screen Scan Glance (periodic "checking" look) ────────
 var _scan_glance_timer: float = 0.0       # Countdown: when >0, head is turned
@@ -338,29 +338,14 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 
 	# ── Gaze follows animation state ──
 	if new_state == "WALL_TALK":
-		# She's leaning in to talk — look at what matters
 		if conversation_active:
-			# Conversation: look at the user (they're talking to her)
 			set_gaze(GazeTarget.USER, 4.0)
-			_wall_talk_mouse_follow = false
 		else:
-			# Deep work: follow the mouse cursor (that's where the user works)
-			_wall_talk_mouse_follow = true
-			_gaze_active = true
-			_gaze_blend_target = 1.0
-			# Initial direction: glance at screen center, mouse tracking takes over
-			var mouse_pos := DisplayServer.mouse_get_position()
-			set_gaze_at_screen_point(float(mouse_pos.x), float(mouse_pos.y), 3.0)
-	elif new_state == "WALL_TALK":
-		pass  # unreachable but keeps match clean
+			# Deep work: look at the screen (she's commenting on activity)
+			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
 	elif (new_state == "ON_WALL" and old_state == "WALL_TALK") or \
 		 (new_state == "ON_WALL" and old_state == "RETURNING_WALL"):
-		# Done talking or returned from standing — back to book
-		_wall_talk_mouse_follow = false
 		set_gaze(GazeTarget.NEUTRAL, 2.0)
-	elif new_state == "LEAVING_WALL" or new_state == "STANDING":
-		# Leaving wall for real (suspicion escalation) — stop mouse follow
-		_wall_talk_mouse_follow = false
 
 
 func _on_tree_strike_fire() -> void:
@@ -777,13 +762,11 @@ func _notification(what: int) -> void:
 		_update_eye_follow(delta)
 
 		# Gaze debug mouse tracking — compute targets (actual bone write is in modifier)
-		if (_debug_gaze_mouse or _wall_talk_mouse_follow) and _gaze_active:
+		if _debug_gaze_mouse and _gaze_active:
 			var mouse_pos2 = DisplayServer.mouse_get_position()
 			var target_3d = _screen_to_world(float(mouse_pos2.x), float(mouse_pos2.y))
 			_gaze_world_target = target_3d
-			# Smoother tracking for wall_talk (3.0) vs debug (8.0)
-			var track_speed: float = 3.0 if _wall_talk_mouse_follow else 8.0
-			_look_at_world_point(target_3d, track_speed)
+			_look_at_world_point(target_3d, 8.0)
 			# Immediate sync for mouse tracking (targets just computed)
 			_sync_gaze_to_modifier()
 
@@ -1026,7 +1009,7 @@ func _handle_message(raw: String) -> void:
 		var scan_s: float = data.get("suspicion", 0.0)
 		# Only glance when on wall and not already engaged
 		if _anim_tree_module and _anim_tree_module.is_on_wall() \
-				and not _wall_talk_mouse_follow and not _is_speaking:
+				and not _is_speaking:
 			# Three look styles based on suspicion:
 			# Eyes ALWAYS at full intensity — the primary visual cue
 			# Only HEAD movement scales with suspicion level
@@ -1107,8 +1090,6 @@ func _try_scan_glance() -> void:
 	if not _anim_tree_module.is_on_wall():
 		return
 	if _anim_tree_module.current_state != 0:  # 0 = ON_WALL (not WALL_TALK etc)
-		return
-	if _wall_talk_mouse_follow:
 		return
 	if _gaze_blend > 0.1:  # Already gazing somewhere (ack, conversation, etc)
 		return
