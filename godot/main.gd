@@ -780,6 +780,10 @@ func _notification(what: int) -> void:
 			_set_eye_target_from_screen(float(mouse_pos.x), float(mouse_pos.y))
 		_update_eye_follow(delta)
 
+		# Enforce IMBA blend shape so AnimationTree doesn't clear it
+		if _imba_level > 0:
+			_set_imba_blend(_imba_blend)
+
 		# Gaze debug mouse tracking — compute targets (actual bone write is in modifier)
 		if _debug_gaze_mouse and _gaze_active:
 			var mouse_pos2 = DisplayServer.mouse_get_position()
