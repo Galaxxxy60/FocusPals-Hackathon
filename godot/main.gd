@@ -291,6 +291,9 @@ func _ready() -> void:
 	# Start in Idle_wall — Tama is always visible
 	call_deferred("_start_idle_wall")
 	# Enable internal processing for eye follow blend shapes (not bone mods — those use SkeletonModifier3D)
+	# process_priority=100: run AFTER AnimTree (default 0) so our blend shape writes override animation data.
+	# Without this, AnimTree overwrites BS_LookLeft/Right every frame and eye follow is invisible.
+	process_priority = 100
 	set_process_internal(true)
 	print("🥷 FocusPals Godot — En attente de connexion...")
 
@@ -1052,8 +1055,7 @@ func _handle_message(raw: String) -> void:
 				head_speed = 4.0
 			# Head turn (subtle to full)
 			set_gaze_subtle(GazeTarget.SCREEN_CENTER, head_speed, head_blend)
-			# Eyes ALWAYS at full: -1.0 horizontal = toward screen, -0.3 vertical = slightly up
-			# (contrasts with book-reading pose where eyes look down)
+			# Eyes ALWAYS at full intensity toward screen
 			_set_eye_look(-1.0, -0.3)
 			_scan_eye_active = true
 			_scan_glance_timer = look_duration
