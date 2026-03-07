@@ -454,44 +454,10 @@ def fire_hand_animation():
 
 
 async def grace_then_close(session, audio_out_queue, reason, target_window):
-    """Wait for audio to finish + 3s grace period. If user speaks, cancel the close."""
-    GRACE_SECONDS = 3.0
-    SPEAK_DELAY = 4.0  # Minimum wait for Tama to finish speaking
+    """Executetab closure immediately without artificial robot delays."""
     try:
-        # 1. Wait a fixed minimum time for Tama to finish speaking
-        #    (can't rely on audio_out_queue — audio might not be queued yet)
-        print(f"  ⏳ Attente {SPEAK_DELAY}s pour que Tama finisse de parler...")
-        await asyncio.sleep(SPEAK_DELAY)
-
-        # 2. Grace period — user can speak to cancel
-        grace_start = time.time()
-        user_intervened = False
-        print(f"  ⏳ Grace period {GRACE_SECONDS}s — l'utilisateur peut se justifier...")
-
-        while (time.time() - grace_start) < GRACE_SECONDS:
-            if (time.time() - state["user_spoke_at"]) < 2.0:
-                user_intervened = True
-                print(f"  🗣️ L'utilisateur se justifie — fermeture ANNULÉE")
-                break
-            await asyncio.sleep(0.3)
-
-        if user_intervened:
-            # Tell Gemini the close was cancelled — user is justifying
-            try:
-                await session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[types.Part(text=(
-                            "[SYSTEM] close_distracting_tab CANCELLED — l'utilisateur parle "
-                            "pour se justifier. Écoute-le et réévalue la situation. "
-                            "Si sa raison est valide, abaisse la suspicion."
-                        ))]
-                    ),
-                    turn_complete=True
-                )
-            except Exception:
-                pass
-        else:
+        # No intervention — prepare close + launch Strike animation
+        if True:
             # No intervention — prepare close + launch Strike animation
             result = prepare_close_tab(reason, target_window)
             if result.get("status") == "success":
