@@ -1096,8 +1096,10 @@ func _try_scan_glance() -> void:
 	if _is_speaking:
 		return
 
-	# Trigger a subtle glance toward screen center
-	set_gaze_subtle(GazeTarget.SCREEN_CENTER, 3.0, 0.6)
+	# Trigger glance: head subtle + eyes full side-eye
+	set_gaze_subtle(GazeTarget.SCREEN_CENTER, 2.0, 0.15)
+	_set_eye_look(-1.0, -0.3)
+	_scan_eye_active = true
 	_scan_glance_timer = SCAN_GLANCE_DURATION
 	# Randomize next cooldown for natural feel
 	_scan_glance_cooldown = randf_range(SCAN_GLANCE_MIN_CD, SCAN_GLANCE_MAX_CD)
