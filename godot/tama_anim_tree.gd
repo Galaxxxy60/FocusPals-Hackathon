@@ -201,15 +201,11 @@ func _build_tree() -> void:
 	# Any standing → strike
 	for key in ["idle", "suspicious", "angry"]:
 		_add_trans(sm, key, "strike_base", XFADE_STRIKE)
-	# Strike chain: Base → Dab (auto)
-	_add_trans(sm, "strike_base", "strike_dab", XFADE_CHAIN, true)
 	# Strike → back to standing
-	_add_trans(sm, "strike_dab", "idle", XFADE_MOOD)
-	_add_trans(sm, "strike_dab", "suspicious", XFADE_MOOD)
-	_add_trans(sm, "strike_dab", "angry", XFADE_MOOD)
-	_add_trans(sm, "strike_dab", "return_wall", XFADE_TRANSITION)
-	# Also from strike_base (if we abort)
+	_add_trans(sm, "strike_base", "idle", XFADE_MOOD)
+	_add_trans(sm, "strike_base", "suspicious", XFADE_MOOD)
 	_add_trans(sm, "strike_base", "angry", XFADE_MOOD)
+	_add_trans(sm, "strike_base", "return_wall", XFADE_TRANSITION)
 
 	# Peek
 	if _names.has("peek"):
@@ -453,8 +449,8 @@ func _process(delta: float) -> void:
 				strike_fire_point.emit()
 				print("🎬 🎯 STRIKE_FIRE detected!")
 
-	# ── Detect when strike_dab ends → choose next state ──
-	if current_state == State.STRIKING and cur_node == "strike_dab":
+	# ── Detect when strike finishes → choose next state ──
+	if current_state == State.STRIKING and cur_node == "strike_base":
 		var pos: float = _playback.get_current_play_position()
 		var length: float = _playback.get_current_length()
 		if length > 0 and pos >= length - 0.05:
