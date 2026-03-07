@@ -239,12 +239,13 @@ def send_anim_to_godot(anim_name: str, loop: bool = False):
 
 _MOOD_ANIM_MAP = {
     # mood: (low_intensity_anim, mid_intensity_anim, high_intensity_anim)
-    "calm":         ("Idle_wall", "Idle_wall", "Idle_wall"),
-    "curious":      ("Peek",  "Suspicious", "Suspicious"),
-    "amused":       ("Idle_wall", "Idle_wall", "Idle_wall"),
-    "proud":        ("Idle_wall", "Idle_wall", "Idle_wall"),
+    # Idle_wall_Talk: AnimTree plays only if Tama IS on wall, otherwise ignored
+    "calm":         ("Idle_wall_Talk", "Idle_wall_Talk", "Idle_wall_Talk"),
+    "curious":      ("Idle_wall_Talk", "Suspicious", "Suspicious"),
+    "amused":       ("Idle_wall_Talk", "Idle_wall_Talk", "Idle_wall_Talk"),
+    "proud":        ("Idle_wall_Talk", "Idle_wall_Talk", "Idle_wall_Talk"),
     "suspicious":   ("Peek",  "Suspicious", "Suspicious"),
-    "surprised":    ("Idle_wall", "Idle_wall", "Idle_wall"),
+    "surprised":    ("Idle_wall_Talk", "Idle_wall_Talk", "Idle_wall_Talk"),
     "disappointed": ("Suspicious", "Suspicious", "Angry"),
     "sarcastic":    ("Suspicious", "Suspicious", "Angry"),
     "annoyed":      ("Suspicious", "Angry", "Angry"),

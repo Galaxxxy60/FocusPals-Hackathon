@@ -1231,7 +1231,7 @@ async def run_gemini_loop(pya):
                                                     # Once report_mood fires, it overrides this with the correct mood anim.
                                                     if not state.get("_mood_anim_set"):
                                                         if state["current_mode"] == "conversation":
-                                                            send_anim_to_godot("Idle_wall", True)
+                                                            send_anim_to_godot("Idle_wall_Talk", False)
                                                         else:
                                                             send_anim_to_godot("Peek", False)
 
@@ -1369,15 +1369,9 @@ async def run_gemini_loop(pya):
                                                 # Only change body animation if Tama is speaking
                                                 # When muzzled (S<3, no audio), don't make her appear/disappear
                                                 if is_speaking:
-                                                    # In conversation: only send body anim for engaging moods
-                                                    # Calm/positive moods stay on Idle_wall (face-only via TAMA_MOOD)
-                                                    _ENGAGING_MOODS = {"annoyed", "angry", "furious"}
-                                                    if state["current_mode"] == "conversation":
-                                                        if mood in _ENGAGING_MOODS or (mood == "suspicious" and intensity >= 0.6):
-                                                            send_mood_to_godot(mood, intensity)
-                                                        # else: facial expression only (already sent via TAMA_MOOD above)
-                                                    else:
-                                                        send_mood_to_godot(mood, intensity)
+                                                    # AnimTree handles wall_talk vs standing logic.
+                                                    # All moods go through — Godot decides the right anim.
+                                                    send_mood_to_godot(mood, intensity)
 
                                                 await session.send_tool_response(
                                                     function_responses=[

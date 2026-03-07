@@ -261,6 +261,9 @@ var _debug_print_timer: float = 0.0
 # ─── Spring Bones (separate module) ───────────────────────
 var _spring_bones_node: Node3D = null  # spring_bones.gd instance
 
+# ─── Animation Tree (separate module) ─────────────────────
+var _anim_tree_module = null  # tama_anim_tree.gd instance
+
 # ─── Post-animation delta (for deferred gaze/spring bones) ──
 var _last_delta: float = 0.0
 
@@ -275,6 +278,7 @@ func _ready() -> void:
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_gaze_debug")
 	call_deferred("_setup_spring_bones_module")
+	call_deferred("_setup_anim_tree")
 	# Start in Idle_wall — Tama is always visible
 	call_deferred("_start_idle_wall")
 	# Enable internal processing for eye follow blend shapes (not bone mods — those use SkeletonModifier3D)
@@ -283,10 +287,75 @@ func _ready() -> void:
 
 func _start_idle_wall() -> void:
 	_ensure_anim_player()
+	# If AnimTree module is active, it handles idle_wall via its StateMachine
+	if _anim_tree_module and _anim_tree_module._ready_ok:
+		_started = true
+		print("🧱 Tama démarre en Idle_wall (via AnimTree)")
+		return
 	_play("Idle_wall", true)
 	phase = Phase.ON_WALL
 	_started = true
 	print("🧱 Tama démarre en Idle_wall")
+
+
+func _setup_anim_tree() -> void:
+	_ensure_anim_player()
+	var tama = get_node_or_null("Tama")
+	if not tama or not _anim_player:
+		push_warning("🎬 Cannot setup AnimTree — missing Tama or AnimPlayer")
+		return
+	# Find skeleton if not yet found
+	if not _skeleton:
+		_skeleton = _find_skeleton(tama)
+	_anim_tree_module = load("res://tama_anim_tree.gd").new()
+	add_child(_anim_tree_module)
+	var ok = _anim_tree_module.setup(tama, _anim_player, _skeleton)
+	if ok:
+		_anim_tree_module.state_changed.connect(_on_tree_state_changed)
+		_anim_tree_module.strike_fire_point.connect(_on_tree_strike_fire)
+		_anim_tree_module.off_wall_complete.connect(_on_tree_off_wall_done)
+		print("🎬 AnimTree module wired OK")
+	else:
+		push_warning("🎬 AnimTree setup failed — falling back to legacy")
+		_anim_tree_module.queue_free()
+		_anim_tree_module = null
+
+
+func _find_skeleton(node: Node) -> Skeleton3D:
+	if node is Skeleton3D:
+		return node
+	for child in node.get_children():
+		var found := _find_skeleton(child)
+		if found:
+			return found
+	return null
+
+
+func _on_tree_state_changed(old_state: String, new_state: String) -> void:
+	print("🎬 State: %s → %s" % [old_state, new_state])
+
+
+func _on_tree_strike_fire() -> void:
+	# Spawn hand window + arm IK + notify Python (same as existing strike fire logic)
+	if _gaze_modifier:
+		var aim: Vector2i
+		if _strike_target.x >= 0:
+			aim = _strike_target
+		else:
+			aim = DisplayServer.mouse_get_position()
+		var target_3d := _screen_to_arm_target(float(aim.x), float(aim.y))
+		_gaze_modifier.arm_ik_target = target_3d
+		_gaze_modifier.arm_ik_active = true
+		_gaze_modifier.arm_ik_blend_target = 1.0
+	_spawn_hand_window()
+	_activate_imba(1)
+	print("🎯 STRIKE_FIRE (via AnimTree) — hand window + arm IK + close signal")
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
+
+
+func _on_tree_off_wall_done() -> void:
+	print("🎬 Off wall complete — Tama is now standing")
 
 func _setup_radial_menu() -> void:
 	radial_menu = CanvasLayer.new()
@@ -648,35 +717,8 @@ func _process(delta: float) -> void:
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
 	_sync_gaze_to_modifier()
 
-	# ─── Strike Fire (Jnt_R_Hand Scale) ──────────────────────
-	# Wait a few frames for animation to settle, then:
-	#   1. Spawn Godot hand window (visual animation)
-	#   2. Send STRIKE_FIRE to Python (triggers the actual tab close)
-	if phase == Phase.STRIKING and not _strike_fire_sent:
-		_strike_frame_count += 1
-		# Wait 5 frames then check if hand bone scale exceeded 1.0 (the bounce)
-		if _strike_frame_count >= 5:
-			if _strike_hand_bone_idx >= 0 and _skeleton != null:
-				var bone_scale := _skeleton.get_bone_pose_scale(_strike_hand_bone_idx)
-				if bone_scale.x > STRIKE_FIRE_SCALE_THRESHOLD:
-					_strike_fire_sent = true
-					# Arm IK: point at target tab (from Python) or mouse fallback
-					if _gaze_modifier:
-						var aim: Vector2i
-						if _strike_target.x >= 0:
-							aim = _strike_target
-						else:
-							aim = DisplayServer.mouse_get_position()
-						var target_3d := _screen_to_arm_target(float(aim.x), float(aim.y))
-						_gaze_modifier.arm_ik_target = target_3d
-						_gaze_modifier.arm_ik_active = true
-						_gaze_modifier.arm_ik_blend_target = 1.0
-					# Visual: Godot multi-window hand animation
-					_spawn_hand_window()
-					# Functional: tell Python to close the tab
-					print("🎯 STRIKE_FIRE! — hand window + arm IK + close signal sent")
-					if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-						ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
+	# ─── Strike Fire ──────────────────────────────────────────
+	# Handled by AnimTree module (strike_fire_point signal → _on_tree_strike_fire)
 
 	# Gaze + Spring bones delta stored for post-animation processing
 	_last_delta = delta
@@ -781,9 +823,8 @@ func _handle_message(raw: String) -> void:
 			conversation_active = false
 			set_gaze(GazeTarget.NEUTRAL, 2.0)  # Stop looking at user
 			print("💬 Fin de conversation — Tama retourne au mur")
-			if phase == Phase.ACTIVE:
-				_play_reverse("OffThewall")
-				phase = Phase.TRANSITION_ON
+			if _anim_tree_module:
+				_anim_tree_module.return_to_wall()
 		return
 	elif command == "SHOW_RADIAL":
 		# If settings panel is open, close it first then open radial
@@ -853,37 +894,26 @@ func _handle_message(raw: String) -> void:
 		print("🎯 STRIKE_TARGET received: (%d, %d)" % [tx, ty])
 		return
 	elif command == "TAMA_ANIM":
-		# Python tells Godot exactly which animation to play
 		var anim_name = data.get("anim", "")
-		var loop = data.get("loop", false)
 		_last_anim_command_time = Time.get_unix_time_from_system()
-		print("🎬 [ANIM CMD] " + anim_name + (" (loop)" if loop else ""))
-		if anim_name == "Idle_wall":
-			# Go back to wall
-			if phase == Phase.ACTIVE:
-				_play_reverse("OffThewall")
-				phase = Phase.TRANSITION_ON
+		print("🎬 [ANIM CMD] " + anim_name)
+		if _anim_tree_module:
+			var key := anim_name.to_lower()
+			if key in ["idle_wall", "bye"]:
+				_anim_tree_module.return_to_wall()
+			elif key in ["strike", "strike_base"]:
+				_anim_tree_module.play_strike()
+				_activate_imba(1)
+			elif key in ["idle_wall_talk"]:
+				_anim_tree_module.play_wall_talk()
+			elif key == "suspicious":
+				_anim_tree_module.set_standing_anim("suspicious")
+			elif key == "angry":
+				_anim_tree_module.set_standing_anim("angry")
+			elif key == "peek":
+				_anim_tree_module.set_standing_anim("peek")
 			else:
-				_play("Idle_wall", true)
-				phase = Phase.ON_WALL
-		elif anim_name in ["Strike", "Strike_Base"]:
-			if phase == Phase.ON_WALL:
-				_play("OffThewall", false)
-				phase = Phase.TRANSITION_OFF
-			else:
-				_play("Strike_Base", false)
-				phase = Phase.STRIKING
-				_strike_fire_sent = false
-				_strike_frame_count = 0
-				_activate_imba(1)  # IMBA level 1 before strike!
-		else:
-			# Suspicious, Angry, Idle — if on wall, transition first
-			if phase == Phase.ON_WALL:
-				_play("OffThewall", false)
-				phase = Phase.TRANSITION_OFF
-			else:
-				_play(anim_name, loop)
-				phase = Phase.ACTIVE
+				_anim_tree_module.set_standing_anim("idle")
 		return
 	elif command == "TAMA_MOOD":
 		var mood_name = data.get("mood", "calm")
@@ -984,87 +1014,24 @@ func _get_tier() -> int:
 
 # ─── Logique Normale (Post-Intro) ─────────────────────────
 func _update_suspicion_anim() -> void:
-	if not session_active:
+	if not session_active or not _anim_tree_module:
 		return
-	# Don't interrupt transitions
-	if phase == Phase.TRANSITION_OFF or phase == Phase.TRANSITION_ON:
+	if _anim_tree_module.is_transitioning():
 		return
-
 	var tier := _get_tier()
 	if tier == _prev_suspicion_tier:
 		return
 	_prev_suspicion_tier = tier
-
 	match tier:
-		0: # Calme → retour au mur
-			if phase == Phase.ACTIVE or phase == Phase.STRIKING:
-				_play_reverse("OffThewall")
-				phase = Phase.TRANSITION_ON
-		1: # Suspecte
-			if phase == Phase.ON_WALL:
-				_play("OffThewall", false)
-				phase = Phase.TRANSITION_OFF
-			elif phase == Phase.ACTIVE or phase == Phase.STRIKING:
-				_play("Suspicious", false)
-				phase = Phase.ACTIVE
-		2: # En colère
-			if phase == Phase.ON_WALL:
-				_play("OffThewall", false)
-				phase = Phase.TRANSITION_OFF
-			elif phase == Phase.ACTIVE or phase == Phase.STRIKING:
-				_play("Angry", false)
-				phase = Phase.ACTIVE
-		3: # Très suspicieux — Angry (le Strike ne vient QUE de Python via TAMA_ANIM)
-			if phase == Phase.ON_WALL:
-				_play("OffThewall", false)
-				phase = Phase.TRANSITION_OFF
-			elif phase == Phase.ACTIVE or phase == Phase.STRIKING:
-				_play("Angry", false)
-				phase = Phase.ACTIVE
+		0: _anim_tree_module.return_to_wall()
+		1: _anim_tree_module.set_standing_anim("suspicious")
+		2: _anim_tree_module.set_standing_anim("angry")
+		3: _anim_tree_module.set_standing_anim("angry")
 
 # ─── Callback quand une anim "play once" se termine ──────
+# (Legacy — kept for F7 debug. AnimTree handles transitions internally.)
 func _on_animation_finished(_anim_name: StringName) -> void:
-	match phase:
-		Phase.TRANSITION_OFF:
-			# OffTheWall terminé → choisir l'anim selon suspicion
-			# Note: Strike ne vient JAMAIS d'ici — Python l'envoie via TAMA_ANIM
-			var tier := _get_tier()
-			if tier >= 2:
-				_play("Angry", false)
-				phase = Phase.ACTIVE
-			elif tier >= 1:
-				_play("Suspicious", false)
-				phase = Phase.ACTIVE
-			else:
-				# Conversation mode or suspicion dropped during transition
-				_play("Idle", true)
-				phase = Phase.ACTIVE
-		Phase.TRANSITION_ON:
-			# OffTheWall reverse terminé → Idle_wall
-			_play("Idle_wall", true)
-			phase = Phase.ON_WALL
-			print("🧱 Retour au mur — Idle_wall")
-		Phase.ACTIVE:
-			# OffThewall just finished → chain into Idle loop
-			if conversation_active:
-				_play("Idle", true)
-				print("🧑 Idle: conversation en cours")
-		Phase.STRIKING:
-			# N'importe quel strike (Base, Dab, etc.) terminé → retour à l'état normal
-			var tier := _get_tier()
-			if tier >= 2:
-				_play("Angry", false)
-				phase = Phase.ACTIVE
-				print("🥊 Strike terminé → Angry (tier %d)" % tier)
-			elif tier >= 1:
-				_play("Suspicious", false)
-				phase = Phase.ACTIVE
-				print("🥊 Strike terminé → Suspicious")
-			else:
-				# Suspicion tombée à 0 → retour au mur
-				_play_reverse("OffThewall")
-				phase = Phase.TRANSITION_ON
-				print("🥊 Strike terminé → Retour au mur")
+	pass
 
 # ─── Jouer une animation ─────────────────────────────────
 func _play(anim_name: String, loop: bool) -> void:
@@ -1849,17 +1816,8 @@ func _update_debug_viz(delta: float) -> void:
 	_debug_depth_mesh.surface_add_vertex(Vector3(head_pos.x, head_pos.y, target.z))
 	_debug_depth_mesh.surface_end()
 
-	# ─── Console print every 0.5s ───
+	# ─── Console print (disabled — too noisy) ───
 	_debug_print_timer += delta
-	if _debug_print_timer >= 0.5:
-		_debug_print_timer = 0.0
-		var z_dist = target.z - head_pos.z
-		var z_label = "DEVANT" if z_dist > 0 else "DERRIERE"
-		print("🔴 Target: (%.2f, %.2f, %.2f) | Head: (%.2f, %.2f, %.2f) | Z dist: %.2f (%s)" % [
-			target.x, target.y, target.z,
-			head_pos.x, head_pos.y, head_pos.z,
-			z_dist, z_label
-		])
 
 # _post_animation_update() removed — SkeletonModifier3D handles this now.
 # See gaze_modifier.gd → _process_modification_with_delta()
