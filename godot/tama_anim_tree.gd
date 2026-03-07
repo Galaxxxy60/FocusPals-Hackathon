@@ -317,8 +317,9 @@ func set_standing_anim(key: String) -> void:
 		return
 
 	if current_state == State.STRIKING:
-		# Don't override a strike in progress!
-		print("🎬 set_standing_anim ignored — currently STRIKING")
+		# Don't interrupt a strike in progress, but queue the mood!
+		print("🎬 Mood '%s' queued (currently STRIKING)" % key)
+		_queued_standing = key
 		return
 
 	# Already standing — travel directly
@@ -377,10 +378,6 @@ func play_strike() -> void:
 
 func apply_mood(mood: String, intensity: float) -> void:
 	"""Map mood+intensity to a standing animation (replaces _MOOD_ANIM_MAP)."""
-	if current_state == State.STRIKING:
-		print("🎬 apply_mood ignored — currently STRIKING")
-		return
-		
 	var key: String
 	match mood:
 		"calm", "amused", "proud":
@@ -505,8 +502,19 @@ func _on_strike_complete() -> void:
 	if current_state != State.STRIKING:
 		return
 	_set_state(State.STANDING)
-	_current_standing = "angry"  # Default post-strike
-	print("🎬 Strike complete → Standing (angry)")
+	
+	if _queued_standing != "":
+		var q := _queued_standing
+		_queued_standing = ""
+		print("🎬 Strike complete → Applying queued mood '%s'" % q)
+		if q == "strike":
+			play_strike()
+		else:
+			set_standing_anim(q)
+	else:
+		_current_standing = "angry"
+		_playback.travel("angry")
+		print("🎬 Strike complete → Standing (angry)")
 
 
 func _set_state(new_state: int) -> void:
