@@ -356,7 +356,9 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 			_suspicion_staring = false
 			# Small delay then leave wall for real
 			var tier := _get_tier()
-			if tier >= 2:
+			if tier >= 3:
+				_anim_tree_module.play_strike()
+			elif tier == 2:
 				_anim_tree_module.set_standing_anim("angry")
 			else:
 				_anim_tree_module.set_standing_anim("suspicious")
@@ -1180,7 +1182,7 @@ func _update_suspicion_anim() -> void:
 				_pending_leave_wall = true
 				_anim_tree_module.end_wall_talk()
 			else:
-				_anim_tree_module.set_standing_anim("angry")
+				_anim_tree_module.play_strike()
 
 # ─── Callback quand une anim "play once" se termine ──────
 # (Legacy — kept for F7 debug. AnimTree handles transitions internally.)
