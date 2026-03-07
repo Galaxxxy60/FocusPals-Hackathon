@@ -272,6 +272,8 @@ var _scan_eye_active: bool = false        # Bypass eye head-compensation during 
 const SCAN_GLANCE_DURATION: float = 1.8   # How long she looks at screen
 const SCAN_GLANCE_MIN_CD: float = 8.0     # Min seconds between glances
 const SCAN_GLANCE_MAX_CD: float = 15.0    # Max seconds between glances
+var _suspicion_staring: bool = false       # True when staring at screen due to suspicion
+var _pending_leave_wall: bool = false      # Queue leave-wall after reverse wall_talk
 
 # ─── Post-animation delta (for deferred gaze/spring bones) ──
 var _last_delta: float = 0.0
@@ -338,13 +340,31 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 
 	# ── Gaze follows animation state ──
 	if new_state == "WALL_TALK":
-		if conversation_active:
+		if _suspicion_staring:
+			# Suspicion-triggered wall_talk — stare at screen with full side-eye
+			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
+			_set_eye_look(-1.0, -0.3)
+			_scan_eye_active = true
+		elif conversation_active:
 			set_gaze(GazeTarget.USER, 4.0)
 		else:
-			# Deep work: look at the screen (she's commenting on activity)
 			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
-	elif (new_state == "ON_WALL" and old_state == "WALL_TALK") or \
-		 (new_state == "ON_WALL" and old_state == "RETURNING_WALL"):
+	elif new_state == "ON_WALL" and old_state == "RETURNING_WALL":
+		# Returned from wall_talk — check if we need to immediately leave
+		if _pending_leave_wall:
+			_pending_leave_wall = false
+			_suspicion_staring = false
+			# Small delay then leave wall for real
+			_anim_tree_module.set_standing_anim("suspicious")
+		else:
+			_suspicion_staring = false
+			_scan_eye_active = false
+			_set_eye_look(0.0, 0.0)
+			set_gaze(GazeTarget.NEUTRAL, 2.0)
+	elif new_state == "ON_WALL" and old_state == "WALL_TALK":
+		_suspicion_staring = false
+		_scan_eye_active = false
+		_set_eye_look(0.0, 0.0)
 		set_gaze(GazeTarget.NEUTRAL, 2.0)
 
 
@@ -732,10 +752,10 @@ func _process(delta: float) -> void:
 		_scan_glance_cooldown -= delta
 	if _scan_glance_timer > 0:
 		_scan_glance_timer -= delta
-		if _scan_glance_timer <= 0:
+		if _scan_glance_timer <= 0 and not _suspicion_staring:
 			# Glance over — smoothly return to book + eyes to center
 			set_gaze(GazeTarget.NEUTRAL, 2.0)
-			_set_eye_look(0.0, 0.0)  # Eyes back to center
+			_set_eye_look(0.0, 0.0)
 			_scan_eye_active = false
 
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
@@ -1101,7 +1121,7 @@ func _try_scan_glance() -> void:
 	_set_eye_look(-1.0, -0.3)
 	_scan_eye_active = true
 	_scan_glance_timer = SCAN_GLANCE_DURATION
-	# Randomize next cooldown for natural feel
+	# Reset cooldown so periodic glance doesn't fight
 	_scan_glance_cooldown = randf_range(SCAN_GLANCE_MIN_CD, SCAN_GLANCE_MAX_CD)
 
 
@@ -1122,10 +1142,41 @@ func _update_suspicion_anim() -> void:
 		return
 	_prev_suspicion_tier = tier
 	match tier:
-		0: _anim_tree_module.return_to_wall()
-		1: _anim_tree_module.set_standing_anim("suspicious")
-		2: _anim_tree_module.set_standing_anim("angry")
-		3: _anim_tree_module.set_standing_anim("angry")
+		0:
+			# CALM — back to book
+			_suspicion_staring = false
+			_pending_leave_wall = false
+			if _anim_tree_module.current_state == 1:  # WALL_TALK
+				_anim_tree_module.end_wall_talk()
+			else:
+				_anim_tree_module.return_to_wall()
+		1:
+			# SUSPICIOUS — lean in and STARE from wall (don't leave)
+			if _anim_tree_module.current_state == 0:  # ON_WALL
+				_suspicion_staring = true
+				_anim_tree_module.play_wall_talk()
+				# Gaze is set by _on_tree_state_changed when WALL_TALK fires
+			elif _anim_tree_module.current_state == 3:  # STANDING (de-escalating)
+				_suspicion_staring = false
+				_anim_tree_module.return_to_wall()
+		2:
+			# ANGRY — leave wall for real
+			if _anim_tree_module.current_state == 1:  # WALL_TALK (was staring)
+				# Reverse wall_talk first, then leave
+				_pending_leave_wall = true
+				_anim_tree_module.end_wall_talk()
+			elif _anim_tree_module.is_on_wall():
+				_suspicion_staring = false
+				_anim_tree_module.set_standing_anim("suspicious")
+			else:
+				_anim_tree_module.set_standing_anim("angry")
+		3:
+			# STRIKE
+			if _anim_tree_module.current_state == 1:  # WALL_TALK
+				_pending_leave_wall = true
+				_anim_tree_module.end_wall_talk()
+			else:
+				_anim_tree_module.set_standing_anim("angry")
 
 # ─── Callback quand une anim "play once" se termine ──────
 # (Legacy — kept for F7 debug. AnimTree handles transitions internally.)
