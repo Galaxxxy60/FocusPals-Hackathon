@@ -9,6 +9,8 @@ signal api_key_submitted(key: String)
 signal language_changed(lang: String)
 signal volume_changed(volume: float)
 signal session_duration_changed(duration: int)
+signal screen_share_toggled(enabled: bool)
+signal mic_toggled(enabled: bool)
 
 var is_open := false
 var _progress := 0.0
@@ -59,6 +61,12 @@ var _lang_btn: OptionButton
 var _volume_slider: HSlider
 var _volume_label: Label
 var _usage_label: RichTextLabel
+
+# Permission toggles
+var _screen_share_allowed: bool = true
+var _mic_allowed: bool = true
+var _screen_share_toggle: CheckButton = null
+var _mic_toggle: CheckButton = null
 
 # ─── Styles ────────────────────────────────────────────────
 
@@ -197,12 +205,14 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}) -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true) -> void:
 	_mics = mics
 	_selected_index = selected
 	_api_key_has_key = has_api_key
 	_api_key_checking = false
 	_api_usage = api_usage
+	_screen_share_allowed = screen_share
+	_mic_allowed = mic_on
 	if has_api_key:
 		_api_key_valid = 1 if key_valid else 0
 	else:
@@ -511,6 +521,71 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	_lang_btn.item_selected.connect(_on_language_selected)
 	gen_content.add_child(_lang_btn)
 
+	# ══════ SECTION: Permissions (Screen Share + Mic) ══════
+	var perm_section := _make_collapsible_section("🔒  Permissions", false)
+	_vbox.add_child(perm_section["root"])
+	var perm_content: VBoxContainer = perm_section["content"]
+
+	# ── Screen Share Toggle ──
+	var screen_row := HBoxContainer.new()
+	screen_row.add_theme_constant_override("separation", 8)
+	perm_content.add_child(screen_row)
+
+	var screen_lbl_box := VBoxContainer.new()
+	screen_lbl_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	screen_lbl_box.add_theme_constant_override("separation", 0)
+	screen_row.add_child(screen_lbl_box)
+
+	var screen_title := Label.new()
+	screen_title.text = "🖥️  Partage d'écran"
+	screen_title.add_theme_font_size_override("font_size", 11)
+	screen_title.add_theme_color_override("font_color", Color(0.8, 0.85, 0.95))
+	screen_lbl_box.add_child(screen_title)
+
+	var screen_desc := Label.new()
+	screen_desc.text = "Tama voit votre écran"
+	screen_desc.add_theme_font_size_override("font_size", 9)
+	screen_desc.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
+	screen_lbl_box.add_child(screen_desc)
+
+	_screen_share_toggle = CheckButton.new()
+	_screen_share_toggle.button_pressed = _screen_share_allowed
+	_screen_share_toggle.custom_minimum_size = Vector2(50, 28)
+	_screen_share_toggle.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
+	_screen_share_toggle.toggled.connect(_on_screen_share_toggled)
+	screen_row.add_child(_screen_share_toggle)
+
+	perm_content.add_child(_make_sub_sep())
+
+	# ── Microphone Toggle ──
+	var mic_row := HBoxContainer.new()
+	mic_row.add_theme_constant_override("separation", 8)
+	perm_content.add_child(mic_row)
+
+	var mic_lbl_box := VBoxContainer.new()
+	mic_lbl_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mic_lbl_box.add_theme_constant_override("separation", 0)
+	mic_row.add_child(mic_lbl_box)
+
+	var mic_title := Label.new()
+	mic_title.text = "🎤  Microphone"
+	mic_title.add_theme_font_size_override("font_size", 11)
+	mic_title.add_theme_color_override("font_color", Color(0.8, 0.85, 0.95))
+	mic_lbl_box.add_child(mic_title)
+
+	var mic_desc := Label.new()
+	mic_desc.text = "Tama vous entend"
+	mic_desc.add_theme_font_size_override("font_size", 9)
+	mic_desc.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
+	mic_lbl_box.add_child(mic_desc)
+
+	_mic_toggle = CheckButton.new()
+	_mic_toggle.button_pressed = _mic_allowed
+	_mic_toggle.custom_minimum_size = Vector2(50, 28)
+	_mic_toggle.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
+	_mic_toggle.toggled.connect(_on_mic_toggled)
+	mic_row.add_child(_mic_toggle)
+
 # ─── Helper: Collapsible Section ──────────────────────────
 
 func _make_collapsible_section(title: String, expanded: bool = true) -> Dictionary:
@@ -673,6 +748,14 @@ func _on_api_key_btn_pressed() -> void:
 func _on_language_selected(idx: int) -> void:
 	if idx >= 0 and idx < LANGUAGES.size():
 		language_changed.emit(LANGUAGES[idx]["code"])
+
+func _on_screen_share_toggled(enabled: bool) -> void:
+	_screen_share_allowed = enabled
+	screen_share_toggled.emit(enabled)
+
+func _on_mic_toggled(enabled: bool) -> void:
+	_mic_allowed = enabled
+	mic_toggled.emit(enabled)
 
 func _rebuild_mic_list() -> void:
 	if _mic_container == null:

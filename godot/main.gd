@@ -304,6 +304,8 @@ func _setup_radial_menu() -> void:
 	settings_panel.language_changed.connect(_on_language_changed)
 	settings_panel.volume_changed.connect(_on_volume_changed)
 	settings_panel.session_duration_changed.connect(_on_session_duration_changed)
+	settings_panel.screen_share_toggled.connect(_on_screen_share_toggled)
+	settings_panel.mic_toggled.connect(_on_mic_toggled)
 	print("🎛️ Radial menu + Settings panel initialisés OK")
 
 
@@ -556,6 +558,18 @@ func _on_session_duration_changed(duration: int) -> void:
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_SESSION_DURATION", "duration": duration}))
 
+func _on_screen_share_toggled(enabled: bool) -> void:
+	var status = "ON" if enabled else "OFF"
+	print("🖥️ Screen share toggled: " + status)
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "SET_SCREEN_SHARE", "enabled": enabled}))
+
+func _on_mic_toggled(enabled: bool) -> void:
+	var status = "ON" if enabled else "OFF"
+	print("🎤 Microphone toggled: " + status)
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "SET_MIC_ALLOWED", "enabled": enabled}))
+
 func _safe_restore_passthrough() -> void:
 	if radial_menu and radial_menu.is_open:
 		return
@@ -791,11 +805,13 @@ func _handle_message(raw: String) -> void:
 		var tama_vol = data.get("tama_volume", 1.0)
 		var session_duration = int(data.get("session_duration", 50))
 		var api_usage = data.get("api_usage", {})
+		var screen_share = data.get("screen_share_allowed", true)
+		var mic_on = data.get("mic_allowed", true)
 		print("⚙️ Settings: %d micros, selected: %d, API key: %s, valid: %s, lang: %s, duration: %d" % [mics.size(), selected, str(has_api_key), str(key_valid), lang, session_duration])
 		if settings_panel:
 			if radial_menu and radial_menu.is_open:
 				radial_menu.close()
-			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage)
+			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on)
 		return
 	elif command == "API_KEY_UPDATED":
 		var valid = data.get("valid", false)
@@ -804,12 +820,11 @@ func _handle_message(raw: String) -> void:
 			settings_panel.update_key_valid(valid)
 		return
 	elif command == "USER_SPEAKING":
-		# Subtle acknowledgment — Tama looks at user, stays on wall
+		# Subtle acknowledgment — Tama looks at user
 		if conversation_active:
 			_convo_engagement += 1
 			print("👀 User speaking — engagement #%d" % _convo_engagement)
-			# Toujours faire l'accusé de réception, on ne descend plus du mur
-			_on_user_speaking_ack()
+		_on_user_speaking_ack()  # Always ack (conversation + deep work)
 		return
 	elif command == "GAZE_AT":
 		# Python tells Tama where to look

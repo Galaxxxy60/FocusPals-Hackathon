@@ -511,3 +511,31 @@ pywinauto             # UIA pour hand_animation.py
 8. **API version `v1alpha`** — Nécessaire pour `enable_affective_dialog`, `proactivity`, et `ThinkingConfig`. Configuré dans `config.py`.
 9. **Session Resume Handle** — `state["_session_resume_handle"]` est mis à jour automatiquement par `receive_responses()`. Ne pas le reset manuellement.
 10. **ThinkingConfig** uniquement en Deep Work — NE PAS l'activer en mode conversation (ajoute de la latence vocale).
+
+---
+
+## 14. Interventions Naturelles (Organic Context Enrichment)
+
+> **Principe : Ne scripte jamais les mots. Enrichis la perception.**
+
+Tama produit ses meilleures interventions quand elle a **beaucoup de contexte passif** et **aucune instruction de quoi dire**. Le système injecte des signaux environnementaux dans chaque pulse — Gemini décide seul si le contexte mérite un commentaire.
+
+### Signaux injectés dans chaque pulse (`[SYSTEM]`)
+
+| Signal | Exemple | Ce que ça permet |
+|--------|---------|------------------|
+| `clock` | `00:54` | "Il est 1h du mat'..." |
+| `session` | `28/70min (40%)` | "T'es à mi-chemin" |
+| `focus` | `15min` | "15 min de focus, bien joué" |
+| `S_trend` | `↑` / `↓` / `→` | "Ça remonte là..." |
+| `status` | `active` / `AFK 5min` | "Euh... t'es parti ?" |
+| `activity_shifts_10min` | `3` | "T'arrêtes pas de changer" |
+| `active_window` | `VS Code` | Contexte visuel |
+| `duration` | `45s` | Temps sur la fenêtre courante |
+
+### Pourquoi ça marche
+
+1. **Passif** — Les données sont toujours là, comme une horloge sur le mur. Tama n'est jamais forcée de les mentionner.
+2. **Transitions** — Les changements de catégorie (Discord → VS Code) sont les plus riches en commentaires naturels.
+3. **Accumulation** — Gemini voit le flux de pulses et synthétise des tendances ("tu switchais beaucoup → maintenant t'es focus").
+4. **Proactive Audio** — `proactive_audio=True` permet à Gemini de décider quand parler sans instruction explicite.

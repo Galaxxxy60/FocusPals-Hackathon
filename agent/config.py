@@ -109,6 +109,8 @@ state = {
     "selected_mic_index": None,
     "language": "fr",  # "fr" or "en" — configurable via Settings panel
     "tama_volume": 1.0,  # 0.0 (mute) to 1.0 (full) — Tama's voice volume
+    "screen_share_allowed": True,   # User can disable screen capture from Settings
+    "mic_allowed": True,            # User can disable microphone from Settings
     "godot_process": None,
     "_session_resume_handle": None,
     # Mood system (Phase 1)

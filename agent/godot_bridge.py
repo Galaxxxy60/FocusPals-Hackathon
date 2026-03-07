@@ -127,7 +127,9 @@ def _send_settings_to_godot():
         "key_valid": state["_api_key_valid"],
         "tama_volume": state["tama_volume"],
         "session_duration": state.get("session_duration_minutes", 50),
-        "api_usage": _get_api_usage_stats()
+        "api_usage": _get_api_usage_stats(),
+        "screen_share_allowed": state["screen_share_allowed"],
+        "mic_allowed": state["mic_allowed"]
     })
     main_loop = state["main_loop"]
     for ws_client in list(state["connected_ws_clients"]):
@@ -281,7 +283,9 @@ async def ws_handler(websocket):
                         "language": state["language"],
                         "tama_volume": state["tama_volume"],
                         "session_duration": state.get("session_duration_minutes", 50),
-                        "api_usage": _get_api_usage_stats()
+                        "api_usage": _get_api_usage_stats(),
+                        "screen_share_allowed": state["screen_share_allowed"],
+                        "mic_allowed": state["mic_allowed"]
                     })
                     await websocket.send(response)
                     # Refresh mics in background (if cache was stale, next open is instant)
@@ -299,7 +303,9 @@ async def ws_handler(websocket):
                                     "language": state["language"],
                                     "tama_volume": state["tama_volume"],
                                     "session_duration": state.get("session_duration_minutes", 50),
-                                    "api_usage": _get_api_usage_stats()
+                                    "api_usage": _get_api_usage_stats(),
+                                    "screen_share_allowed": state["screen_share_allowed"],
+                                    "mic_allowed": state["mic_allowed"]
                                 })
                                 await ws.send(update)
                         except Exception:
@@ -328,6 +334,16 @@ async def ws_handler(websocket):
                     duration = int(data.get("duration", 50))
                     state["session_duration_minutes"] = max(5, min(180, duration))
                     print(f"⏱️ Durée de session réglée sur : {state['session_duration_minutes']} min")
+                elif cmd == "SET_SCREEN_SHARE":
+                    enabled = bool(data.get("enabled", True))
+                    state["screen_share_allowed"] = enabled
+                    status = "✅ activé" if enabled else "❌ désactivé"
+                    print(f"🖥️ Partage d'écran : {status}")
+                elif cmd == "SET_MIC_ALLOWED":
+                    enabled = bool(data.get("enabled", True))
+                    state["mic_allowed"] = enabled
+                    status = "✅ activé" if enabled else "❌ désactivé"
+                    print(f"🎤 Microphone : {status}")
                 elif cmd == "STRIKE_FIRE":
                     # Godot handles the visual hand animation (multi-window)
                     # Python just closes the tab/window

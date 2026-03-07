@@ -815,6 +815,12 @@ async def run_gemini_loop(pya):
                                 current_mic = actual_mic
 
                             data = await asyncio.to_thread(stream.read, CHUNK_SIZE, exception_on_overflow=False)
+
+                            # Gate: if mic is disabled, discard the data (keep stream alive but don't send)
+                            if not state.get("mic_allowed", True):
+                                await asyncio.sleep(0.01)
+                                continue
+
                             voice_active = detect_voice_activity(data)
                             blob = types.Blob(data=data, mime_type="audio/pcm")
 
@@ -840,7 +846,7 @@ async def run_gemini_loop(pya):
                                         pre_buffer.clear()
 
                                         # Notify Godot: user is speaking → instant local reaction
-                                        if state["current_mode"] == "conversation":
+                                        if state["current_mode"] in ("conversation", "deep_work"):
                                             _last_ack = state.get("_last_user_speaking_ack", 0)
                                             if time.time() - _last_ack > 3.0:  # 3s cooldown
                                                 state["_last_user_speaking_ack"] = time.time()
@@ -983,6 +989,11 @@ async def run_gemini_loop(pya):
                             continue
 
                         # ── Deep Work mode: full screen analysis ──
+                        # Gate: if screen share is disabled, skip capture entirely
+                        if not state.get("screen_share_allowed", True):
+                            await asyncio.sleep(5.0)
+                            continue
+
                         jpeg_bytes = await asyncio.to_thread(capture_all_screens)
                         blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
 
@@ -1013,6 +1024,50 @@ async def run_gemini_loop(pya):
                             state["active_window_start_time"] = time.time()
 
                         active_duration = int(time.time() - state["active_window_start_time"])
+
+                        # ── Rich context signals (passive — Tama sees, decides if relevant) ──
+                        now = time.time()
+
+                        # Focus streak: continuous time at SANTE (alignment >= 0.8)
+                        ali = state["current_alignment"]
+                        if ali >= 0.8:
+                            if state.get("_focus_streak_start") is None:
+                                state["_focus_streak_start"] = now
+                        else:
+                            state["_focus_streak_start"] = None
+                        focus_streak_min = int((now - state["_focus_streak_start"]) / 60) if state.get("_focus_streak_start") else 0
+
+                        # Suspicion trend: compare to previous pulse
+                        prev_si = state.get("_prev_suspicion", 0.0)
+                        si = state["current_suspicion_index"]
+                        if si > prev_si + 0.5:
+                            s_trend = "↑"
+                        elif si < prev_si - 0.5:
+                            s_trend = "↓"
+                        else:
+                            s_trend = "→"
+                        state["_prev_suspicion"] = si
+
+                        # Activity shifts: count CATEGORY changes (not window switches) in last 10 min
+                        cat = state["current_category"]
+                        prev_cat = state.get("_prev_category", cat)
+                        if cat != prev_cat:
+                            shifts = state.get("_activity_shifts", [])
+                            shifts.append(now)
+                            state["_activity_shifts"] = shifts
+                            state["_prev_category"] = cat
+                        shifts_10min = len([t for t in state.get("_activity_shifts", []) if now - t < 600])
+                        # Prune old entries
+                        state["_activity_shifts"] = [t for t in state.get("_activity_shifts", []) if now - t < 600]
+
+                        # AFK detection: no window change + no user speech for 3+ min
+                        last_interaction = max(
+                            state.get("active_window_start_time", now),
+                            state.get("user_spoke_at", 0),
+                            state.get("_last_speech_ended", 0),
+                        )
+                        afk_min = int((now - last_interaction) / 60)
+                        afk_status = f"AFK {afk_min}min" if afk_min >= 3 else "active"
 
                         si = state["current_suspicion_index"]
                         # Timer tracking — cumulative (don't reset lower thresholds when crossing higher ones)
@@ -1082,7 +1137,19 @@ async def run_gemini_loop(pya):
 
                         speech_cooldown_ok = (time.time() - state.get("_last_speech_ended", 0)) > 4.0
                         if tama_state == TamaState.CALM and audio_out_queue.empty() and speech_cooldown_ok:
-                            system_text = f"[SYSTEM] active_window: {active_title} | open_windows: {open_win_titles} | duration: {active_duration}s | S: {state['current_suspicion_index']:.1f} | A: {state['current_alignment']} | {task_info}. [MOOD] {mood_ctx}"
+                            # Time context — passive info Tama can reference naturally
+                            now_str = time.strftime("%H:%M")
+                            session_min = int((now - state["session_start_time"]) / 60) if state.get("session_start_time") else 0
+                            total_min = state.get("session_duration_minutes", 50)
+                            progress_pct = min(int(session_min / total_min * 100), 100) if total_min > 0 else 0
+                            time_ctx = f"clock: {now_str} | session: {session_min}/{total_min}min ({progress_pct}%)"
+
+                            # Rich signals
+                            ctx_signals = f"focus: {focus_streak_min}min | S_trend: {s_trend} | status: {afk_status}"
+                            if shifts_10min > 0:
+                                ctx_signals += f" | activity_shifts_10min: {shifts_10min}"
+
+                            system_text = f"[SYSTEM] {time_ctx} | {ctx_signals} | active_window: {active_title} | open_windows: {open_win_titles} | duration: {active_duration}s | S: {state['current_suspicion_index']:.1f} | A: {state['current_alignment']} | {task_info}. [MOOD] {mood_ctx}"
                             if lite_hint:
                                 system_text += f" {lite_hint}"
                             system_text += f" — Call classify_screen + report_mood. {speak_directive}"
