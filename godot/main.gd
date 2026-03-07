@@ -357,9 +357,7 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 			_suspicion_staring = false
 			# Small delay then leave wall for real
 			var tier := _get_tier()
-			if tier >= 3:
-				_anim_tree_module.play_strike()
-			elif tier == 2:
+			if tier == 2:
 				_anim_tree_module.set_standing_anim("angry")
 			else:
 				_anim_tree_module.set_standing_anim("suspicious")
@@ -1066,6 +1064,11 @@ func _handle_message(raw: String) -> void:
 			# Reset cooldown so periodic glance doesn't fight
 			_scan_glance_cooldown = SCAN_GLANCE_MAX_CD
 		return
+	elif command == "PLAY_STRIKE":
+		if _anim_tree_module:
+			print("🥊 PYTHON TRIGGERED STRIKE!")
+			_anim_tree_module.play_strike()
+		return
 	elif command == "CONNECTION_STATUS":
 		var conn_status = data.get("status", "")
 		_gemini_status = conn_status
@@ -1127,7 +1130,6 @@ func _try_scan_glance() -> void:
 
 
 func _get_tier() -> int:
-	if suspicion_index >= 9.0: return 3  # STRIKE
 	if suspicion_index >= 6.0: return 2  # ANGRY
 	if suspicion_index >= 3.0: return 1  # SUSPICIOUS
 	return 0                             # CALM → HIDDEN
@@ -1171,13 +1173,6 @@ func _update_suspicion_anim() -> void:
 				_anim_tree_module.set_standing_anim("angry")
 			else:
 				_anim_tree_module.set_standing_anim("angry")
-		3:
-			# STRIKE
-			if _anim_tree_module.current_state == 1:  # WALL_TALK
-				_pending_leave_wall = true
-				_anim_tree_module.end_wall_talk()
-			else:
-				_anim_tree_module.play_strike()
 
 # ─── Callback quand une anim "play once" se termine ──────
 # (Legacy — kept for F7 debug. AnimTree handles transitions internally.)

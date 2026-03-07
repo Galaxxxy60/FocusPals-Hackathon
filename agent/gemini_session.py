@@ -147,7 +147,7 @@ Niveaux d'engagement ([SYSTEM] te dit lequel) :
 • ENCOURAGEMENT : Nicolas bosse bien. UN commentaire tsundere. "Pas mal..." ou "Tu gères pour une fois." PAS de speech motivationnel.
 • WARNING : Directe. "Retourne bosser." Ton agacé.
 • ULTIMATUM : Dernier avertissement. "C'est mon dernier avertissement, je ferme si tu bouges pas !"
-• STRIKE : Réplique finale percutante + close_distracting_tab.
+• STRIKE : Réplique finale percutante + fire_strike() + close_distracting_tab. Tu choisis le TIMING PARFAIT de la frappe en appelant `fire_strike()` quand tu le dis !
 """
 
 SYSTEM_PROMPT_EN = """═══ WHO YOU ARE ═══
@@ -215,7 +215,7 @@ Engagement levels ([SYSTEM] tells you which):
 • ENCOURAGEMENT: Nicolas is working well. ONE tsundere comment. "Not bad..." or "Alright, you're doing okay for once." NO motivational speech.
 • WARNING: Direct. "Get back to work." Annoyed.
 • ULTIMATUM: Final warning. "This is my last warning, I'm closing it if you don't move!"
-• STRIKE: Final punchy line + close_distracting_tab.
+• STRIKE: Final punchy line + fire_strike() + close_distracting_tab. You control EXACTLY when the punch lands by calling `fire_strike()`.
 """
 
 CONVO_PROMPT_FR = """Tu es Tama, la coach de productivité auto-proclamée de Nicolas. En dehors des sessions de boulot, tu es aussi sa pote.
@@ -275,6 +275,17 @@ TOOLS = [
                     },
                     required=["reason", "target_window"],
                 ),
+            ),
+            types.FunctionDeclaration(
+                name="fire_strike",
+                description="Visually punch the user's screen. Call this tool exactly when your response lands the punchline for maximum organic timing.",
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={
+                        "timing_intent": types.Schema(type="STRING", description="What exactly are you saying as you punch? e.g. 'BAM' or 'That's it.'")
+                    },
+                    required=["timing_intent"]
+                )
             ),
             types.FunctionDeclaration(
                 name="classify_screen",
@@ -1419,6 +1430,29 @@ async def run_gemini_loop(pya):
                                                         )
                                                     ]
                                                 )
+                                            elif fc.name == "fire_strike":
+                                                print(f"  🥊🔥 GEMINI INITIATED STRIKE: {fc.args.get('timing_intent', '')}")
+                                                
+                                                # Send strike command to Godot
+                                                strike_msg = json.dumps({"command": "PLAY_STRIKE"})
+                                                main_loop = state["main_loop"]
+                                                for ws_client in list(state["connected_ws_clients"]):
+                                                    try:
+                                                        if main_loop and main_loop.is_running():
+                                                            asyncio.run_coroutine_threadsafe(ws_client.send(strike_msg), main_loop)
+                                                    except Exception:
+                                                        pass
+
+                                                await session.send_tool_response(
+                                                    function_responses=[
+                                                        types.FunctionResponse(
+                                                            name="fire_strike",
+                                                            response={"status": "strike_delivered"},
+                                                            id=fc.id
+                                                        )
+                                                    ]
+                                                )
+
                                     except Exception as e:
                                         print(f"⚠️ Erreur function call : {e}")
 

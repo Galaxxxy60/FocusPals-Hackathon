@@ -398,9 +398,6 @@ func apply_mood(mood: String, intensity: float) -> void:
 		"angry":
 			key = "angry"
 		"furious":
-			if intensity > 0.7:
-				play_strike()
-				return
 			key = "angry"
 		_:
 			if is_on_wall() and _names.has("idle_wall_talk"):
