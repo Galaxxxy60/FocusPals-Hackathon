@@ -634,6 +634,9 @@ func _on_radial_action(action_id: String) -> void:
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "GET_SETTINGS"}))
 		return
+	if action_id == "quit":
+		_show_quit_confirmation()
+		return
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		var msg := JSON.stringify({"command": "MENU_ACTION", "action": action_id})
 		ws.send_text(msg)
@@ -641,9 +644,120 @@ func _on_radial_action(action_id: String) -> void:
 func _on_radial_hide() -> void:
 	if settings_panel and settings_panel.is_open:
 		return
+	if _quit_layer:
+		return  # Don't re-enable click-through — quit dialog needs clicks
 	_safe_restore_passthrough()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
+
+var _quit_layer: CanvasLayer = null
+
+func _show_quit_confirmation() -> void:
+	if _quit_layer:
+		return  # Already visible
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
+
+	_quit_layer = CanvasLayer.new()
+	_quit_layer.layer = 200
+	add_child(_quit_layer)
+
+	# Full-screen click catcher (clicking outside = cancel)
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.01)  # Nearly invisible but captures clicks
+	bg.anchor_right = 1.0
+	bg.anchor_bottom = 1.0
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	bg.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed:
+			_hide_quit_confirmation()
+	)
+	_quit_layer.add_child(bg)
+
+	# Panel
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.09, 0.14, 0.95)
+	style.border_color = Color(0.3, 0.35, 0.55, 0.5)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(12)
+	style.set_content_margin_all(20)
+	style.shadow_color = Color(0, 0, 0, 0.4)
+	style.shadow_size = 8
+	panel.add_theme_stylebox_override("panel", style)
+	panel.custom_minimum_size = Vector2(220, 0)
+	_quit_layer.add_child(panel)
+
+	# Position center of viewport
+	var vp := get_viewport().get_visible_rect().size
+	panel.position = Vector2(vp.x / 2 - 110, vp.y / 2 - 50)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	panel.add_child(vbox)
+
+	# Question
+	var lbl := Label.new()
+	lbl.text = "Tu veux vraiment\npartir ? 😿"
+	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.add_theme_color_override("font_color", Color(0.9, 0.92, 1.0))
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(lbl)
+
+	# Buttons row
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(row)
+
+	# Oui button
+	var btn_yes := Button.new()
+	btn_yes.text = "  Oui  "
+	btn_yes.add_theme_font_size_override("font_size", 13)
+	var yes_style := StyleBoxFlat.new()
+	yes_style.bg_color = Color(0.6, 0.2, 0.2, 0.8)
+	yes_style.set_corner_radius_all(8)
+	yes_style.set_content_margin_all(8)
+	btn_yes.add_theme_stylebox_override("normal", yes_style)
+	var yes_hover := StyleBoxFlat.new()
+	yes_hover.bg_color = Color(0.8, 0.25, 0.25, 0.9)
+	yes_hover.set_corner_radius_all(8)
+	yes_hover.set_content_margin_all(8)
+	btn_yes.add_theme_stylebox_override("hover", yes_hover)
+	btn_yes.add_theme_color_override("font_color", Color(1, 0.9, 0.9))
+	btn_yes.pressed.connect(_do_quit)
+	row.add_child(btn_yes)
+
+	# Non button
+	var btn_no := Button.new()
+	btn_no.text = "  Non  "
+	btn_no.add_theme_font_size_override("font_size", 13)
+	var no_style := StyleBoxFlat.new()
+	no_style.bg_color = Color(0.15, 0.2, 0.35, 0.8)
+	no_style.set_corner_radius_all(8)
+	no_style.set_content_margin_all(8)
+	btn_no.add_theme_stylebox_override("normal", no_style)
+	var no_hover := StyleBoxFlat.new()
+	no_hover.bg_color = Color(0.25, 0.35, 0.55, 0.9)
+	no_hover.set_corner_radius_all(8)
+	no_hover.set_content_margin_all(8)
+	btn_no.add_theme_stylebox_override("hover", no_hover)
+	btn_no.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
+	btn_no.pressed.connect(_hide_quit_confirmation)
+	row.add_child(btn_no)
+
+func _hide_quit_confirmation() -> void:
+	if _quit_layer:
+		_quit_layer.queue_free()
+		_quit_layer = null
+	_safe_restore_passthrough()
+	# Tell Python to re-enable click-through via WinAPI
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
+
+func _do_quit() -> void:
+	_hide_quit_confirmation()
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "quit"}))
 
 func _on_mic_selected(mic_index: int) -> void:
 	print("🎤 Micro sélectionné: " + str(mic_index))
@@ -699,6 +813,8 @@ func _safe_restore_passthrough() -> void:
 	if radial_menu and radial_menu.is_open:
 		return
 	if settings_panel and settings_panel.is_open:
+		return
+	if _quit_layer:
 		return
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 
