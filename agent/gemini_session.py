@@ -1378,6 +1378,8 @@ async def run_gemini_loop(pya):
                                                 intensity = min(1.0, max(0.0, float(fc.args.get("intensity", 0.5))))
                                                 state["_current_mood"] = mood
                                                 state["_current_mood_intensity"] = intensity
+                                                state["_mood_peak_intensity"] = intensity  # Remember peak for decay curve
+                                                state["_mood_set_at"] = time.time()  # Timestamp for organic decay
                                                 state["_mood_anim_set"] = True
                                                 print(f"  🎭 Mood: {mood} ({intensity:.1f})")
 

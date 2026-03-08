@@ -418,6 +418,45 @@ async def broadcast_ws_state():
                         print(f"☕ Tama suggère une pause ! ({session_minutes} min de travail)")
 
                 tama_state = state["current_tama_state"]
+
+                # ── Organic mood decay ──
+                # After Tama stops speaking, her mood fades gradually back to calm,
+                # like a human's emotions naturally subsiding.
+                # Gemini remains the authority — any new report_mood overrides this.
+                MOOD_GRACE_SECS = 5.0    # Hold the mood for a few seconds after speech
+                MOOD_DECAY_SECS = 20.0   # Total fade duration after grace period
+                current_mood = state.get("_current_mood", "calm")
+                if current_mood != "calm" and not state.get("_tama_is_speaking", False):
+                    mood_set_at = state.get("_mood_set_at", 0)
+                    last_speech = state.get("_last_speech_ended", 0)
+                    # Decay starts from whichever is later: mood set or speech end
+                    decay_anchor = max(mood_set_at, last_speech)
+                    elapsed = time.time() - decay_anchor
+
+                    if elapsed > MOOD_GRACE_SECS:
+                        decay_progress = min(1.0, (elapsed - MOOD_GRACE_SECS) / MOOD_DECAY_SECS)
+                        # Smooth ease-out curve (fast at start, slow at end)
+                        decay_factor = 1.0 - (decay_progress * decay_progress)
+                        peak = state.get("_mood_peak_intensity", 0.5)
+                        decayed_intensity = peak * decay_factor
+
+                        if decayed_intensity < 0.1:
+                            # Fully decayed → return to calm
+                            if state.get("_current_mood") != "calm":
+                                state["_current_mood"] = "calm"
+                                state["_current_mood_intensity"] = 0.3
+                                mood_msg = json.dumps({"command": "TAMA_MOOD", "mood": "calm", "intensity": 0.3})
+                                for ws_client in list(state["connected_ws_clients"]):
+                                    try:
+                                        main_loop = state["main_loop"]
+                                        if main_loop and main_loop.is_running():
+                                            asyncio.run_coroutine_threadsafe(ws_client.send(mood_msg), main_loop)
+                                    except Exception:
+                                        pass
+                                print(f"  🎭 Mood decayed → calm")
+                        else:
+                            state["_current_mood_intensity"] = decayed_intensity
+
                 state_data = {
                     "session_active": True,
                     "suspicion_index": round(state["current_suspicion_index"], 1),
@@ -522,10 +561,24 @@ def _apply_click_through_delayed():
                 work_area = ctypes.wintypes.RECT()
                 ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
 
-                win_rect = ctypes.wintypes.RECT()
-                user32.GetWindowRect(hwnd, ctypes.byref(win_rect))
-                win_w = win_rect.right - win_rect.left
-                win_h = win_rect.bottom - win_rect.top
+                # Wait for Godot window to have a non-zero size (up to 10s)
+                # Godot may create the HWND before it finishes initializing its viewport
+                win_w, win_h = 0, 0
+                for _wait in range(20):
+                    win_rect = ctypes.wintypes.RECT()
+                    user32.GetWindowRect(hwnd, ctypes.byref(win_rect))
+                    win_w = win_rect.right - win_rect.left
+                    win_h = win_rect.bottom - win_rect.top
+                    if win_w > 0 and win_h > 0:
+                        break
+                    time.sleep(0.5)
+
+                if win_w == 0 or win_h == 0:
+                    print(f"⚠️ Fenêtre Godot trouvée mais taille 0x0 après 10s d'attente — skip repositionnement")
+                    # Still mark as positioned so the app doesn't hang
+                    state["window_positioned"] = True
+                    print(f"✅ Click-through OK (handle: {hwnd}) — taille nulle, pas de repositionnement")
+                    return
 
                 new_x = work_area.right - win_w
                 new_y = work_area.bottom - win_h
