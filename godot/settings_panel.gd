@@ -9,6 +9,7 @@ signal api_key_submitted(key: String)
 signal language_changed(lang: String)
 signal volume_changed(volume: float)
 signal session_duration_changed(duration: int)
+signal tama_scale_changed(scale_pct: int)
 signal screen_share_toggled(enabled: bool)
 signal mic_toggled(enabled: bool)
 
@@ -52,6 +53,8 @@ var _scroll: ScrollContainer
 var _vbox: VBoxContainer
 var _session_slider: HSlider
 var _session_label: Label
+var _size_slider: HSlider
+var _size_label: Label
 var _mic_container: VBoxContainer
 var _vu_bar: Control  # custom segmented VU meter
 var _api_key_input: LineEdit
@@ -205,7 +208,7 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true) -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true, tama_scale: int = 100) -> void:
 	_mics = mics
 	_selected_index = selected
 	_api_key_has_key = has_api_key
@@ -220,7 +223,7 @@ func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: boo
 
 	# Rebuild the entire UI tree every time (clean slate)
 	_clear_ui()
-	_build_ui(lang, volume, session_duration)
+	_build_ui(lang, volume, session_duration, tama_scale)
 
 	is_open = true
 	visible = true
@@ -260,7 +263,7 @@ func _clear_ui() -> void:
 		_panel_container.queue_free()
 		_panel_container = null
 
-func _build_ui(lang: String, volume: float, session_duration: int) -> void:
+func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: int = 100) -> void:
 	var vp := get_viewport().get_visible_rect().size
 	var max_h := vp.y * MAX_HEIGHT_RATIO
 
@@ -495,11 +498,13 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	note.add_theme_color_override("font_color", Color(0.4, 0.45, 0.55, 0.6))
 	api_content.add_child(note)
 
-	# ══════ SECTION: General (Language) ══════
+	# ══════ SECTION: General (Language + Tama Size) ══════
 	var gen_section := _make_collapsible_section("🌐  Général", false)
 	_vbox.add_child(gen_section["root"])
+	_vbox.move_child(gen_section["root"], 0)  # Move to TOP
 	var gen_content: VBoxContainer = gen_section["content"]
 
+	# ── Sub: Language ──
 	var lang_lbl := Label.new()
 	lang_lbl.text = "Langue / Language"
 	lang_lbl.add_theme_font_size_override("font_size", 10)
@@ -520,6 +525,40 @@ func _build_ui(lang: String, volume: float, session_duration: int) -> void:
 	_lang_btn.selected = selected_lang_idx
 	_lang_btn.item_selected.connect(_on_language_selected)
 	gen_content.add_child(_lang_btn)
+
+	# ── Sub: Tama Size ──
+	gen_content.add_child(_make_sub_sep())
+
+	var size_lbl := Label.new()
+	size_lbl.text = "Taille de Tama"
+	size_lbl.add_theme_font_size_override("font_size", 10)
+	size_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	gen_content.add_child(size_lbl)
+
+	var size_row := HBoxContainer.new()
+	size_row.add_theme_constant_override("separation", 8)
+	gen_content.add_child(size_row)
+
+	_size_slider = HSlider.new()
+	_size_slider.min_value = 50
+	_size_slider.max_value = 150
+	_size_slider.step = 10
+	_size_slider.value = tama_scale
+	_size_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_size_slider.custom_minimum_size.y = 24
+	_size_slider.add_theme_stylebox_override("slider", _make_slider_style())
+	_size_slider.add_theme_stylebox_override("grabber_area", _make_slider_fill_style())
+	_size_slider.add_theme_stylebox_override("grabber_area_highlight", _make_slider_fill_style())
+	_size_slider.value_changed.connect(_on_tama_scale_value_changed)
+	size_row.add_child(_size_slider)
+
+	_size_label = Label.new()
+	_size_label.text = str(tama_scale) + "%"
+	_size_label.add_theme_font_size_override("font_size", 12)
+	_size_label.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
+	_size_label.custom_minimum_size.x = 45
+	_size_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	size_row.add_child(_size_label)
 
 	# ══════ SECTION: Permissions (Screen Share + Mic) ══════
 	var perm_section := _make_collapsible_section("🔒  Permissions", false)
@@ -712,6 +751,11 @@ func _on_session_duration_value_changed(val: float) -> void:
 	var dur := int(val)
 	_session_label.text = str(dur) + " min"
 	session_duration_changed.emit(dur)
+
+func _on_tama_scale_value_changed(val: float) -> void:
+	var pct := int(val)
+	_size_label.text = str(pct) + "%"
+	tama_scale_changed.emit(pct)
 
 func _on_volume_value_changed(val: float) -> void:
 	_volume_label.text = str(int(val * 100)) + "%"

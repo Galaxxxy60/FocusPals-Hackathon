@@ -2,14 +2,11 @@
 
 [ext_resource type="Script" uid="uid://dk11vbtj4hllf" path="res://main.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dw2nxp5ti8x50" path="res://Tama._ver2.glb" id="2_h2yge"]
-[ext_resource type="PackedScene" uid="uid://cvvxysihq500i" path="res://headPhones.glb" id="4_1bvp3"]
 
 [node name="Node3D" type="Node3D" unique_id=436502441]
 script = ExtResource("1_script")
 
-[node name="HeadPhones" parent="." unique_id=1360701076 instance=ExtResource("4_1bvp3")]
-
-[node name="Tama" parent="." unique_id=346639150 instance=ExtResource("2_h2yge")]
+[node name="Tama" parent="." unique_id=1360962571 instance=ExtResource("2_h2yge")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4677993, 1.1920929e-07, -0.109035015)
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1997184296]

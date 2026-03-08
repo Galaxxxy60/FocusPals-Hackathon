@@ -18,6 +18,13 @@ var session_active: bool = false
 var session_elapsed_secs: int = 0
 var session_duration_secs: int = 3000  # 50 min default
 
+# ─── Tama Scale (camera zoom + window resize) ─────────
+const _BASE_WIN_SIZE := Vector2i(400, 500)
+var _tama_scale_pct: int = 100
+var _base_cam_size: float = 0.0   # Stored from Camera3D at startup
+var _base_cam_y: float = 0.0      # Camera Y position at startup
+var _base_cam_x: float = 0.0      # Camera X position at startup
+
 # ─── Animation State Machine ──────────────────────────────
 # Tama is ALWAYS visible. At rest she loops Idle_wall (on the wall).
 # ON_WALL (Idle_wall loop) → TRANSITION_OFF (OffTheWall forward) → ACTIVE (Suspicious/Angry/Idle)
@@ -201,11 +208,9 @@ const EYE_SACCADE_INTERVAL: float = 0.08  # Snap every ~80ms (like real saccades
 const EYE_SACCADE_THRESHOLD: float = 0.03 # Dead zone: ignore tiny changes
 const EYE_RETURN_SPEED: float = 8.0       # Speed to return to center when deactivated
 
-# ─── Radial Settings Menu ─────────────────────────────────
+# ─── Radial + Settings Menu ─────────────────────────────────
 var radial_menu = null
 const RadialMenuScript = preload("res://settings_radial.gd")
-
-# ─── Settings Panel ──────────────────────────────────────
 var settings_panel = null
 const SettingsPanelScript = preload("res://settings_panel.gd")
 
@@ -417,7 +422,6 @@ func _setup_radial_menu() -> void:
 	add_child(radial_menu)
 	radial_menu.action_triggered.connect(_on_radial_action)
 	radial_menu.request_hide.connect(_on_radial_hide)
-	# Settings panel (replaces old mic panel)
 	settings_panel = CanvasLayer.new()
 	settings_panel.set_script(SettingsPanelScript)
 	add_child(settings_panel)
@@ -429,7 +433,8 @@ func _setup_radial_menu() -> void:
 	settings_panel.session_duration_changed.connect(_on_session_duration_changed)
 	settings_panel.screen_share_toggled.connect(_on_screen_share_toggled)
 	settings_panel.mic_toggled.connect(_on_mic_toggled)
-	print("🎛️ Radial menu + Settings panel initialisés OK")
+	settings_panel.tama_scale_changed.connect(_on_tama_scale_changed)
+	print("🎛️ Radial menu + Settings panel OK")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -626,7 +631,6 @@ func _set_imba_blend(value: float) -> void:
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
 	if action_id == "settings":
-		# Request settings data from Python (mics + API key status)
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "GET_SETTINGS"}))
 		return
@@ -635,7 +639,6 @@ func _on_radial_action(action_id: String) -> void:
 		ws.send_text(msg)
 
 func _on_radial_hide() -> void:
-	# Don't re-enable click-through or send HIDE_RADIAL if settings panel just opened
 	if settings_panel and settings_panel.is_open:
 		return
 	_safe_restore_passthrough()
@@ -648,6 +651,7 @@ func _on_mic_selected(mic_index: int) -> void:
 		ws.send_text(JSON.stringify({"command": "SELECT_MIC", "index": mic_index}))
 
 func _on_settings_panel_closed() -> void:
+	_apply_tama_scale_full()
 	_safe_restore_passthrough()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
@@ -671,6 +675,24 @@ func _on_session_duration_changed(duration: int) -> void:
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_SESSION_DURATION", "duration": duration}))
 
+func _on_tama_scale_changed(scale_pct: int) -> void:
+	_tama_scale_pct = scale_pct
+	_apply_camera_zoom()  # Handles <= 100% (camera zoom preview)
+	if scale_pct > 100:
+		# Above 100%: also resize window in real-time (growing never breaks settings)
+		var factor := float(scale_pct) / 100.0
+		var new_w := int(_BASE_WIN_SIZE.x * factor)
+		var new_h := int(_BASE_WIN_SIZE.y * factor)
+		DisplayServer.window_set_size(Vector2i(new_w, new_h))
+		call_deferred("_reposition_bottom_right")
+	elif scale_pct == 100 and DisplayServer.window_get_size() != _BASE_WIN_SIZE:
+		# Coming back to 100% from >100%: restore base window
+		DisplayServer.window_set_size(_BASE_WIN_SIZE)
+		call_deferred("_reposition_bottom_right")
+	print("📐 Tama scale: %d%%" % scale_pct)
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "SET_TAMA_SCALE", "scale": scale_pct}))
+
 func _on_screen_share_toggled(enabled: bool) -> void:
 	var status = "ON" if enabled else "OFF"
 	print("🖥️ Screen share toggled: " + status)
@@ -691,13 +713,65 @@ func _safe_restore_passthrough() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 
 func _position_window() -> void:
-	var screen_size := DisplayServer.screen_get_size()
-	var win_size := DisplayServer.window_get_size()
-	# Positionne LA FENETRE exactement dans le coin en bas à droite
-	var x := screen_size.x - win_size.x
-	var y := screen_size.y - win_size.y
-	DisplayServer.window_set_position(Vector2i(x, y))
+	_reposition_bottom_right()
 	call_deferred("_apply_passthrough")
+
+func _reposition_bottom_right() -> void:
+	## Anchor window to bottom-right of usable screen area (excludes taskbar)
+	var usable := DisplayServer.screen_get_usable_rect()
+	var win_size := DisplayServer.window_get_size()
+	var x := usable.position.x + usable.size.x - win_size.x
+	var y := usable.position.y + usable.size.y - win_size.y
+	DisplayServer.window_set_position(Vector2i(x, y))
+
+func _apply_camera_zoom() -> void:
+	## Live preview: zoom camera while slider is dragged (CanvasLayers unaffected)
+	if _camera == null or _base_cam_size <= 0:
+		return
+	var factor := float(_tama_scale_pct) / 100.0
+	if factor >= 1.0:
+		# Above 100%: keep camera at default (window resize happens on close)
+		_camera.size = _base_cam_size
+		_camera.position.y = _base_cam_y
+		_camera.position.x = _base_cam_x
+		return
+	# Below 100%: zoom out camera for live preview
+	var new_size := _base_cam_size / factor
+	_camera.size = new_size
+	var base_bottom := _base_cam_y - _base_cam_size / 2.0
+	_camera.position.y = base_bottom + new_size / 2.0
+	var aspect := float(_BASE_WIN_SIZE.x) / float(_BASE_WIN_SIZE.y)
+	var base_right := _base_cam_x + _base_cam_size / 2.0 * aspect
+	_camera.position.x = base_right - new_size / 2.0 * aspect
+
+func _apply_tama_scale_full() -> void:
+	## Apply final scale: camera zoom for ≤100%, window resize for >100%
+	if _camera == null or _base_cam_size <= 0:
+		return
+	var factor := float(_tama_scale_pct) / 100.0
+	if factor > 1.0:
+		# Bigger Tama: enlarge window, reset camera to default
+		var new_w := int(_BASE_WIN_SIZE.x * factor)
+		var new_h := int(_BASE_WIN_SIZE.y * factor)
+		DisplayServer.window_set_size(Vector2i(new_w, new_h))
+		_camera.size = _base_cam_size
+		_camera.position.y = _base_cam_y
+	else:
+		# Smaller/default Tama: window stays 400×500, camera zoomed out
+		DisplayServer.window_set_size(_BASE_WIN_SIZE)
+		if factor < 1.0:
+			var new_size := _base_cam_size / factor
+			_camera.size = new_size
+			var base_bottom := _base_cam_y - _base_cam_size / 2.0
+			_camera.position.y = base_bottom + new_size / 2.0
+			var aspect := float(_BASE_WIN_SIZE.x) / float(_BASE_WIN_SIZE.y)
+			var base_right := _base_cam_x + _base_cam_size / 2.0 * aspect
+			_camera.position.x = base_right - new_size / 2.0 * aspect
+		else:
+			_camera.size = _base_cam_size
+			_camera.position.y = _base_cam_y
+			_camera.position.x = _base_cam_x
+	call_deferred("_reposition_bottom_right")
 
 func _apply_passthrough() -> void:
 	get_viewport().transparent_bg = true
@@ -870,24 +944,28 @@ func _handle_message(raw: String) -> void:
 			session_active = true
 			conversation_active = false  # Session overrides conversation
 			print("🚀 Session Deep Work lancée !")
-			# Tama is already on wall — session just enables suspicion tracking
+			# Tama walks in when session starts
+			if _anim_tree_module and _anim_tree_module.is_off_screen():
+				_anim_tree_module.walk_in()
 		return
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
 			_convo_engagement = 0  # Reset engagement counter
-			print("💬 Mode conversation — Tama reste sur le mur")
+			print("💬 Mode conversation — Tama arrive !")
+			# Tama walks in for conversation
+			if _anim_tree_module and _anim_tree_module.is_off_screen():
+				_anim_tree_module.walk_in()
 		return
 	elif command == "END_CONVERSATION":
 		if conversation_active:
 			conversation_active = false
 			set_gaze(GazeTarget.NEUTRAL, 2.0)  # Stop looking at user
-			print("💬 Fin de conversation — Tama retourne au mur")
+			print("💬 Fin de conversation — Tama s'en va")
 			if _anim_tree_module:
-				_anim_tree_module.return_to_wall()
+				_anim_tree_module.go_away()
 		return
 	elif command == "SHOW_RADIAL":
-		# If settings panel is open, close it first then open radial
 		if settings_panel and settings_panel.is_open:
 			settings_panel.close()
 		if radial_menu:
@@ -908,11 +986,12 @@ func _handle_message(raw: String) -> void:
 		var api_usage = data.get("api_usage", {})
 		var screen_share = data.get("screen_share_allowed", true)
 		var mic_on = data.get("mic_allowed", true)
+		var tama_scale = int(data.get("tama_scale", 100))
 		print("⚙️ Settings: %d micros, selected: %d, API key: %s, valid: %s, lang: %s, duration: %d" % [mics.size(), selected, str(has_api_key), str(key_valid), lang, session_duration])
 		if settings_panel:
 			if radial_menu and radial_menu.is_open:
 				radial_menu.close()
-			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on)
+			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on, tama_scale)
 		return
 	elif command == "API_KEY_UPDATED":
 		var valid = data.get("valid", false)
@@ -1634,6 +1713,10 @@ func _setup_gaze() -> void:
 				break
 	if _camera:
 		print("\ud83c\udfa5 Gaze: Camera3D found at %s" % str(_camera.global_position))
+		# Store base values for Tama scale zoom
+		_base_cam_size = _camera.size
+		_base_cam_y = _camera.position.y
+		_base_cam_x = _camera.position.x
 
 	# Find Skeleton3D
 	var skel = get_node_or_null("Tama/Armature/Skeleton3D")

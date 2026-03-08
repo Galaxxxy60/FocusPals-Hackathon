@@ -30,6 +30,7 @@ var _tree: AnimationTree = null
 var _player: AnimationPlayer = null
 var _playback = null  # AnimationNodeStateMachinePlayback
 var _skeleton: Skeleton3D = null
+var _tama_node: Node = null
 var _ready_ok: bool = false
 
 # Resolved GLB animation names (handles prefixes like "F ")
@@ -80,6 +81,7 @@ const XFADE_WALL_TALK: float = 0.2     # idle_wall ↔ idle_wall_talk
 func setup(tama_node: Node, anim_player: AnimationPlayer, skeleton: Skeleton3D = null) -> bool:
 	_player = anim_player
 	_skeleton = skeleton
+	_tama_node = tama_node
 
 	if not _player:
 		push_warning("🎬 AnimTree: No AnimationPlayer!")
@@ -214,7 +216,7 @@ func _build_tree() -> void:
 	if _names.has("go_away"):
 		for key in ["idle", "suspicious", "angry"]:
 			_add_trans(sm, key, "go_away", XFADE_MOOD)
-		_add_trans(sm, "idle_wall", "go_away", XFADE_TRANSITION)
+		# NO idle_wall → go_away : she must leave the wall first (off_wall → idle → go_away)
 		# GoAway ends → back to OFF_SCREEN (no auto-advance, handled in process)
 
 	# Idle_wall_Talk — small remark while staying on wall
@@ -244,11 +246,12 @@ func _build_tree() -> void:
 	# Get playback controller
 	_playback = _tree.get("parameters/playback")
 	if _playback:
-		# Always start in idle_wall (stable, known-working pose).
-		# OFF_SCREEN is tracked logically — Tama is "hidden" until walk_in() is called.
+		# Start in idle_wall pose but HIDDEN — Tama is off-screen until walk_in()
 		_playback.start("idle_wall")
-		current_state = State.ON_WALL
-		print("🎬 AnimTree: StateMachine built — starting in idle_wall")
+		current_state = State.OFF_SCREEN
+		if _tama_node:
+			_tama_node.visible = false
+		print("🎬 AnimTree: StateMachine built — starting OFF_SCREEN (hidden)")
 	else:
 		push_warning("🎬 AnimTree: Could not get playback!")
 
@@ -290,26 +293,43 @@ func walk_in() -> void:
 		return
 	if not _names.has("walk_in"):
 		# Fallback: just go to idle_wall directly
+		if _tama_node:
+			_tama_node.visible = true
 		_playback.travel("idle_wall")
 		_set_state(State.ON_WALL)
 		print("🎬 → walk_in() fallback (no WalkIn anim)")
 		return
 	_set_state(State.LEAVING_WALL)  # Reuse LEAVING_WALL for walk-in transition
-	_playback.travel("walk_in")
+	_playback.start("walk_in")  # start() = hard jump to walk_in node
+	_tree.advance(0)  # Force AnimTree to evaluate walk_in pose NOW
+	# Defer visibility to next frame — skeleton needs 1 process tick to update
+	if _tama_node:
+		_tama_node.set_deferred("visible", true)
 	print("🎬 → walk_in() — entering screen")
 
 
 func go_away() -> void:
-	"""Any state → GoAway → OFF_SCREEN. Exit animation."""
+	"""Any state → GoAway → OFF_SCREEN. Leaves wall first if needed."""
 	if not _ready_ok or not _playback:
 		return
 	if current_state == State.OFF_SCREEN:
 		return
 	if not _names.has("go_away"):
-		# Fallback: just return to wall
+		# Fallback: just return to wall then hide
 		return_to_wall()
 		return
-	_set_state(State.RETURNING_WALL)  # Reuse RETURNING_WALL for exit
+	# If on wall, need to leave first → queue go_away
+	if current_state == State.ON_WALL or current_state == State.WALL_TALK:
+		_queued_standing = "go_away"
+		leave_wall()
+		print("🎬 → go_away() — leaving wall first, then GoAway")
+		return
+	if current_state == State.LEAVING_WALL or current_state == State.RETURNING_WALL:
+		_queued_standing = "go_away"
+		print("🎬 → go_away() queued — waiting for transition")
+		return
+	# Already standing → go directly
+	_set_state(State.RETURNING_WALL)
 	_playback.travel("go_away")
 	print("🎬 → go_away() — leaving screen")
 
@@ -530,6 +550,8 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 			_queued_standing = ""
 			if q == "strike":
 				play_strike()
+			elif q == "go_away":
+				go_away()
 			else:
 				set_standing_anim(q)
 		else:
@@ -547,6 +569,8 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 			_queued_standing = ""
 			if q == "strike":
 				play_strike()
+			elif q == "go_away":
+				go_away()
 			else:
 				set_standing_anim(q)
 
@@ -564,10 +588,12 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 			if q == "strike": play_strike()
 			else: set_standing_anim(q)
 
-	# go_away just finished → OFF_SCREEN
+	# go_away just finished → OFF_SCREEN + hide mesh
 	elif from_node == "go_away":
 		_set_state(State.OFF_SCREEN)
-		print("🎬 GoAway complete → OFF_SCREEN")
+		if _tama_node:
+			_tama_node.visible = false
+		print("🎬 GoAway complete → OFF_SCREEN (hidden)")
 
 	# idle_wall_talk started
 	elif to_node == "idle_wall_talk":

@@ -68,10 +68,6 @@ def _handle_menu_action(action: str):
         # Settings panel is handled via WebSocket GET_SETTINGS, not via menu action
         # This is a fallback if triggered via menu action instead
         _send_settings_to_godot()
-    elif action == "task":
-        print("🎯 Tâche : demandez à Tama par la voix !")
-    elif action == "breaks":
-        print("⏰ Config pauses : fonctionnalité à venir.")
     elif action == "quit":
         quit_app(state["tray_icon"], None)
 
@@ -129,7 +125,8 @@ def _send_settings_to_godot():
         "session_duration": state.get("session_duration_minutes", 50),
         "api_usage": _get_api_usage_stats(),
         "screen_share_allowed": state["screen_share_allowed"],
-        "mic_allowed": state["mic_allowed"]
+        "mic_allowed": state["mic_allowed"],
+        "tama_scale": state["tama_scale"]
     })
     main_loop = state["main_loop"]
     for ws_client in list(state["connected_ws_clients"]):
@@ -285,7 +282,8 @@ async def ws_handler(websocket):
                         "session_duration": state.get("session_duration_minutes", 50),
                         "api_usage": _get_api_usage_stats(),
                         "screen_share_allowed": state["screen_share_allowed"],
-                        "mic_allowed": state["mic_allowed"]
+                        "mic_allowed": state["mic_allowed"],
+                        "tama_scale": state["tama_scale"]
                     })
                     await websocket.send(response)
                     # Refresh mics in background (if cache was stale, next open is instant)
@@ -305,7 +303,8 @@ async def ws_handler(websocket):
                                     "session_duration": state.get("session_duration_minutes", 50),
                                     "api_usage": _get_api_usage_stats(),
                                     "screen_share_allowed": state["screen_share_allowed"],
-                                    "mic_allowed": state["mic_allowed"]
+                                    "mic_allowed": state["mic_allowed"],
+                                    "tama_scale": state["tama_scale"]
                                 })
                                 await ws.send(update)
                         except Exception:
@@ -344,6 +343,10 @@ async def ws_handler(websocket):
                     state["mic_allowed"] = enabled
                     status = "✅ activé" if enabled else "❌ désactivé"
                     print(f"🎤 Microphone : {status}")
+                elif cmd == "SET_TAMA_SCALE":
+                    scale = int(data.get("scale", 100))
+                    state["tama_scale"] = max(50, min(150, scale))
+                    print(f"📐 Taille Tama : {state['tama_scale']}%")
                 elif cmd == "STRIKE_FIRE":
                     # Godot handles the visual hand animation (multi-window)
                     # Python just closes the tab/window

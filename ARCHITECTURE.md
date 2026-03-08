@@ -456,9 +456,7 @@ Le menu radial s'affiche quand la souris atteint le **bord droit** de l'écran (
 **Éléments du menu :**
 - ⚙️ Settings — Réglages (micro, clé API Gemini)
 - 💬 Parler — Mode conversation
-- ⚡ Session — Démarrer Deep Work
-- 🎯 Tâche — Définir la tâche (vocalement)
-- ⏰ Pauses — Config pauses (à venir)
+- ⚡ Work Session — Démarrer Deep Work
 - ⛔ Quitter — Fermeture propre
 
 **Anti-loop** : Le flag `_mouse_was_away` empêche le re-trigger tant que la souris n'a pas quitté puis est revenue dans la zone edge. Pas de cooldown artificiel.
