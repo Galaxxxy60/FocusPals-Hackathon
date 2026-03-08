@@ -3,102 +3,14 @@
 [ext_resource type="Script" uid="uid://dk11vbtj4hllf" path="res://main.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dw2nxp5ti8x50" path="res://Tama._ver2.glb" id="2_h2yge"]
 [ext_resource type="PackedScene" uid="uid://cvvxysihq500i" path="res://headPhones.glb" id="4_1bvp3"]
-[ext_resource type="Texture2D" uid="uid://g71m8ddcu10r" path="res://Tama_blenderOne.png" id="4_lquwl"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7mycd"]
-shading_mode = 0
-albedo_texture = ExtResource("4_lquwl")
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_272bh"]
-shading_mode = 0
-albedo_texture = ExtResource("4_lquwl")
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_5vw27"]
-shading_mode = 0
-albedo_texture = ExtResource("4_lquwl")
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kek77"]
-transparency = 2
-alpha_scissor_threshold = 0.5
-alpha_antialiasing_mode = 0
-shading_mode = 0
-albedo_texture = ExtResource("4_lquwl")
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4c57u"]
-transparency = 2
-alpha_scissor_threshold = 0.5
-alpha_antialiasing_mode = 0
-shading_mode = 0
-albedo_texture = ExtResource("4_lquwl")
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_efxa6"]
-shading_mode = 0
-albedo_texture = ExtResource("4_lquwl")
 
 [node name="Node3D" type="Node3D" unique_id=436502441]
 script = ExtResource("1_script")
 
-[node name="Tama" parent="." unique_id=1246083364 instance=ExtResource("2_h2yge")]
+[node name="HeadPhones" parent="." unique_id=1360701076 instance=ExtResource("4_1bvp3")]
+
+[node name="Tama" parent="." unique_id=346639150 instance=ExtResource("2_h2yge")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4677993, 1.1920929e-07, -0.109035015)
-
-[node name="Skeleton3D" parent="Tama/Armature" parent_id_path=PackedInt32Array(1246083364, 1726979517) index="0" unique_id=78239378]
-bones/0/position = Vector3(-0.49244112, 0.9312169, 0.012451796)
-bones/0/rotation = Quaternion(0.0011233228, -0.7071065, -0.0011233069, 0.7071054)
-bones/1/rotation = Quaternion(1.6790671e-09, 4.173115e-07, 0.0015886577, 0.99999875)
-bones/2/rotation = Quaternion(-1.0394552e-15, 5.4975196e-14, -8.364278e-10, 1)
-bones/3/rotation = Quaternion(-1.4719164e-16, 2.9802317e-07, 1.9871849e-09, 1)
-bones/4/rotation = Quaternion(-1.4129596e-08, -2.052124e-08, -0.2187827, 0.97577363)
-bones/5/position = Vector3(0.07001756, 0.23497857, -0.04628065)
-bones/5/rotation = Quaternion(0.9580337, 0.28545827, 0.02614496, 0.001230943)
-bones/6/position = Vector3(0.07095759, 0.24042453, 0.048506107)
-bones/6/rotation = Quaternion(0.95803326, 0.28546003, 0.026142599, 0.0012349071)
-bones/7/rotation = Quaternion(0.9736725, 0.22559059, -0.032486934, -0.003925009)
-bones/8/rotation = Quaternion(-0.030959206, -0.01858506, -0.11188605, 0.99306476)
-bones/9/rotation = Quaternion(0.9773509, 0.20805725, -0.02443181, 0.030008627)
-bones/10/rotation = Quaternion(0.04503279, 0.015751721, -0.11152243, 0.9926161)
-bones/12/rotation = Quaternion(-0.07150681, -0.03990399, 0.98485166, -0.15284571)
-bones/13/rotation = Quaternion(0.6241165, 0.34176236, -0.62025034, -0.33010113)
-bones/14/rotation = Quaternion(-0.29083794, 0.6655656, 0.24880682, 0.6407269)
-bones/15/rotation = Quaternion(-1.8388286e-05, -2.1910322e-05, -0.0023548277, 0.9999972)
-bones/16/rotation = Quaternion(-0.043657605, -0.18284975, -0.03962752, 0.98137134)
-bones/17/rotation = Quaternion(-0.23424482, -0.24748129, -0.5327467, 0.7746377)
-bones/18/rotation = Quaternion(0.670178, -0.26388356, -0.60060877, 0.34712562)
-bones/19/rotation = Quaternion(0.38312772, 0.7296375, -0.078560434, 0.560955)
-bones/20/rotation = Quaternion(-0.00019646499, 0.0005620456, -0.21248439, 0.9771643)
-bones/21/rotation = Quaternion(0.02201416, 0.0016220808, 0.07882634, 0.99664396)
-bones/22/rotation = Quaternion(0.1540962, -0.016957033, -0.18894514, 0.9696735)
-bones/23/rotation = Quaternion(-0.67184913, -0.18046659, 0.69982004, -0.16218033)
-bones/27/rotation = Quaternion(-0.6784661, -0.15216812, 0.69129264, -0.19657867)
-bones/31/position = Vector3(0.00020976132, 0.020117657, -0.12785359)
-bones/31/rotation = Quaternion(-0.021604067, -0.05632649, 0.99565774, -0.07089652)
-bones/31/scale = Vector3(1.0000575, 0.9999938, 0.999999)
-bones/32/rotation = Quaternion(-1.0053339e-07, -3.2307872e-07, -0.11460791, 0.9934108)
-bones/32/scale = Vector3(0.99999166, 1.0147121, 0.9999995)
-bones/33/rotation = Quaternion(1.992359e-06, -1.6521806e-08, 0.5867863, 0.80974185)
-bones/34/rotation = Quaternion(-0.0035828617, -0.0060902964, 0.9963796, -0.084722236)
-bones/34/scale = Vector3(1.000054, 1.0000002, 1.0000001)
-bones/35/rotation = Quaternion(-4.6199776e-07, -2.3131574e-07, -0.1459984, 0.9892849)
-bones/35/scale = Vector3(0.9999993, 1.000001, 0.9999997)
-bones/36/rotation = Quaternion(1.9633867e-06, 2.999753e-07, 0.44682735, 0.8946203)
-bones/37/position = Vector3(-0.22443163, 0.8703613, 0.043714304)
-bones/38/position = Vector3(-0.2980447, 1.128186, 0.33015177)
-bones/39/position = Vector3(-0.7626684, 0.8973582, 0.02820977)
-bones/39/rotation = Quaternion(0, 0.6321947, 0, 0.7748096)
-bones/40/position = Vector3(-0.82625955, 1.0509348, 0.23055694)
-bones/41/position = Vector3(-0.25815862, 0.027787397, 0.031388406)
-bones/42/position = Vector3(0.15045404, 0.4904002, 0.039363593)
-bones/43/position = Vector3(-0.57824206, 0.0431419, 0.022076495)
-bones/44/position = Vector3(0.004816562, 0.3312649, 0.021962315)
-
-[node name="HeadPhones" parent="Tama/Armature/Skeleton3D" index="0" unique_id=1360701076 instance=ExtResource("4_1bvp3")]
-
-[node name="Geo_Body_004" parent="Tama/Armature/Skeleton3D" index="1" unique_id=2660294]
-surface_material_override/0 = SubResource("StandardMaterial3D_7mycd")
-surface_material_override/1 = SubResource("StandardMaterial3D_272bh")
-surface_material_override/2 = SubResource("StandardMaterial3D_5vw27")
-surface_material_override/3 = SubResource("StandardMaterial3D_kek77")
-surface_material_override/4 = SubResource("StandardMaterial3D_4c57u")
-surface_material_override/5 = SubResource("StandardMaterial3D_efxa6")
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1997184296]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.32610798, 1.0462117, 2.1872618)

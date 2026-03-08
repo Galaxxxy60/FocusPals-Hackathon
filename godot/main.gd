@@ -339,6 +339,12 @@ func _setup_anim_tree() -> void:
 func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 	print("🎬 State: %s → %s" % [old_state, new_state])
 
+	if old_state == "STRIKING":
+		_deactivate_imba()
+
+	if new_state == "STRIKING":
+		_activate_imba(1)
+
 	# ── Gaze follows animation state ──
 	if new_state == "WALL_TALK":
 		if _suspicion_staring:
@@ -371,6 +377,12 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 		_scan_eye_active = false
 		_set_eye_look(0.0, 0.0)
 		set_gaze(GazeTarget.NEUTRAL, 2.0)
+	elif new_state == "OFF_SCREEN":
+		# Tama left the screen — reset all gaze
+		_suspicion_staring = false
+		_scan_eye_active = false
+		_set_eye_look(0.0, 0.0)
+		set_gaze(GazeTarget.NEUTRAL, 1.0)
 
 
 func _on_tree_strike_fire() -> void:
@@ -392,8 +404,8 @@ func _on_tree_strike_fire() -> void:
 
 
 func _on_tree_strike_started() -> void:
-	print("🎬 Strike sequence started — activate IMBA early")
-	_activate_imba(1)
+	# Now handled directly by state_changed → STRIKING (timer-based)
+	pass
 
 
 func _on_tree_off_wall_done() -> void:
@@ -947,8 +959,12 @@ func _handle_message(raw: String) -> void:
 		print("🎬 [ANIM CMD] " + anim_name)
 		if _anim_tree_module:
 			var key: String = str(anim_name).to_lower()
-			if key in ["idle_wall", "bye"]:
+			if key in ["go_away", "bye"]:
+				_anim_tree_module.go_away()
+			elif key in ["idle_wall"]:
 				_anim_tree_module.return_to_wall()
+			elif key in ["walk_in"]:
+				_anim_tree_module.walk_in()
 			elif key in ["strike", "strike_base"]:
 				_anim_tree_module.play_strike()
 				_activate_imba(1)
@@ -962,8 +978,6 @@ func _handle_message(raw: String) -> void:
 				_anim_tree_module.set_standing_anim("suspicious")
 			elif key == "angry":
 				_anim_tree_module.set_standing_anim("angry")
-			elif key == "peek":
-				_anim_tree_module.set_standing_anim("peek")
 			else:
 				_anim_tree_module.set_standing_anim("idle")
 		return
@@ -1001,6 +1015,10 @@ func _handle_message(raw: String) -> void:
 			if conversation_active:
 				# In conversation: return gaze to book after a short pause
 				_ack_gaze_timer = 2.0  # Look at user 2s more, then back to book
+			elif _anim_tree_module and _anim_tree_module.current_state == 2: # WALL_TALK
+				# En mode WALL_TALK (sur le mur mais parle), elle maintient son regard !
+				# Ne pas relâcher le regard dans le vide entre chaque mot de la phrase.
+				pass
 			else:
 				set_gaze(GazeTarget.NEUTRAL, 2.0)
 		else:
@@ -1117,7 +1135,7 @@ func _try_scan_glance() -> void:
 		return
 	if not _anim_tree_module.is_on_wall():
 		return
-	if _anim_tree_module.current_state != 0:  # 0 = ON_WALL (not WALL_TALK etc)
+	if _anim_tree_module.current_state != 1:  # 1 = ON_WALL (not WALL_TALK etc)
 		return
 	if _gaze_blend > 0.1:  # Already gazing somewhere (ack, conversation, etc)
 		return
@@ -1153,22 +1171,22 @@ func _update_suspicion_anim() -> void:
 			# CALM — back to book
 			_suspicion_staring = false
 			_pending_leave_wall = false
-			if _anim_tree_module.current_state == 1:  # WALL_TALK
+			if _anim_tree_module.current_state == 2:  # WALL_TALK
 				_anim_tree_module.end_wall_talk()
 			else:
 				_anim_tree_module.return_to_wall()
 		1:
 			# SUSPICIOUS — lean in and STARE from wall (don't leave)
-			if _anim_tree_module.current_state == 0:  # ON_WALL
+			if _anim_tree_module.current_state == 1:  # ON_WALL
 				_suspicion_staring = true
 				_anim_tree_module.play_wall_talk()
 				# Gaze is set by _on_tree_state_changed when WALL_TALK fires
-			elif _anim_tree_module.current_state == 3:  # STANDING (de-escalating)
+			elif _anim_tree_module.current_state == 4:  # STANDING (de-escalating)
 				_suspicion_staring = false
 				_anim_tree_module.return_to_wall()
 		2:
 			# ANGRY — leave wall for real
-			if _anim_tree_module.current_state == 1:  # WALL_TALK (was staring)
+			if _anim_tree_module.current_state == 2:  # WALL_TALK (was staring)
 				# Reverse wall_talk first, then leave
 				_pending_leave_wall = true
 				_anim_tree_module.end_wall_talk()
@@ -1314,14 +1332,26 @@ func _scan_for_materials(node: Node) -> void:
 			if name_lower == "":
 				name_lower = override_name.to_lower()
 			var std_mat: StandardMaterial3D = active_mat as StandardMaterial3D
+			# ── Auto-override: duplicate + Unshaded for ALL materials ──
+			var dup: StandardMaterial3D = std_mat.duplicate() as StandardMaterial3D
+			dup.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			# Hair & glasses → Alpha Scissor for clean transparency
+			var needs_alpha_scissor: bool = (
+				"hair" in name_lower or "cheveux" in name_lower
+				or "glass" in name_lower or "lunette" in name_lower
+			)
+			if needs_alpha_scissor:
+				dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				dup.alpha_scissor_threshold = 0.5
+				print("  🔧 [%d] '%s' → Unshaded + Alpha Scissor" % [i, original_name])
+			else:
+				print("  🔧 [%d] '%s' → Unshaded" % [i, original_name])
+			mesh_inst.set_surface_override_material(i, dup)
+			# ── Identify special materials for expression system ──
 			if "eye" in name_lower or "yeux" in name_lower:
-				var dup: StandardMaterial3D = std_mat.duplicate() as StandardMaterial3D
-				mesh_inst.set_surface_override_material(i, dup)
 				_eyes_material = dup
 				print("  ✅ → EYES material (index %d)" % i)
 			elif "mouth" in name_lower or "bouche" in name_lower:
-				var dup: StandardMaterial3D = std_mat.duplicate() as StandardMaterial3D
-				mesh_inst.set_surface_override_material(i, dup)
 				_mouth_material = dup
 				print("  ✅ → MOUTH material (index %d)" % i)
 		# Find blend shapes for pupil hiding + jaw

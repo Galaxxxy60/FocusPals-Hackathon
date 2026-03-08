@@ -22,8 +22,8 @@ signal off_wall_complete()        # OffThewall forward done → now standing
 signal strike_sequence_started()  # Strike sequence just kicked off
 
 # ─── States ───────────────────────────────────────────────────
-enum State { ON_WALL, WALL_TALK, LEAVING_WALL, STANDING, RETURNING_WALL, STRIKING }
-var current_state: int = State.ON_WALL
+enum State { OFF_SCREEN, ON_WALL, WALL_TALK, LEAVING_WALL, STANDING, RETURNING_WALL, STRIKING }
+var current_state: int = State.OFF_SCREEN
 
 # ─── Internals ────────────────────────────────────────────────
 var _tree: AnimationTree = null
@@ -44,19 +44,24 @@ const WANTED = {
 	"suspicious": "Suspicious",
 	"angry": "Angry",
 	"strike_base": "Strike_Base",
-	"peek": "Peek",
-	"bye": "bye",
+	"walk_in": "WalkIn",
+	"go_away": "GoAway",
 }
 
 # Which animations should loop
 const LOOPS = ["idle_wall", "idle"]
 
-# ─── Strike Sync ─────────────────────────────────────────────
-var _strike_bone_idx: int = -1
+# ─── Strike Sync (animation-position trigger) ─────────────────────
+# Configure at which SECOND in the animation the hand should fire.
+# Change these values to match your animation timing in Blender.
+# Example: if the punch lands at frame 18 in a 30fps anim → 18/30 = 0.6
+const STRIKE_FIRE_AT: Dictionary = {
+	"strike_base": 0.7,   # ← CHANGE THIS to match your animation!
+}
+const STRIKE_FIRE_FALLBACK: float = 0.7  # Default if anim not in dict above
 var _strike_fired: bool = false
 var _strike_frames: int = 0
-const STRIKE_THRESHOLD: float = 1.05
-const STRIKE_WARMUP: int = 5
+var _strike_time: float = 0.0
 
 # Track SM node for change detection
 var _prev_node: String = ""
@@ -107,14 +112,8 @@ func setup(tama_node: Node, anim_player: AnimationPlayer, skeleton: Skeleton3D =
 	# 3. Build the AnimationTree
 	_build_tree()
 
-	# 4. Find strike bone
-	if _skeleton:
-		for bi in range(_skeleton.get_bone_count()):
-			var bn: String = _skeleton.get_bone_name(bi).to_lower()
-			if "jnt_r_hand" in bn or "r_hand" in bn:
-				_strike_bone_idx = bi
-				print("🎬 AnimTree: Strike bone '%s' (idx %d)" % [_skeleton.get_bone_name(bi), bi])
-				break
+	# 4. Strike fire — now uses animation position (see STRIKE_FIRE_AT)
+	# No bone detection needed!
 
 	_ready_ok = true
 	print("🎬 AnimTree: ✅ Ready!")
@@ -150,8 +149,8 @@ func _build_tree() -> void:
 		"angry": Vector2(400, 200),
 		"return_wall": Vector2(200, 250),
 		"strike_base": Vector2(600, 100),
-		"peek": Vector2(400, -100),
-		"bye": Vector2(200, -100),
+		"walk_in": Vector2(-200, 100),
+		"go_away": Vector2(-200, -100),
 	}
 
 	for key in _names:
@@ -205,17 +204,18 @@ func _build_tree() -> void:
 	_add_trans(sm, "strike_base", "angry", XFADE_MOOD)
 	_add_trans(sm, "strike_base", "return_wall", XFADE_TRANSITION)
 
-	# Peek
-	if _names.has("peek"):
-		_add_trans(sm, "idle", "peek", XFADE_MOOD)
-		_add_trans(sm, "peek", "idle", XFADE_MOOD)
-		_add_trans(sm, "idle_wall", "peek", XFADE_TRANSITION)
+	# WalkIn (entrance from off-screen → idle → idle_wall)
+	if _names.has("walk_in"):
+		_add_trans(sm, "walk_in", "idle", XFADE_MOOD, true)  # auto-advance after WalkIn ends
+		_add_trans(sm, "walk_in", "idle_wall", XFADE_TRANSITION)
+		_add_trans(sm, "idle", "walk_in", XFADE_MOOD)
 
-	# Bye
-	if _names.has("bye"):
+	# GoAway (exit — standing → GoAway → off-screen)
+	if _names.has("go_away"):
 		for key in ["idle", "suspicious", "angry"]:
-			_add_trans(sm, key, "bye", XFADE_MOOD)
-		_add_trans(sm, "bye", "return_wall", XFADE_TRANSITION, true)
+			_add_trans(sm, key, "go_away", XFADE_MOOD)
+		_add_trans(sm, "idle_wall", "go_away", XFADE_TRANSITION)
+		# GoAway ends → back to OFF_SCREEN (no auto-advance, handled in process)
 
 	# Idle_wall_Talk — small remark while staying on wall
 	# Forward plays once → HOLDS on last frame (talking pose)
@@ -244,7 +244,10 @@ func _build_tree() -> void:
 	# Get playback controller
 	_playback = _tree.get("parameters/playback")
 	if _playback:
+		# Always start in idle_wall (stable, known-working pose).
+		# OFF_SCREEN is tracked logically — Tama is "hidden" until walk_in() is called.
 		_playback.start("idle_wall")
+		current_state = State.ON_WALL
 		print("🎬 AnimTree: StateMachine built — starting in idle_wall")
 	else:
 		push_warning("🎬 AnimTree: Could not get playback!")
@@ -278,6 +281,39 @@ func leave_wall() -> void:
 	print("🎬 → leave_wall()")
 
 
+func walk_in() -> void:
+	"""OFF_SCREEN → WalkIn → idle → idle_wall. Entrance animation."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.OFF_SCREEN:
+		print("🎬 walk_in() ignored — not off screen (state: %s)" % State.keys()[current_state])
+		return
+	if not _names.has("walk_in"):
+		# Fallback: just go to idle_wall directly
+		_playback.travel("idle_wall")
+		_set_state(State.ON_WALL)
+		print("🎬 → walk_in() fallback (no WalkIn anim)")
+		return
+	_set_state(State.LEAVING_WALL)  # Reuse LEAVING_WALL for walk-in transition
+	_playback.travel("walk_in")
+	print("🎬 → walk_in() — entering screen")
+
+
+func go_away() -> void:
+	"""Any state → GoAway → OFF_SCREEN. Exit animation."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state == State.OFF_SCREEN:
+		return
+	if not _names.has("go_away"):
+		# Fallback: just return to wall
+		return_to_wall()
+		return
+	_set_state(State.RETURNING_WALL)  # Reuse RETURNING_WALL for exit
+	_playback.travel("go_away")
+	print("🎬 → go_away() — leaving screen")
+
+
 func return_to_wall() -> void:
 	"""STANDING/STRIKING → reverse OffThewall → ON_WALL.
 	WALL_TALK → reverse Idle_wall_Talk → ON_WALL."""
@@ -297,12 +333,19 @@ func return_to_wall() -> void:
 
 
 func set_standing_anim(key: String) -> void:
-	"""Switch between standing animations: 'idle', 'suspicious', 'angry', 'peek'.
-	If currently on wall, triggers leave_wall() first."""
+	"""Switch between standing animations: 'idle', 'suspicious', 'angry'.
+	If currently on wall, triggers leave_wall() first.
+	If currently off-screen, triggers walk_in() first."""
 	if not _ready_ok or not _playback:
 		return
 	if not _names.has(key):
 		push_warning("🎬 Unknown standing anim: " + key)
+		return
+
+	if current_state == State.OFF_SCREEN:
+		# Need to walk in first — queue the mood
+		_queued_standing = key
+		walk_in()
 		return
 
 	if current_state == State.ON_WALL:
@@ -362,15 +405,29 @@ func play_strike() -> void:
 	if not _ready_ok or not _playback:
 		return
 
-	if current_state == State.ON_WALL:
-		# Need to leave wall first, then strike
+	if current_state == State.STRIKING:
+		print("🎬 play_strike() forced restart — already STRIKING")
+		_strike_fired = false
+		_strike_frames = 0
+		_strike_time = 0.0
+		_playback.start("strike_base")
+		strike_sequence_started.emit()
+		return
+
+	if not is_standing():
+		print("🎬 play_strike() queued — currently %s, ensuring standing first" % State.keys()[current_state])
 		_queued_standing = "strike"
-		leave_wall()
+		if current_state == State.OFF_SCREEN:
+			walk_in()
+		elif current_state == State.ON_WALL or current_state == State.WALL_TALK:
+			leave_wall()
+		# Si en cours de LEAVING_WALL ou RETURNING_WALL, la file d'attente s'en chargera
 		return
 
 	_set_state(State.STRIKING)
 	_strike_fired = false
 	_strike_frames = 0
+	_strike_time = 0.0
 	_playback.travel("strike_base")
 	strike_sequence_started.emit()
 	print("🎬 → play_strike()")
@@ -390,7 +447,7 @@ func apply_mood(mood: String, intensity: float) -> void:
 			if intensity < 0.4 and is_on_wall() and _names.has("idle_wall_talk"):
 				play_wall_talk()
 				return
-			key = "peek" if intensity < 0.4 and _names.has("peek") else "suspicious"
+			key = "suspicious"
 		"suspicious", "sarcastic", "disappointed":
 			key = "angry" if intensity > 0.7 else "suspicious"
 		"annoyed":
@@ -406,6 +463,9 @@ func apply_mood(mood: String, intensity: float) -> void:
 			key = "idle"
 	set_standing_anim(key)
 
+
+func is_off_screen() -> bool:
+	return current_state == State.OFF_SCREEN
 
 func is_on_wall() -> bool:
 	return current_state == State.ON_WALL or current_state == State.WALL_TALK
@@ -440,15 +500,14 @@ func _process(delta: float) -> void:
 		_on_sm_node_changed(_prev_node, cur_node)
 		_prev_node = cur_node
 
-	# ── Strike fire detection (bone scale trigger) ──
+	# ── Strike fire detection (animation position trigger) ──
 	if current_state == State.STRIKING and not _strike_fired:
-		_strike_frames += 1
-		if _strike_frames >= STRIKE_WARMUP and _strike_bone_idx >= 0 and _skeleton:
-			var scale := _skeleton.get_bone_pose_scale(_strike_bone_idx)
-			if scale.x > STRIKE_THRESHOLD:
-				_strike_fired = true
-				strike_fire_point.emit()
-				print("🎬 🎯 STRIKE_FIRE detected!")
+		var fire_at: float = STRIKE_FIRE_AT.get(cur_node, STRIKE_FIRE_FALLBACK)
+		var pos: float = _playback.get_current_play_position()
+		if pos >= fire_at:
+			_strike_fired = true
+			strike_fire_point.emit()
+			print("🎬 🎯 STRIKE_FIRE at %.2fs (configured: %.2fs in '%s')" % [pos, fire_at, cur_node])
 
 	# ── Detect when strike finishes → choose next state ──
 	if current_state == State.STRIKING and cur_node == "strike_base":
@@ -460,8 +519,25 @@ func _process(delta: float) -> void:
 
 func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 	"""Called when the StateMachine transitions to a different node."""
+	# walk_in just ended → advance to idle (then idle_wall)
+	if from_node == "walk_in" and to_node == "idle":
+		_set_state(State.STANDING)
+		_current_standing = "idle"
+		off_wall_complete.emit()
+		# If a mood was queued during walk-in, apply it
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike":
+				play_strike()
+			else:
+				set_standing_anim(q)
+		else:
+			# Default: continue to idle_wall after walk_in completes
+			_playback.travel("idle_wall")
+
 	# off_wall just ended → we're now standing
-	if from_node == "off_wall" and to_node in ["idle", "suspicious", "angry", "peek"]:
+	elif from_node == "off_wall" and to_node in ["idle", "suspicious", "angry"]:
 		_set_state(State.STANDING)
 		_current_standing = to_node
 		off_wall_complete.emit()
@@ -474,9 +550,24 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 			else:
 				set_standing_anim(q)
 
+	# idle after walk_in → idle_wall (auto settled on wall)
+	elif from_node == "idle" and to_node == "idle_wall" and current_state == State.STANDING:
+		_set_state(State.ON_WALL)
+		print("🎬 Walk-in complete → settled on wall")
+
 	# return_wall just ended → back on wall
 	elif from_node == "return_wall" and to_node == "idle_wall":
 		_set_state(State.ON_WALL)
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike": play_strike()
+			else: set_standing_anim(q)
+
+	# go_away just finished → OFF_SCREEN
+	elif from_node == "go_away":
+		_set_state(State.OFF_SCREEN)
+		print("🎬 GoAway complete → OFF_SCREEN")
 
 	# idle_wall_talk started
 	elif to_node == "idle_wall_talk":
@@ -485,12 +576,18 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 	# idle_wall_talk_return ended → back to idle_wall (auto-advance)
 	elif from_node == "idle_wall_talk_return" and to_node == "idle_wall":
 		_set_state(State.ON_WALL)
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike": play_strike()
+			else: set_standing_anim(q)
 
 	# Entered strike
 	elif to_node == "strike_base":
 		_set_state(State.STRIKING)
 		_strike_fired = false
 		_strike_frames = 0
+		_strike_time = 0.0
 
 
 func _on_strike_complete() -> void:

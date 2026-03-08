@@ -491,13 +491,7 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
                         break
                     await asyncio.sleep(0.1)
 
-                # ── Post-close reset: prevent "ghost tab" re-trigger ──
-                # Drop S from STRIKE zone to SUSPICIOUS (Tama stays alert, doesn't re-strike)
-                state["current_suspicion_index"] = 3.0
-                # Clear ALL escalation timers so stages don't re-fire immediately
-                state["suspicion_at_9_start"] = None
-                state["suspicion_above_6_start"] = None
-                state["suspicion_above_3_start"] = None
+                # ── Post-close reset (S already set to 3.0 in tool handler) ──
                 # Refresh window cache so the closed tab vanishes from open_windows
                 await asyncio.to_thread(refresh_window_cache)
                 new_active = get_cached_active_title()
@@ -1245,6 +1239,7 @@ async def run_gemini_loop(pya):
 
                                 if response.tool_call:
                                     try:
+                                        function_responses_to_send = []
                                         for fc in response.tool_call.function_calls:
                                             state["_api_function_calls"] += 1
                                             if fc.name == "classify_screen":
@@ -1300,14 +1295,12 @@ async def run_gemini_loop(pya):
                                                 # through CRITICAL UNMUZZLED → speak first → call close_distracting_tab.
                                                 # This ensures Tama ALWAYS warns the user before closing anything.
 
-                                                await session.send_tool_response(
-                                                    function_responses=[
-                                                        types.FunctionResponse(
-                                                            name="classify_screen",
-                                                            response={"status": "updated", "S": round(state["current_suspicion_index"], 1), "A": ali, "cat": cat},
-                                                            id=fc.id
-                                                        )
-                                                    ]
+                                                function_responses_to_send.append(
+                                                    types.FunctionResponse(
+                                                        name="classify_screen",
+                                                        response={"status": "updated", "S": round(state["current_suspicion_index"], 1), "A": ali, "cat": cat},
+                                                        id=fc.id
+                                                    )
                                                 )
 
                                                 # Notify Godot: Tama just looked at the screen
@@ -1331,15 +1324,19 @@ async def run_gemini_loop(pya):
                                                 target_window = fc.args.get("target_window", None)
                                                 close_fc_id = fc.id
 
+                                                # ── Immediately reset S to prevent STRIKE directive from re-firing ──
+                                                state["current_suspicion_index"] = 3.0
+                                                state["suspicion_at_9_start"] = None
+                                                state["suspicion_above_6_start"] = None
+                                                state["suspicion_above_3_start"] = None
+
                                                 # Send tool response IMMEDIATELY — system-only, Gemini must NOT read this aloud
-                                                await session.send_tool_response(
-                                                    function_responses=[
-                                                        types.FunctionResponse(
-                                                            name="close_distracting_tab",
-                                                            response={"status": "executing"},
-                                                            id=close_fc_id
-                                                        )
-                                                    ]
+                                                function_responses_to_send.append(
+                                                    types.FunctionResponse(
+                                                        name="close_distracting_tab",
+                                                        response={"status": "executing"},
+                                                        id=close_fc_id
+                                                    )
                                                 )
 
                                                 # Run grace period in background (non-blocking)
@@ -1371,14 +1368,12 @@ async def run_gemini_loop(pya):
                                                     # All moods go through — Godot decides the right anim.
                                                     send_mood_to_godot(mood, intensity)
 
-                                                await session.send_tool_response(
-                                                    function_responses=[
-                                                        types.FunctionResponse(
-                                                            name="report_mood",
-                                                            response={"status": "mood_received"},
-                                                            id=fc.id
-                                                        )
-                                                    ]
+                                                function_responses_to_send.append(
+                                                    types.FunctionResponse(
+                                                        name="report_mood",
+                                                        response={"status": "mood_received"},
+                                                        id=fc.id
+                                                    )
                                                 )
 
                                             elif fc.name == "set_current_task":
@@ -1387,37 +1382,42 @@ async def run_gemini_loop(pya):
                                                 state["force_speech"] = False
                                                 print(f"  🎯 Tâche définie : {state['current_task']}")
 
-                                                await session.send_tool_response(
-                                                    function_responses=[
-                                                        types.FunctionResponse(
-                                                            name="set_current_task",
-                                                            response={"status": "task_set", "current_task": state["current_task"]},
-                                                            id=fc.id
-                                                        )
-                                                    ]
+                                                function_responses_to_send.append(
+                                                    types.FunctionResponse(
+                                                        name="set_current_task",
+                                                        response={"status": "task_set", "current_task": state["current_task"]},
+                                                        id=fc.id
+                                                    )
                                                 )
                                             elif fc.name == "fire_strike":
                                                 print(f"  🥊🔥 GEMINI INITIATED STRIKE: {fc.args.get('timing_intent', '')}")
                                                 
-                                                # Send strike command to Godot
-                                                strike_msg = json.dumps({"command": "PLAY_STRIKE"})
-                                                main_loop = state["main_loop"]
-                                                for ws_client in list(state["connected_ws_clients"]):
-                                                    try:
-                                                        if main_loop and main_loop.is_running():
-                                                            asyncio.run_coroutine_threadsafe(ws_client.send(strike_msg), main_loop)
-                                                    except Exception:
-                                                        pass
+                                                # Only send PLAY_STRIKE if no close flow is in progress
+                                                # (grace_then_close already sends Strike anim + handles the hand)
+                                                if not state.get("_pending_strike"):
+                                                    strike_msg = json.dumps({"command": "PLAY_STRIKE"})
+                                                    main_loop = state["main_loop"]
+                                                    for ws_client in list(state["connected_ws_clients"]):
+                                                        try:
+                                                            if main_loop and main_loop.is_running():
+                                                                asyncio.run_coroutine_threadsafe(ws_client.send(strike_msg), main_loop)
+                                                        except Exception:
+                                                            pass
+                                                else:
+                                                    print(f"  🥊 Close in progress — Strike anim already handled by grace_then_close")
 
-                                                await session.send_tool_response(
-                                                    function_responses=[
-                                                        types.FunctionResponse(
-                                                            name="fire_strike",
-                                                            response={"status": "strike_delivered"},
-                                                            id=fc.id
-                                                        )
-                                                    ]
+                                                function_responses_to_send.append(
+                                                    types.FunctionResponse(
+                                                        name="fire_strike",
+                                                        response={"status": "strike_delivered"},
+                                                        id=fc.id
+                                                    )
                                                 )
+
+                                        if function_responses_to_send:
+                                            await session.send_tool_response(
+                                                function_responses=function_responses_to_send
+                                            )
 
                                     except Exception as e:
                                         print(f"⚠️ Erreur function call : {e}")
@@ -1534,7 +1534,7 @@ async def run_gemini_loop(pya):
             err_str = str(e)
             is_clean_conversation_end = "Conversation ended" in err_str or "Conversation stalled" in err_str
 
-            # ── Conversation crash: notify Godot so Tama does bye animation ──
+            # ── Conversation crash: notify Godot so Tama does go_away animation ──
             if state["current_mode"] == "conversation" and not is_clean_conversation_end:
                 print(f"  💥 Conversation crash! Notifying Godot...")
                 end_msg = json.dumps({"command": "END_CONVERSATION"})

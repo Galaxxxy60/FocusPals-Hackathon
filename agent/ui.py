@@ -244,7 +244,7 @@ _MOOD_ANIM_MAP = {
     "curious":      ("Idle_wall_Talk", "Suspicious", "Suspicious"),
     "amused":       ("Idle_wall_Talk", "Idle_wall_Talk", "Idle_wall_Talk"),
     "proud":        ("Idle_wall_Talk", "Idle_wall_Talk", "Idle_wall_Talk"),
-    "suspicious":   ("Peek",  "Suspicious", "Suspicious"),
+    "suspicious":   ("Suspicious",  "Suspicious", "Suspicious"),
     "surprised":    ("Idle_wall_Talk", "Idle_wall_Talk", "Idle_wall_Talk"),
     "disappointed": ("Suspicious", "Suspicious", "Angry"),
     "sarcastic":    ("Suspicious", "Suspicious", "Angry"),
@@ -269,7 +269,7 @@ def send_mood_to_godot(mood: str, intensity: float):
         anim = anims[2]
 
     # Loop for sustained moods, one-shot for dramatic poses (play once → freeze on last frame)
-    loop = anim not in ("Strike", "bye", "Peek", "Suspicious", "Angry")
+    loop = anim not in ("Strike", "GoAway", "Suspicious", "Angry")
 
     send_anim_to_godot(anim, loop)
 
