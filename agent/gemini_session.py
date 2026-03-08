@@ -802,7 +802,7 @@ async def run_gemini_loop(pya):
                                 continue
 
                             voice_active = detect_voice_activity(data)
-                            blob = types.Blob(data=data, mime_type="audio/pcm")
+                            blob = types.Blob(data=data, mime_type="audio/pcm;rate=16000")
 
                             if voice_active:
                                 voice_streak += 1
