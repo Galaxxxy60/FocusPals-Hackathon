@@ -224,7 +224,7 @@ def mouse_edge_monitor():
         if not near_edge or not in_zone:
             state["_mouse_was_away"] = True
 
-        if near_edge and in_zone and not state["radial_shown"] and state["_mouse_was_away"] and time.time() > state["_radial_cooldown_until"] and not state["_mic_panel_pending"]:
+        if near_edge and in_zone and not state["radial_shown"] and state["_mouse_was_away"] and time.time() > state["_radial_cooldown_until"] and not state["_mic_panel_pending"] and state["connected_ws_clients"]:
             state["radial_shown"] = True
             state["_mouse_was_away"] = False
             radial_shown_time = time.time()
