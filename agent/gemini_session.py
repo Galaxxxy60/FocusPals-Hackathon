@@ -448,79 +448,89 @@ def fire_hand_animation():
 
 
 async def grace_then_close(session, audio_out_queue, reason, target_window):
-    """Executetab closure immediately without artificial robot delays."""
+    """Execute tab closure immediately without artificial robot delays."""
     try:
-        # No intervention — prepare close + launch Strike animation
-        if True:
-            # No intervention — prepare close + launch Strike animation
-            result = prepare_close_tab(reason, target_window)
-            if result.get("status") == "success":
-                # Send target coordinates to Godot BEFORE the Strike anim
-                pending = state.get("_pending_strike", {})
-                tx = pending.get("target_x", 0)
-                ty = pending.get("target_y", 0)
-                target_msg = json.dumps({"command": "STRIKE_TARGET", "x": tx, "y": ty})
-                main_loop = state["main_loop"]
-                for ws_client in list(state["connected_ws_clients"]):
-                    try:
-                        if main_loop and main_loop.is_running():
-                            asyncio.run_coroutine_threadsafe(ws_client.send(target_msg), main_loop)
-                    except Exception:
-                        pass
-                print(f"  🎯 STRIKE_TARGET sent to Godot: ({tx}, {ty})")
-
-                # Send Strike anim — Godot will fire STRIKE_FIRE at the right frame
-                # which triggers fire_hand_animation() via ws_handler
-                send_anim_to_godot("Strike", False)
-                update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
-
-                # Safety timeout: if Godot doesn't send STRIKE_FIRE within 5s, fire anyway
-                # (handles: animation glitch, Godot disconnected, etc.)
-                STRIKE_FIRE_TIMEOUT = 5.0
-                timeout_start = time.time()
-                while state.get("_pending_strike") is not None:
-                    if time.time() - timeout_start > STRIKE_FIRE_TIMEOUT:
-                        print("  ⚠️ STRIKE_FIRE timeout (5s) — lancement fallback de la main")
-                        fire_hand_animation()
-                        break
-                    await asyncio.sleep(0.1)
-
-                # ── Post-close reset (S already set to 3.0 in tool handler) ──
-                # Refresh window cache so the closed tab vanishes from open_windows
-                await asyncio.to_thread(refresh_window_cache)
-                new_active = get_cached_active_title()
-                print(f"  🔄 Post-close reset: S→3.0, new active: '{new_active}'")
-
-                state["force_speech"] = True
-                await asyncio.sleep(4)
-
-                # Tell Gemini the close succeeded — re-evaluate with fresh context
+        result = prepare_close_tab(reason, target_window)
+        if result.get("status") == "success":
+            # Send target coordinates to Godot BEFORE the Strike anim
+            pending = state.get("_pending_strike", {})
+            tx = pending.get("target_x", 0)
+            ty = pending.get("target_y", 0)
+            target_msg = json.dumps({"command": "STRIKE_TARGET", "x": tx, "y": ty})
+            main_loop = state["main_loop"]
+            for ws_client in list(state["connected_ws_clients"]):
                 try:
-                    new_windows = [w.title for w in get_cached_windows()]
-                    await session.send_client_content(
-                        turns=types.Content(
-                            role="user",
-                            parts=[types.Part(text=(
-                                f"[SYSTEM] close_distracting_tab SUCCEEDED — '{target_window}' "
-                                f"is now CLOSED. S has been reset to 3.0. "
-                                f"New active window: '{new_active}'. "
-                                f"Current open_windows: {new_windows}. "
-                                f"Do NOT try to close '{target_window}' again. "
-                                f"Re-evaluate the NEW screen with classify_screen."
-                            ))]
-                        ),
-                        turn_complete=True
-                    )
+                    if main_loop and main_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(ws_client.send(target_msg), main_loop)
                 except Exception:
                     pass
+            print(f"  🎯 STRIKE_TARGET sent to Godot: ({tx}, {ty})")
 
-                await asyncio.sleep(2)
-                state["force_speech"] = False
-                update_display(TamaState.CALM, "Je te surveille toujours.")
-            else:
-                print(f"  ⚠️ close bloqué: {result.get('message', '?')}")
+            # ── Now that target is ready, send the Strike anim ──
+            # If fire_strike already requested it, the flag is already True.
+            # If fire_strike hasn't been called yet, we send it ourselves.
+            if state.get("_strike_requested"):
+                state["_strike_requested"] = False  # Consume the request
+                print("  🥊 Strike anim triggered (was waiting for target)")
+            # Always send the anim — either fire_strike requested it or grace_then_close owns it
+            send_anim_to_godot("Strike", False)
+            update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
+
+            # Safety timeout: if Godot doesn't send STRIKE_FIRE within 5s, fire anyway
+            # (handles: animation glitch, Godot disconnected, etc.)
+            STRIKE_FIRE_TIMEOUT = 5.0
+            timeout_start = time.time()
+            while state.get("_pending_strike") is not None:
+                if time.time() - timeout_start > STRIKE_FIRE_TIMEOUT:
+                    print("  ⚠️ STRIKE_FIRE timeout (5s) — lancement fallback de la main")
+                    fire_hand_animation()
+                    break
+                await asyncio.sleep(0.1)
+
+            # ── Post-close reset (S already set to 3.0 in tool handler) ──
+            # Refresh window cache so the closed tab vanishes from open_windows
+            await asyncio.to_thread(refresh_window_cache)
+            new_active = get_cached_active_title()
+            print(f"  🔄 Post-close reset: S→3.0, new active: '{new_active}'")
+
+            # ── Reset strike-in-progress flag ──
+            state["_strike_in_progress"] = False
+            state["_strike_requested"] = False
+
+            state["force_speech"] = True
+            await asyncio.sleep(4)
+
+            # Tell Gemini the close succeeded — re-evaluate with fresh context
+            try:
+                new_windows = [w.title for w in get_cached_windows()]
+                await session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part(text=(
+                            f"[SYSTEM] close_distracting_tab SUCCEEDED — '{target_window}' "
+                            f"is now CLOSED. S has been reset to 3.0. "
+                            f"New active window: '{new_active}'. "
+                            f"Current open_windows: {new_windows}. "
+                            f"Do NOT try to close '{target_window}' again. "
+                            f"Re-evaluate the NEW screen with classify_screen."
+                        ))]
+                    ),
+                    turn_complete=True
+                )
+            except Exception:
+                pass
+
+            await asyncio.sleep(2)
+            state["force_speech"] = False
+            update_display(TamaState.CALM, "Je te surveille toujours.")
+        else:
+            print(f"  ⚠️ close bloqué: {result.get('message', '?')}")
+            state["_strike_in_progress"] = False
+            state["_strike_requested"] = False
     except Exception as e:
         print(f"  ❌ Grace period error: {e}")
+        state["_strike_in_progress"] = False
+        state["_strike_requested"] = False
 
 
 # ─── Main Gemini Live Loop ──────────────────────────────────
@@ -1449,21 +1459,29 @@ async def run_gemini_loop(pya):
                                                     )
                                                 )
                                             elif fc.name == "fire_strike":
-                                                print(f"  🥊🔥 GEMINI INITIATED STRIKE: {fc.args.get('timing_intent', '')}")
-                                                
-                                                # Only send PLAY_STRIKE if no close flow is in progress
-                                                # (grace_then_close already sends Strike anim + handles the hand)
-                                                if not state.get("_pending_strike"):
-                                                    strike_msg = json.dumps({"command": "PLAY_STRIKE"})
-                                                    main_loop = state["main_loop"]
-                                                    for ws_client in list(state["connected_ws_clients"]):
-                                                        try:
-                                                            if main_loop and main_loop.is_running():
-                                                                asyncio.run_coroutine_threadsafe(ws_client.send(strike_msg), main_loop)
-                                                        except Exception:
-                                                            pass
+                                                timing = fc.args.get('timing_intent', '')
+                                                print(f"  🥊🔥 GEMINI INITIATED STRIKE: {timing}")
+
+                                                # ── Anti-doublon: block re-fires during an active strike flow ──
+                                                if state.get("_strike_in_progress"):
+                                                    print("  🥊 Strike already in progress — ignoring duplicate fire_strike")
                                                 else:
-                                                    print(f"  🥊 Close in progress — Strike anim already handled by grace_then_close")
+                                                    state["_strike_in_progress"] = True
+
+                                                    # Don't send PLAY_STRIKE yet!
+                                                    # The target isn't ready until close_distracting_tab calls
+                                                    # prepare_close_tab. Set a flag so grace_then_close knows
+                                                    # to send the animation after preparing the target coords.
+                                                    if state.get("_pending_strike"):
+                                                        # Target already prepared (rare: close came before fire_strike)
+                                                        # → send animation immediately
+                                                        send_anim_to_godot("Strike", False)
+                                                        print("  🥊 Target was already ready — Strike anim sent")
+                                                    else:
+                                                        # Normal case: fire_strike arrives before close_distracting_tab
+                                                        # → flag it, grace_then_close will send the anim after preparing target
+                                                        state["_strike_requested"] = True
+                                                        print("  🥊 Strike requested — waiting for close_distracting_tab to prepare target")
 
                                                 function_responses_to_send.append(
                                                     types.FunctionResponse(

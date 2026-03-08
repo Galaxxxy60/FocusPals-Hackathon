@@ -147,6 +147,8 @@ state = {
     "_last_speech_ended": 0,          # Timestamp of last speech turn end
     # Strike fire sync (frame-precise hand animation trigger)
     "_pending_strike": None,          # Dict with hwnd/mode/title/reason — set by prepare_close_tab, consumed by fire_hand_animation
+    "_strike_requested": False,       # True when fire_strike() called but close target not ready yet
+    "_strike_in_progress": False,     # True from first fire_strike until post-close reset — blocks re-fires
 }
 
 
