@@ -5,9 +5,10 @@ Handles mic streaming, screen pulse, response processing, and audio output.
 """
 
 import asyncio
-import io
 import json
+import math
 import os
+import struct
 import sys
 import time
 
@@ -783,6 +784,21 @@ async def run_gemini_loop(pya):
                             # Gate: if mic is disabled, discard the data (keep stream alive but don't send)
                             if not state.get("mic_allowed", True):
                                 await asyncio.sleep(0.01)
+                                continue
+
+                            # ── Audio sanity check ──
+                            # Virtual/broken mics can produce garbage data that crashes Gemini.
+                            # Detect and skip corrupt chunks before they reach the API.
+                            if len(data) < 64:
+                                continue  # Incomplete chunk
+                            n_samples = len(data) // 2
+                            samples = struct.unpack(f'<{n_samples}h', data)
+                            rms = math.sqrt(sum(s * s for s in samples) / n_samples)
+                            if rms > 30000:
+                                # Extreme clipping / garbage — skip this chunk
+                                continue
+                            if all(s == samples[0] for s in samples[:64]):
+                                # All identical values (stuck/dead device) — skip
                                 continue
 
                             voice_active = detect_voice_activity(data)

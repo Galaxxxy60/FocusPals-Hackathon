@@ -240,9 +240,20 @@ def mouse_edge_monitor():
                 except Exception as e:
                     print(f"🖱️ [EdgeMonitor] Erreur envoi WS: {e}")
 
-        if state["radial_shown"] and (time.time() - radial_shown_time > 5.0):
+        # Safety timeout: if radial shown for >30s, something went wrong — ask Godot to hide it
+        if state["radial_shown"] and (time.time() - radial_shown_time > 30.0):
             state["radial_shown"] = False
             state["_radial_cooldown_until"] = 0
+            # Let Godot decide whether to re-enable click-through
+            # (it checks if settings/quit dialog is open before doing so)
+            msg = json.dumps({"command": "HIDE_RADIAL"})
+            main_loop = state["main_loop"]
+            for ws_client in list(state["connected_ws_clients"]):
+                try:
+                    if main_loop and main_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
+                except Exception:
+                    pass
             _toggle_click_through(True)
 
         time.sleep(0.1)

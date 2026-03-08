@@ -60,7 +60,9 @@ def refresh_mic_cache():
     seen_names = set()
 
     exclude = ["steam streaming", "vb-audio", "cable output", "mappeur", "wo mic",
-               "réseau de microphones", "input (vb", "cable input"]
+               "réseau de microphones", "input (vb", "cable input",
+               "pilote de capture", "principal", "mixage stéréo", "stereo mix",
+               "what u hear", "loopback", "wave out", "monitor of"]
 
     for i in range(pya.get_device_count()):
         info = pya.get_device_info_by_index(i)
