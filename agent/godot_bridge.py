@@ -582,28 +582,13 @@ def _apply_click_through_delayed():
             user32.SetWindowLongW(hwnd, GWL_EXSTYLE, WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)
             state["godot_hwnd"] = hwnd
 
-            if win_w == 0 or win_h == 0:
-                # Even with DPI awareness, size is 0 — use fallback from project.godot
-                print(f"⚠️ Fenêtre Godot trouvée mais taille 0x0 après 15s — utilisation taille projet (400×500)")
-                win_w, win_h = 400, 500
-
-            try:
-                SPI_GETWORKAREA = 0x0030
-                work_area = ctypes.wintypes.RECT()
-                ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
-
-                new_x = work_area.right - win_w
-                new_y = work_area.bottom - win_h
-
-                SWP_FLAGS = 0x0001 | 0x0004 | 0x0020  # NOSIZE | NOZORDER | FRAMECHANGED
-                user32.SetWindowPos(hwnd, 0, new_x, new_y, 0, 0, SWP_FLAGS)
-
-                print(f"📐 Fenêtre repositionnée: ({new_x}, {new_y}) — taille {win_w}x{win_h}")
-            except Exception as e:
-                print(f"⚠️ Repositionnement échoué: {e}")
+            # NOTE: We do NOT reposition the window here.
+            # Godot handles its own positioning in _ready() → _reposition_bottom_right().
+            # Doing SetWindowPos from Python would conflict with Godot's internal
+            # viewport coordinates and make CanvasLayer UI elements invisible.
 
             state["window_positioned"] = True
-            print(f"✅ Click-through + position OK (handle: {hwnd})")
+            print(f"✅ Click-through OK (handle: {hwnd}, taille: {win_w}x{win_h})")
             return
         time.sleep(0.5)
 
