@@ -269,5 +269,13 @@ def init_crash_logger():
                 pass
     
     print(f"📝 Logging to: {LOG_FILE}")
-    
+
+    # Suppress noisy AFC messages from google.genai SDK at root level
+    # These appear as "[INFO] AFC is enabled with max remote calls: 10"
+    # and pollute the log file when the Live API session is active.
+    class _AFCFilter(logging.Filter):
+        def filter(self, record):
+            return "AFC is enabled" not in getattr(record, 'msg', '')
+    logging.getLogger().addFilter(_AFCFilter())
+
     return _log_handle

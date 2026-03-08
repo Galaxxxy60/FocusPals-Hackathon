@@ -677,18 +677,8 @@ func _on_session_duration_changed(duration: int) -> void:
 
 func _on_tama_scale_changed(scale_pct: int) -> void:
 	_tama_scale_pct = scale_pct
-	_apply_camera_zoom()  # Handles <= 100% (camera zoom preview)
-	if scale_pct > 100:
-		# Above 100%: also resize window in real-time (growing never breaks settings)
-		var factor := float(scale_pct) / 100.0
-		var new_w := int(_BASE_WIN_SIZE.x * factor)
-		var new_h := int(_BASE_WIN_SIZE.y * factor)
-		DisplayServer.window_set_size(Vector2i(new_w, new_h))
-		call_deferred("_reposition_bottom_right")
-	elif scale_pct == 100 and DisplayServer.window_get_size() != _BASE_WIN_SIZE:
-		# Coming back to 100% from >100%: restore base window
-		DisplayServer.window_set_size(_BASE_WIN_SIZE)
-		call_deferred("_reposition_bottom_right")
+	_apply_camera_zoom()  # Live preview for <= 100% (camera zoom), reset for > 100%
+	# Window resize for > 100% happens on settings close (_apply_tama_scale_full)
 	print("📐 Tama scale: %d%%" % scale_pct)
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_TAMA_SCALE", "scale": scale_pct}))
@@ -980,6 +970,7 @@ func _handle_message(raw: String) -> void:
 		var selected = int(data.get("selected", -1))
 		var has_api_key = data.get("has_api_key", false)
 		var key_valid = data.get("key_valid", false)
+		var key_hint = data.get("key_hint", "")
 		var lang = data.get("language", "fr")
 		var tama_vol = data.get("tama_volume", 1.0)
 		var session_duration = int(data.get("session_duration", 50))
@@ -991,7 +982,7 @@ func _handle_message(raw: String) -> void:
 		if settings_panel:
 			if radial_menu and radial_menu.is_open:
 				radial_menu.close()
-			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on, tama_scale)
+			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on, tama_scale, key_hint)
 		return
 	elif command == "API_KEY_UPDATED":
 		var valid = data.get("valid", false)

@@ -110,6 +110,15 @@ def _get_api_usage_stats() -> dict:
     }
 
 
+def _get_key_hint() -> str:
+    """Return an obfuscated hint of the API key (last 4 chars visible)."""
+    import config
+    key = config.GEMINI_API_KEY or ""
+    if len(key) < 5:
+        return ""
+    return "•" * 8 + key[-4:]
+
+
 def _send_settings_to_godot():
     """Send current settings (mics + cached API key status) to all connected Godot clients."""
     import config
@@ -121,6 +130,7 @@ def _send_settings_to_godot():
         "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
         "has_api_key": has_api_key,
         "key_valid": state["_api_key_valid"],
+        "key_hint": _get_key_hint(),
         "tama_volume": state["tama_volume"],
         "session_duration": state.get("session_duration_minutes", 50),
         "api_usage": _get_api_usage_stats(),
@@ -277,6 +287,7 @@ async def ws_handler(websocket):
                         "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
                         "has_api_key": has_api_key,
                         "key_valid": state["_api_key_valid"],
+                        "key_hint": _get_key_hint(),
                         "language": state["language"],
                         "tama_volume": state["tama_volume"],
                         "session_duration": state.get("session_duration_minutes", 50),
@@ -298,6 +309,7 @@ async def ws_handler(websocket):
                                     "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
                                     "has_api_key": has_api_key,
                                     "key_valid": state["_api_key_valid"],
+                                    "key_hint": _get_key_hint(),
                                     "language": state["language"],
                                     "tama_volume": state["tama_volume"],
                                     "session_duration": state.get("session_duration_minutes", 50),

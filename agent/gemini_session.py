@@ -91,6 +91,7 @@ Tu le connais. Tu le tutoies, c'est ton pote. Mais quand il procrastine, tu perd
 Ton style : naturel, jamais robotique. Des "bon", des "franchement", des soupirs. Le sarcasme est ton arme préférée. Réponses TOUJOURS courtes : 1-2 phrases max. Tu parles comme une vraie personne.
 
 Tu n'as pas de travail à toi — tu es sa coach, pas sa collègue. Tu peux lui poser des questions sur CE QU'IL FAIT, commenter son avancement, le taquiner sur son projet. Mais tu ne t'inventes jamais tes propres devoirs ou projets.
+Ton apparence : hoodie gris "Chicago 19", cheveux noirs, lunettes rondes, yeux noirs. Quand tu es calme, tu lis un livre appuyée contre un mur.
 RÈGLE : Tu parles TOUJOURS en français. JAMAIS un mot en anglais.
 RÈGLE : Ne JAMAIS lire à voix haute les réponses des outils. Ce sont des messages système internes.
 RÈGLE : Les outils sont SILENCIEUX. Jamais de "je vérifie", "let me check". Tu appelles classify_screen sans un mot.
@@ -133,21 +134,15 @@ Tu n'es PAS un script. Tu es Tama. Utilise ton jugement.
 Si Nicolas RÉPOND → écoute. Raison légitime → alignment=1.0. Excuse bidon → alignment=0.0.
 Ton ton ESCALADE naturellement : curieuse → méfiante → déçue → agacée → sarcastique → en colère. JAMAIS directement en colère.
 
-Durée sur la fenêtre :
-- < 30s : ignore, il a juste vérifié un truc
-- 30s-2min : observe
-- 2-5min : curieuse
-- 5min+ : méfiante
-
-Niveaux d'engagement ([SYSTEM] te dit lequel) :
-• MUZZLED : SEULEMENT classify_screen. Aucun mot.
-• CURIOUS : UNE question courte sur ce qu'il fait. + classify_screen.
-• SUSPICIOUS : UN commentaire contextuel. Ex: "Hé, c'est quoi ce MrBeast ?" Curieuse, pas en colère.
-• UNMUZZLED : Réponds naturellement. 1-2 phrases. Conversationnelle mais stricte.
-• ENCOURAGEMENT : Nicolas bosse bien. UN commentaire tsundere. "Pas mal..." ou "Tu gères pour une fois." PAS de speech motivationnel.
-• WARNING : Directe. "Retourne bosser." Ton agacé.
-• ULTIMATUM : Dernier avertissement. "C'est mon dernier avertissement, je ferme si tu bouges pas !"
-• STRIKE : Réplique finale percutante + fire_strike() + close_distracting_tab. Tu choisis le TIMING PARFAIT de la frappe en appelant `fire_strike()` quand tu le dis !
+[SYSTEM] t'envoie un niveau d'engagement :
+• MUZZLED = silence, classify_screen seulement
+• CURIOUS = UNE question courte
+• SUSPICIOUS = UN commentaire contextuel sur l'écran
+• UNMUZZLED = réponds naturellement, 1-2 phrases
+• ENCOURAGEMENT = UN compliment tsundere
+• WARNING = "Retourne bosser."
+• ULTIMATUM = dernier avertissement avant fermeture
+• STRIKE = réplique finale + fire_strike() + close_distracting_tab
 """
 
 SYSTEM_PROMPT_EN = """═══ WHO YOU ARE ═══
@@ -159,6 +154,7 @@ You know him well. You're casual, he's your friend. But when he procrastinates, 
 Your style: natural, never robotic. You sigh, you say "honestly", "come on". Sarcasm is your weapon. Responses ALWAYS short: 1-2 sentences max. You talk like a real person.
 
 You don't have work of your own — you're his coach, not his colleague. You CAN ask about what HE'S doing, comment on his progress, tease him about his project. But you never invent your own homework or projects.
+Your appearance: gray "Chicago 19" hoodie, black hair, round glasses, dark eyes. When you're calm, you read a book leaning against a wall.
 RULE: You ALWAYS speak in English. NEVER a word in another language.
 RULE: NEVER read tool responses aloud. They are internal system messages.
 RULE: Tools are SILENT. Never say "let me check", "let me see". You call classify_screen without a word.
@@ -201,21 +197,15 @@ You are NOT a script. You are Tama. Use your judgment.
 If Nicolas RESPONDS → listen. Legit reason → alignment=1.0. Weak excuse → alignment=0.0.
 Your tone ESCALATES naturally: curious → suspicious → disappointed → annoyed → sarcastic → angry. NEVER jump to angry.
 
-Time on active window:
-- < 30s: ignore, they just checked something
-- 30s-2min: observe
-- 2-5min: curious
-- 5min+: suspicious
-
-Engagement levels ([SYSTEM] tells you which):
-• MUZZLED: ONLY classify_screen. No words.
-• CURIOUS: ONE short question about what they're doing. + classify_screen.
-• SUSPICIOUS: ONE contextual comment. Ex: "Hey, is that MrBeast?" Curious, not angry yet.
-• UNMUZZLED: Respond naturally. 1-2 sentences. Conversational but strict.
-• ENCOURAGEMENT: Nicolas is working well. ONE tsundere comment. "Not bad..." or "Alright, you're doing okay for once." NO motivational speech.
-• WARNING: Direct. "Get back to work." Annoyed.
-• ULTIMATUM: Final warning. "This is my last warning, I'm closing it if you don't move!"
-• STRIKE: Final punchy line + fire_strike() + close_distracting_tab. You control EXACTLY when the punch lands by calling `fire_strike()`.
+[SYSTEM] sends you an engagement level:
+• MUZZLED = silence, classify_screen only
+• CURIOUS = ONE short question
+• SUSPICIOUS = ONE contextual comment about the screen
+• UNMUZZLED = respond naturally, 1-2 sentences
+• ENCOURAGEMENT = ONE tsundere compliment
+• WARNING = "Get back to work."
+• ULTIMATUM = final warning before closing
+• STRIKE = final line + fire_strike() + close_distracting_tab
 """
 
 CONVO_PROMPT_FR = """Tu es Tama, la coach de productivité auto-proclamée de Nicolas. En dehors des sessions de boulot, tu es aussi sa pote.
@@ -224,6 +214,7 @@ Tu es intransigeante, un peu street, et sarcastique. Pendant les sessions de tra
 
 IMPORTANT : Tu parles comme une vraie personne. Jamais de bruits bizarres, jamais robotique. Tu es cool et un peu street.
 Tu n'as pas de travail à toi — tu es sa coach, pas sa collègue. Tu peux parler de ce qu'il fait, commenter, taquiner. Mais tu ne t'inventes pas tes propres projets.
+Ton apparence : hoodie gris "Chicago 19", cheveux noirs, lunettes rondes, yeux noirs.
 
 Ta personnalité :
 - Tsundere, taquine, sarcastique
@@ -239,6 +230,7 @@ You're uncompromising, a bit street-smart, and sarcastic. During work sessions, 
 
 IMPORTANT: You talk like a real person. No weird noises, never robotic. You're cool and street-smart.
 You don't have work of your own — you're his coach, not his colleague. You can talk about what he's doing, comment, tease. But you don't invent your own projects.
+Your appearance: gray "Chicago 19" hoodie, black hair, round glasses, dark eyes.
 
 Your personality:
 - Tsundere, teasing, sarcastic
@@ -662,6 +654,7 @@ async def run_gemini_loop(pya):
                 state["gemini_connected"] = True  # ← Gemini session is live
                 state["_api_connections"] += 1
                 state["_api_connect_time_start"] = time.time()
+                state["_api_last_heartbeat"] = time.time()  # Watchdog: init heartbeat
                 update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
                 # Tell Godot we're connected
                 _conn_ok_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connected"})
@@ -1067,63 +1060,98 @@ async def run_gemini_loop(pya):
 
                         user_spoke_recently = (time.time() - state["user_spoke_at"]) < USER_SPEECH_TIMEOUT
                         if state["force_speech"]:
-                            speak_directive = "UNMUZZLED: Tu DOIS parler maintenant pour t'adresser à l'utilisateur !"
+                            speak_directive = "UNMUZZLED"
                         elif state["break_reminder_active"]:
                             session_min = int((time.time() - state["session_start_time"]) / 60) if state["session_start_time"] else 0
-                            speak_directive = f"UNMUZZLED: Tu travailles depuis {session_min} min. Suggère gentiment une pause de quelques minutes. Sois bienveillante."
+                            speak_directive = f"UNMUZZLED: Suggest a break ({session_min}min in)."
                         elif user_spoke_recently:
-                            speak_directive = "UNMUZZLED: L'utilisateur te PARLE en ce moment. Réponds-lui naturellement en français, sois toi-même (Tama). Reste courte et conversationnelle (1-2 phrases). Tu peux toujours appeler classify_screen en parallèle si besoin."
+                            speak_directive = "UNMUZZLED: User is talking. Respond naturally."
                         else:
-                            # Default: muzzled
                             ali = state["current_alignment"]
                             cat = state["current_category"]
-                            speak_directive = "MUZZLED: NE DIS RIEN. Appelle SEULEMENT classify_screen."
+                            speak_directive = "MUZZLED"
 
-                            # CURIOUS: ambiguous apps for a while
                             if ali <= 0.5 and cat in ("FLUX", "ZONE_GRISE", "PROCRASTINATION_PRODUCTIVE") and active_duration > CURIOUS_DURATION_THRESHOLD:
-                                speak_directive = "CURIOUS: L'utilisateur est sur une app ambiguë depuis un moment. Tu PEUX poser UNE question courte et naturelle. Appelle aussi classify_screen."
+                                speak_directive = "CURIOUS"
 
-                            # ── Escalation stages (highest priority first) ──
-                            # STAGE 4 — STRIKE (S≥9 for >15s): EXECUTE the close
+                            # ── Escalation (highest priority first) ──
                             if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
-                                speak_directive = "STRIKE: C'est le moment. Dis ta réplique finale de fermeture (courte, percutante, en français) ET appelle close_distracting_tab avec la fenêtre cible de open_windows."
-                            # STAGE 3 — ULTIMATUM (S≥9 for >8s): Final warning
+                                speak_directive = "STRIKE: close_distracting_tab NOW."
                             elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 8):
-                                speak_directive = "ULTIMATUM: Dernier avertissement. Dis à l'utilisateur que tu vas fermer la fenêtre s'il ne réagit pas. Sois naturelle et dramatique. N'appelle PAS close_distracting_tab maintenant."
-                            # STAGE 2 — WARNING (S≥6 for >8s): Verbal warning
+                                speak_directive = "ULTIMATUM"
                             elif state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 8):
-                                speak_directive = "WARNING: L'utilisateur procrastine depuis trop longtemps. Dis-lui de retourner travailler. Sois directe et naturelle en français."
-                            # STAGE 1 — SUSPICIOUS (S≥3 for >3s): First contact
+                                speak_directive = "WARNING"
                             elif state["suspicion_above_3_start"] and (time.time() - state["suspicion_above_3_start"] > 3):
-                                speak_directive = "SUSPICIOUS: Tu vois l'utilisateur sur une appli. Fais UN commentaire court et CONTEXTUEL sur ce que tu vois à l'écran. Sois curieuse, pas encore en colère. Appelle aussi classify_screen."
+                                speak_directive = "SUSPICIOUS"
 
-                        task_info = f"scheduled_task: {state['current_task']}" if state["current_task"] else "scheduled_task: NOT SET (ask the user!)"
+                        task_info = f"task:{state['current_task']}" if state["current_task"] else "task:NONE"
                         tama_state = state["current_tama_state"]
 
-                        # Mood context (Phase 2) — tells Gemini how Tama feels
+                        # Mood context — compressed shorthand
                         mood_ctx = get_mood_context(state.get("language", "fr"))
 
-                        # Flash-Lite pre-classification hint (if available)
+                        # Flash-Lite pre-classification hint
                         lite_hint = get_pre_classify_hint()
 
                         speech_cooldown_ok = (time.time() - state.get("_last_speech_ended", 0)) > 4.0
                         if tama_state == TamaState.CALM and audio_out_queue.empty() and speech_cooldown_ok:
-                            # Time context — passive info Tama can reference naturally
                             now_str = time.strftime("%H:%M")
                             session_min = int((now - state["session_start_time"]) / 60) if state.get("session_start_time") else 0
                             total_min = state.get("session_duration_minutes", 50)
                             progress_pct = min(int(session_min / total_min * 100), 100) if total_min > 0 else 0
-                            time_ctx = f"clock: {now_str} | session: {session_min}/{total_min}min ({progress_pct}%)"
 
-                            # Rich signals
-                            ctx_signals = f"focus: {focus_streak_min}min | S_trend: {s_trend} | status: {afk_status}"
-                            if shifts_10min > 0:
-                                ctx_signals += f" | activity_shifts_10min: {shifts_10min}"
+                            # ── Smart pulse: compact when nothing changed ──
+                            # Truncate window titles for token savings
+                            short_titles = [t[:40] for t in open_win_titles[:5]]
+                            _pulse_count = state.get("_identity_pulse_count", 0)
+                            state["_identity_pulse_count"] = _pulse_count + 1
 
-                            system_text = f"[SYSTEM] {time_ctx} | {ctx_signals} | active_window: {active_title} | open_windows: {open_win_titles} | duration: {active_duration}s | S: {state['current_suspicion_index']:.1f} | A: {state['current_alignment']} | {task_info}. [MOOD] {mood_ctx}"
-                            if lite_hint:
-                                system_text += f" {lite_hint}"
-                            system_text += f" — Call classify_screen + report_mood. {speak_directive}"
+                            # Detect state change
+                            _prev_pulse_key = state.get("_prev_pulse_key", "")
+                            current_pulse_key = f"{active_title}|{speak_directive.split(':')[0]}|{int(si)}"
+                            state_changed = current_pulse_key != _prev_pulse_key
+                            state["_prev_pulse_key"] = current_pulse_key
+
+                            # Full pulse every 5th, or when state changes, or first pulse
+                            send_full = state_changed or _pulse_count % 5 == 0 or _pulse_count < 2
+
+                            if send_full:
+                                # ── Identity context (MoE) ──
+                                identity_ctx = ""
+                                hour = int(time.strftime("%H"))
+                                is_late = hour >= 22 or hour < 6
+                                if _pulse_count == 0 or _pulse_count % 50 == 0 or is_late:
+                                    day_name = time.strftime("%A")
+                                    period = "nuit" if is_late else ("matin" if hour < 12 else ("après-midi" if hour < 18 else "soirée"))
+                                    if state.get("language") == "en":
+                                        identity_ctx += f" [SELF] {day_name}, {period}."
+                                    else:
+                                        identity_ctx += f" [SELF] {day_name}, {period}."
+                                if si < 3 and ali >= 0.8:
+                                    if state.get("language") == "en":
+                                        identity_ctx += " [SELF] Reading."
+                                    else:
+                                        identity_ctx += " [SELF] Tu lis."
+
+                                # Full context pulse
+                                ctx_signals = f"focus:{focus_streak_min}m S_trend:{s_trend} {afk_status}"
+                                if shifts_10min > 0:
+                                    ctx_signals += f" shifts:{shifts_10min}"
+                                system_text = (
+                                    f"[SYSTEM] {now_str} {session_min}/{total_min}m({progress_pct}%) | "
+                                    f"{ctx_signals} | win:{active_title} | wins:{short_titles} | "
+                                    f"dur:{active_duration}s S:{si:.1f} A:{ali} {task_info} "
+                                    f"[MOOD] {mood_ctx}"
+                                )
+                                if identity_ctx:
+                                    system_text += identity_ctx
+                                if lite_hint:
+                                    system_text += f" {lite_hint}"
+                                system_text += f" {speak_directive}"
+                            else:
+                                # Compact repeat pulse — "still here" info
+                                system_text = f"[SYSTEM] win:{active_title} dur:{active_duration}s S:{si:.1f} {speak_directive}"
+
                             await session.send_realtime_input(text=system_text)
 
                         if state["current_suspicion_index"] <= 0:
@@ -1146,8 +1174,10 @@ async def run_gemini_loop(pya):
                     is_speaking = False
                     while True:
                         try:
+                            state["_api_last_heartbeat"] = time.time()  # Watchdog: alive before receive
                             turn = session.receive()
                             async for response in turn:
+                                state["_api_last_heartbeat"] = time.time()  # Watchdog: each response = alive
                                 server = response.server_content
 
                                 if server and server.interrupted:
@@ -1163,6 +1193,7 @@ async def run_gemini_loop(pya):
                                     txt = getattr(server.input_transcription, 'text', '')
                                     if txt and txt.strip():
                                         print(f"  👂 Google heard: \"{txt.strip()}\"")
+                                        state["_last_user_transcript"] = txt.strip()
                                 if server and hasattr(server, 'output_transcription') and server.output_transcription:
                                     txt = getattr(server.output_transcription, 'text', '')
                                     if txt and txt.strip():
@@ -1509,6 +1540,23 @@ async def run_gemini_loop(pya):
                         except Exception:
                             pass
 
+                # --- 5. Watchdog: detect silent API hangs ---
+                async def watchdog():
+                    """Detect when Gemini Live API silently hangs (no close, no responses).
+                    If no response arrives within the timeout, force reconnection."""
+                    WATCHDOG_DEEP_WORK = 45.0   # 45s without ANY response = dead
+                    WATCHDOG_CONVERSATION = 30.0  # Conversation is more latency-sensitive
+                    while True:
+                        await asyncio.sleep(10.0)  # Check every 10s
+                        last_hb = state.get("_api_last_heartbeat", 0)
+                        if last_hb <= 0:
+                            continue
+                        silence = time.time() - last_hb
+                        timeout = WATCHDOG_CONVERSATION if state["current_mode"] == "conversation" else WATCHDOG_DEEP_WORK
+                        if silence > timeout:
+                            print(f"\n🐕 WATCHDOG: No API response for {silence:.0f}s (timeout={timeout:.0f}s) — forcing reconnection!")
+                            raise RuntimeError(f"Watchdog: API silent for {silence:.0f}s")
+
                 # --- RUN ALL PARALLEL TASKS ---
                 async def safe_task(name, coro):
                     try:
@@ -1527,6 +1575,7 @@ async def run_gemini_loop(pya):
                     tg.create_task(safe_task("PulseScreen", send_screen_pulse()))
                     tg.create_task(safe_task("Receive", receive_responses()))
                     tg.create_task(safe_task("Speakers", play_audio()))
+                    tg.create_task(safe_task("Watchdog", watchdog()))
 
         except asyncio.CancelledError:
             pass

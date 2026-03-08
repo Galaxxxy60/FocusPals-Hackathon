@@ -22,6 +22,7 @@ var _selected_index: int = -1
 var _api_key_has_key := false
 var _api_key_valid: int = -1  # -1 = unknown, 0 = invalid, 1 = valid
 var _api_key_checking := false
+var _api_key_hint := ""  # Obfuscated hint (e.g. "••••••••ab1Z")
 
 # API Usage stats
 var _api_usage := {}
@@ -208,7 +209,7 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true, tama_scale: int = 100) -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true, tama_scale: int = 100, key_hint: String = "") -> void:
 	_mics = mics
 	_selected_index = selected
 	_api_key_has_key = has_api_key
@@ -216,6 +217,7 @@ func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: boo
 	_api_usage = api_usage
 	_screen_share_allowed = screen_share
 	_mic_allowed = mic_on
+	_api_key_hint = key_hint
 	if has_api_key:
 		_api_key_valid = 1 if key_valid else 0
 	else:
@@ -443,8 +445,6 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	api_content.add_child(api_row)
 
 	_api_key_input = LineEdit.new()
-	_api_key_input.secret = true
-	_api_key_input.secret_character = "•"
 	_api_key_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_api_key_input.placeholder_text = "Collez votre clé API..."
 	_api_key_input.add_theme_stylebox_override("normal", _make_input_style())
@@ -454,8 +454,20 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_api_key_input.add_theme_color_override("font_placeholder_color", Color(0.4, 0.4, 0.5))
 	_api_key_input.add_theme_color_override("caret_color", Color(0.5, 0.8, 1.0))
 	if _api_key_has_key:
-		_api_key_input.text = "••••••••••••••••"
+		if _api_key_hint.length() > 0:
+			# Show obfuscated hint so user can identify the key (e.g. "••••••••ab1Z")
+			_api_key_input.text = _api_key_hint
+			_api_key_input.secret = false
+		else:
+			_api_key_input.text = "••••••••••••••••"
+			_api_key_input.secret = true
+			_api_key_input.secret_character = "•"
+	else:
+		_api_key_input.secret = true
+		_api_key_input.secret_character = "•"
 	_api_key_input.text_submitted.connect(_on_api_key_submitted)
+	# Clear hint on focus so user can paste a new key
+	_api_key_input.focus_entered.connect(_on_api_key_focus)
 	api_row.add_child(_api_key_input)
 
 	_api_key_btn = Button.new()
@@ -539,6 +551,20 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	size_row.add_theme_constant_override("separation", 8)
 	gen_content.add_child(size_row)
 
+	# Font Awesome person silhouette (U+F183)
+	var fa_font := FontFile.new()
+	fa_font.load_dynamic_font("res://fa-solid-900.ttf")
+	var person_char := char(0xF183)
+
+	# Small silhouette to the left
+	var icon_small := Label.new()
+	icon_small.text = person_char
+	icon_small.add_theme_font_override("font", fa_font)
+	icon_small.add_theme_font_size_override("font_size", 12)
+	icon_small.add_theme_color_override("font_color", Color(0.5, 0.6, 0.8, 0.7))
+	icon_small.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	size_row.add_child(icon_small)
+
 	_size_slider = HSlider.new()
 	_size_slider.min_value = 50
 	_size_slider.max_value = 150
@@ -552,11 +578,20 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_size_slider.value_changed.connect(_on_tama_scale_value_changed)
 	size_row.add_child(_size_slider)
 
+	# Big silhouette to the right
+	var icon_big := Label.new()
+	icon_big.text = person_char
+	icon_big.add_theme_font_override("font", fa_font)
+	icon_big.add_theme_font_size_override("font_size", 20)
+	icon_big.add_theme_color_override("font_color", Color(0.7, 0.75, 0.95, 0.9))
+	icon_big.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	size_row.add_child(icon_big)
+
 	_size_label = Label.new()
 	_size_label.text = str(tama_scale) + "%"
 	_size_label.add_theme_font_size_override("font_size", 12)
 	_size_label.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
-	_size_label.custom_minimum_size.x = 45
+	_size_label.custom_minimum_size.x = 42
 	_size_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	size_row.add_child(_size_label)
 
@@ -769,24 +804,45 @@ func _on_mic_btn_pressed(mic_idx: int) -> void:
 	# Rebuild mic list to update selection visuals
 	_rebuild_mic_list()
 
+func _is_hint_or_dots(text: String) -> bool:
+	"""Check if text is the obfuscated hint or generic dots (not a real key)."""
+	if text == "••••••••••••••••":
+		return true
+	if _api_key_hint.length() > 0 and text == _api_key_hint:
+		return true
+	return false
+
+func _on_api_key_focus() -> void:
+	"""When user clicks the field, clear the hint so they can paste a new key."""
+	if _api_key_input == null:
+		return
+	if _is_hint_or_dots(_api_key_input.text):
+		_api_key_input.text = ""
+		_api_key_input.secret = true
+		_api_key_input.secret_character = "•"
+
 func _on_api_key_submitted(text: String) -> void:
 	var key := text.strip_edges()
-	if key.length() > 0 and key != "••••••••••••••••":
+	if key.length() > 0 and not _is_hint_or_dots(key):
 		api_key_submitted.emit(key)
 		_api_key_has_key = true
 		_api_key_valid = -1
 		_api_key_checking = true
-		_api_key_input.text = "••••••••••••••••"
+		_api_key_input.secret = false
+		_api_key_input.text = "••••••••" + key.right(4) if key.length() > 4 else "••••••••••••••••"
+		_api_key_hint = _api_key_input.text
 		_update_api_status()
 
 func _on_api_key_btn_pressed() -> void:
 	var key := _api_key_input.text.strip_edges()
-	if key.length() > 0 and key != "••••••••••••••••":
+	if key.length() > 0 and not _is_hint_or_dots(key):
 		api_key_submitted.emit(key)
 		_api_key_has_key = true
 		_api_key_valid = -1
 		_api_key_checking = true
-		_api_key_input.text = "••••••••••••••••"
+		_api_key_input.secret = false
+		_api_key_input.text = "••••••••" + key.right(4) if key.length() > 4 else "••••••••••••••••"
+		_api_key_hint = _api_key_input.text
 		_update_api_status()
 
 func _on_language_selected(idx: int) -> void:
