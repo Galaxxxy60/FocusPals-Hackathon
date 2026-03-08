@@ -5,6 +5,7 @@ Handles mic streaming, screen pulse, response processing, and audio output.
 """
 
 import asyncio
+import io
 import json
 import math
 import os
