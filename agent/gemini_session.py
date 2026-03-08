@@ -1172,6 +1172,7 @@ async def run_gemini_loop(pya):
 
                 async def receive_responses():
                     is_speaking = False
+                    deferred_tool_responses = []  # Buffer tool responses during speech to prevent Gemini re-generation
                     while True:
                         try:
                             state["_api_last_heartbeat"] = time.time()  # Watchdog: alive before receive
@@ -1267,6 +1268,18 @@ async def run_gemini_loop(pya):
                                     state["_tama_is_speaking"] = False  # Fix 7
                                     state["_mood_anim_set"] = False  # Reset for next speech turn
                                     print("  ✅ Tama done speaking")
+
+                                    # Send any deferred tool responses NOW (after turn is done)
+                                    # Sending them mid-speech causes Gemini to re-generate the same audio
+                                    if deferred_tool_responses:
+                                        try:
+                                            await session.send_tool_response(
+                                                function_responses=deferred_tool_responses
+                                            )
+                                            print(f"  🔧 Sent {len(deferred_tool_responses)} deferred tool response(s)")
+                                        except Exception as e:
+                                            print(f"  ⚠️ Deferred tool response error: {e}")
+                                        deferred_tool_responses = []
 
                                 if response.tool_call:
                                     try:
@@ -1448,9 +1461,14 @@ async def run_gemini_loop(pya):
                                                 )
 
                                         if function_responses_to_send:
-                                            await session.send_tool_response(
-                                                function_responses=function_responses_to_send
-                                            )
+                                            if is_speaking:
+                                                # Defer: sending tool_response mid-speech causes
+                                                # Gemini to re-enter generation → duplicate audio
+                                                deferred_tool_responses.extend(function_responses_to_send)
+                                            else:
+                                                await session.send_tool_response(
+                                                    function_responses=function_responses_to_send
+                                                )
 
                                     except Exception as e:
                                         print(f"⚠️ Erreur function call : {e}")
