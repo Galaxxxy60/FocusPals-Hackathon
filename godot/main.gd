@@ -346,6 +346,10 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 
 	if old_state == "STRIKING":
 		_deactivate_imba()
+		# Fade out arm IK — the AnimTree path doesn't go through _play()
+		# so we must explicitly release the IK here
+		if _gaze_modifier:
+			_gaze_modifier.arm_ik_blend_target = 0.0
 
 	if new_state == "STRIKING":
 		_activate_imba(1)
@@ -587,7 +591,7 @@ func _spawn_hand_window() -> void:
 		if _hand_window and is_instance_valid(_hand_window):
 			_hand_window.queue_free()
 			_hand_window = null
-		# Keep arm IK active — it fades out when animation changes
+		# Arm IK fades out when state leaves STRIKING (in _on_tree_state_changed)
 		# Start IMBA fade out after hand window disappears
 		_deactivate_imba()
 		# Reset strike target for next time

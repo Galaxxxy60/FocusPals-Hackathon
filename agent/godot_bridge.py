@@ -563,33 +563,34 @@ def _apply_click_through_delayed():
     for _ in range(60):
         hwnd = find_window()
         if hwnd:
-            time.sleep(0.5)
+            # ── Read window size BEFORE applying WS_EX_TRANSPARENT ──
+            # The transparent flag can interfere with GetWindowRect on some
+            # drivers/DPI configs, so we read the rect first.
+            win_w, win_h = 0, 0
+            for _wait in range(30):  # Up to 15s
+                win_rect = ctypes.wintypes.RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(win_rect))
+                win_w = win_rect.right - win_rect.left
+                win_h = win_rect.bottom - win_rect.top
+                if win_w > 0 and win_h > 0:
+                    break
+                if _wait % 4 == 3:
+                    print(f"  ⏳ Waiting for Godot window size... (rect: L={win_rect.left} T={win_rect.top} R={win_rect.right} B={win_rect.bottom})")
+                time.sleep(0.5)
+
+            # ── NOW apply click-through style ──
             user32.SetWindowLongW(hwnd, GWL_EXSTYLE, WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW)
             state["godot_hwnd"] = hwnd
+
+            if win_w == 0 or win_h == 0:
+                # Even with DPI awareness, size is 0 — use fallback from project.godot
+                print(f"⚠️ Fenêtre Godot trouvée mais taille 0x0 après 15s — utilisation taille projet (400×500)")
+                win_w, win_h = 400, 500
 
             try:
                 SPI_GETWORKAREA = 0x0030
                 work_area = ctypes.wintypes.RECT()
                 ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
-
-                # Wait for Godot window to have a non-zero size (up to 10s)
-                # Godot may create the HWND before it finishes initializing its viewport
-                win_w, win_h = 0, 0
-                for _wait in range(20):
-                    win_rect = ctypes.wintypes.RECT()
-                    user32.GetWindowRect(hwnd, ctypes.byref(win_rect))
-                    win_w = win_rect.right - win_rect.left
-                    win_h = win_rect.bottom - win_rect.top
-                    if win_w > 0 and win_h > 0:
-                        break
-                    time.sleep(0.5)
-
-                if win_w == 0 or win_h == 0:
-                    print(f"⚠️ Fenêtre Godot trouvée mais taille 0x0 après 10s d'attente — skip repositionnement")
-                    # Still mark as positioned so the app doesn't hang
-                    state["window_positioned"] = True
-                    print(f"✅ Click-through OK (handle: {hwnd}) — taille nulle, pas de repositionnement")
-                    return
 
                 new_x = work_area.right - win_w
                 new_y = work_area.bottom - win_h
@@ -607,3 +608,4 @@ def _apply_click_through_delayed():
         time.sleep(0.5)
 
     print("⚠️  Fenêtre Godot non trouvée, click-through non appliqué.")
+

@@ -20,6 +20,18 @@ This file is the thin entry point. All logic lives in:
 - crash_logger.py    — Crash logging, file logging, state dumps
 """
 
+# ── DPI AWARENESS: must be set BEFORE any ctypes/Win32 calls ──
+# Without this, GetWindowRect returns virtualized 0×0 for transparent/layered
+# windows on high-DPI screens (e.g. 2560px with 150% scaling).
+import ctypes
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor V2
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()   # Fallback
+    except Exception:
+        pass
+
 # ── CRASH LOGGER: must init BEFORE any other imports ──
 from crash_logger import init_crash_logger, install_async_exception_handler
 init_crash_logger()
