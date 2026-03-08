@@ -1414,13 +1414,9 @@ async def run_gemini_loop(pya):
                                                     # All moods go through — Godot decides the right anim.
                                                     send_mood_to_godot(mood, intensity)
 
-                                                function_responses_to_send.append(
-                                                    types.FunctionResponse(
-                                                        name="report_mood",
-                                                        response={"status": "mood_received"},
-                                                        id=fc.id
-                                                    )
-                                                )
+                                                # NOTE: No tool_response for report_mood.
+                                                # It's fire-and-forget: sending a response (even deferred)
+                                                # causes Gemini to re-generate or produce ghost responses.
 
                                             elif fc.name == "set_current_task":
                                                 task = fc.args.get("task", "Unknown")
