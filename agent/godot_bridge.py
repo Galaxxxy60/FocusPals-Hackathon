@@ -525,10 +525,70 @@ def launch_godot_overlay():
         print("   Tama fonctionnera sans overlay 3D.")
         return
 
+    # ── Kill any leftover focuspals.exe from a previous session ──
+    # If an old Godot is still alive, the new one would connect to the old
+    # Python's WS server (port 8080), which then gets killed — leaving the
+    # new Godot disconnected and unable to receive SHOW_RADIAL commands.
+    my_pid = os.getpid()
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq focuspals.exe", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.strip().splitlines():
+            parts = line.replace('"', '').split(',')
+            if len(parts) >= 2:
+                try:
+                    old_pid = int(parts[1])
+                    if old_pid != my_pid:
+                        print(f"🧹 Killing leftover focuspals.exe (PID {old_pid})")
+                        subprocess.run(["taskkill", "/F", "/PID", str(old_pid)],
+                                       capture_output=True, timeout=5)
+                except (ValueError, IndexError):
+                    pass
+    except Exception as e:
+        print(f"  ⚠️ Cleanup check failed: {e}")
+
+    # ── Also free port 8080 if an old Python agent is still hogging it ──
+    _free_port_sync(8080)
+
     print(f"🎮 Lancement de Tama 3D: {godot_exe}")
     state["godot_process"] = subprocess.Popen([godot_exe], cwd=os.path.dirname(godot_exe))
 
     threading.Thread(target=_apply_click_through_delayed, daemon=True).start()
+
+
+def _free_port_sync(port: int):
+    """Kill any process occupying the given port (Windows only)."""
+    my_pid = os.getpid()
+    pids_to_kill = set()
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"], capture_output=True, text=False, timeout=5
+        )
+        stdout = result.stdout.decode("utf-8", errors="replace")
+        for line in stdout.splitlines():
+            if f":{port}" not in line or "LISTENING" not in line:
+                continue
+            try:
+                pid = int(line.strip().split()[-1])
+                if pid != my_pid and pid > 0:
+                    pids_to_kill.add(pid)
+            except (ValueError, IndexError):
+                continue
+    except Exception as exc:
+        print(f"  ⚠️ netstat failed: {exc}")
+
+    for pid in pids_to_kill:
+        print(f"⚠️ Port {port} occupé par PID {pid} — kill automatique...")
+        try:
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                           capture_output=True, timeout=5)
+        except Exception:
+            pass
+
+    if pids_to_kill:
+        time.sleep(1.5)  # Wait for OS to release sockets
 
 
 def _apply_click_through_delayed():

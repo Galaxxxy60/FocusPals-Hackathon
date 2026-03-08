@@ -99,8 +99,8 @@ async def run_tama_live():
     state["main_loop"] = asyncio.get_running_loop()
     install_async_exception_handler(asyncio.get_running_loop())
 
-    # ── Auto-kill any old process hogging port 8080 ──
-    _free_port(8080)
+    # Port 8080 cleanup is done in launch_godot_overlay() BEFORE Godot starts,
+    # ensuring the new Godot connects to our WS server (not a stale one).
 
     pya = pyaudio.PyAudio()
 
