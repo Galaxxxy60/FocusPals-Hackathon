@@ -487,7 +487,8 @@ async def broadcast_ws_state():
                     "break_reminder": state["break_reminder_active"],
                     "is_on_break": state["is_on_break"],
                     "next_break_at": BREAK_CHECKPOINTS[state["current_break_index"]] if state["current_break_index"] < len(BREAK_CHECKPOINTS) else None,
-                    "window_ready": state["window_positioned"]
+                    "window_ready": state["window_positioned"],
+                    "gemini_connected": state["gemini_connected"],
                 }
                 websockets.broadcast(state["connected_ws_clients"], json.dumps(state_data))
             except Exception:
