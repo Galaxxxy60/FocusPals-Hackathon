@@ -781,6 +781,8 @@ func _on_api_key_submitted(key: String) -> void:
 
 func _on_language_changed(lang: String) -> void:
 	print("🌐 Language changed: " + lang)
+	if radial_menu and radial_menu.has_method("set_lang"):
+		radial_menu.set_lang(lang)
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_LANGUAGE", "language": lang}))
 
@@ -1091,7 +1093,7 @@ func _handle_message(raw: String) -> void:
 		var has_api_key = data.get("has_api_key", false)
 		var key_valid = data.get("key_valid", false)
 		var key_hint = data.get("key_hint", "")
-		var lang = data.get("language", "fr")
+		var lang = data.get("language", "en")
 		var tama_vol = data.get("tama_volume", 1.0)
 		var session_duration = int(data.get("session_duration", 50))
 		var api_usage = data.get("api_usage", {})
@@ -1102,6 +1104,8 @@ func _handle_message(raw: String) -> void:
 		if settings_panel:
 			if radial_menu and radial_menu.is_open:
 				radial_menu.close()
+			if radial_menu and radial_menu.has_method("set_lang"):
+				radial_menu.set_lang(lang)
 			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on, tama_scale, key_hint)
 		return
 	elif command == "API_KEY_UPDATED":
@@ -1238,9 +1242,8 @@ func _handle_message(raw: String) -> void:
 	elif command == "SCREEN_SCAN":
 		# Tama just analyzed the screen — visually show she's looking
 		var scan_s: float = data.get("suspicion", 0.0)
-		# Only glance when on wall and not already engaged
-		if _anim_tree_module and _anim_tree_module.is_on_wall() \
-				and not _is_speaking:
+		# Only glance when not already speaking
+		if _anim_tree_module and not _is_speaking:
 			# Three look styles based on suspicion:
 			# Eyes ALWAYS at full intensity — the primary visual cue
 			# Only HEAD movement scales with suspicion level
@@ -2152,8 +2155,8 @@ func _update_debug_viz(delta: float) -> void:
 	if _debug_sphere == null:
 		return
 
-	# Auto-show/hide debug viz based on gaze activity
-	var show_viz: bool = _gaze_blend > 0.01 or _debug_gaze_mouse
+	# Only show debug viz when F3 debug mode is active
+	var show_viz: bool = _debug_gaze_mouse
 	if _debug_sphere:
 		_debug_sphere.visible = show_viz
 	if _debug_line_node:

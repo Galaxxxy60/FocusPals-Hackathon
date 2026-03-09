@@ -139,10 +139,9 @@ Ton ton ESCALADE naturellement : curieuse → méfiante → déçue → agacée 
 [SYSTEM] t'envoie un niveau d'engagement :
 • MUZZLED = silence, classify_screen seulement
 • CURIOUS = UNE question courte
-• SUSPICIOUS = UN commentaire contextuel sur l'écran
+• ALERT S:X/10 C:X.X | context = UTILISE TON JUGEMENT. S = suspicion, C = confiance. Le contexte te dit ce que l'utilisateur fait MAINTENANT. Réagis en fonction : s'il bosse → encourage ou tais-toi. S'il glande → nudge. S'il est sur une app bannie → confronte. TON choix.
 • UNMUZZLED = réponds naturellement, 1-2 phrases
 • ENCOURAGEMENT = UN compliment tsundere
-• WARNING = "Retourne bosser."
 • ULTIMATUM = dernier avertissement avant fermeture
 • STRIKE = réplique finale + fire_strike() + close_distracting_tab
 """
@@ -202,10 +201,9 @@ Your tone ESCALATES naturally: curious → suspicious → disappointed → annoy
 [SYSTEM] sends you an engagement level:
 • MUZZLED = silence, classify_screen only
 • CURIOUS = ONE short question
-• SUSPICIOUS = ONE contextual comment about the screen
+• ALERT S:X/10 C:X.X | context = USE YOUR JUDGMENT. S = suspicion, C = confidence. Context tells you what user is doing NOW. React accordingly: if working → encourage or stay quiet. If drifting → nudge. If on banned app → confront. YOUR call.
 • UNMUZZLED = respond naturally, 1-2 sentences
 • ENCOURAGEMENT = ONE tsundere compliment
-• WARNING = "Get back to work."
 • ULTIMATUM = final warning before closing
 • STRIKE = final line + fire_strike() + close_distracting_tab
 """
@@ -596,12 +594,15 @@ async def run_gemini_loop(pya):
             update_display(TamaState.CALM, "Connecting to Google WebSocket...")
 
         # Tell Godot we're connecting (before the connection attempt)
-        _conn_ing_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connecting"})
-        for ws_client in list(state["connected_ws_clients"]):
-            try:
-                await ws_client.send(_conn_ing_msg)
-            except Exception:
-                pass
+        # Skip notification during stealth reconnects (consecutive failures = stealth)
+        _is_stealth = _consecutive_failures > 0
+        if not _is_stealth:
+            _conn_ing_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connecting"})
+            for ws_client in list(state["connected_ws_clients"]):
+                try:
+                    await ws_client.send(_conn_ing_msg)
+                except Exception:
+                    pass
 
         # Wait for API key if not yet configured
         while cfg.client is None:
@@ -626,6 +627,8 @@ async def run_gemini_loop(pya):
                 handle=resume_handle,
             ),
             proactivity=types.ProactivityConfig(proactive_audio=True),
+            # NOTE: affective_dialog causes occasional 1011 but we WANT the expressivity
+            # Strategy: stealth reconnection makes crashes invisible to the user
             enable_affective_dialog=True,
             speech_config=_voice_config,
             context_window_compression=types.ContextWindowCompressionConfig(
@@ -646,16 +649,15 @@ async def run_gemini_loop(pya):
                 handle=resume_handle,
             ),
             proactivity=types.ProactivityConfig(proactive_audio=True),
-            enable_affective_dialog=True,
+            enable_affective_dialog=True,  # Expressivity > stability (stealth reconnect handles crashes)
             speech_config=_voice_config,
             realtime_input_config=_vad_conversation,
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow(),
             ),
-            # NOTE: No tools, no thinking_config — native audio crashes with 1011
-            #       when function calling is combined with some features
         )
 
+        err_str = ""  # Initialized before try — used by stealth reconnect logic after finally
         try:
             active_config = config_conversation if state["current_mode"] == "conversation" else config_deep_work
             async with cfg.client.aio.live.connect(model=MODEL, config=active_config) as session:
@@ -667,20 +669,28 @@ async def run_gemini_loop(pya):
                 state["_api_connections"] += 1
                 state["_api_connect_time_start"] = time.time()
                 state["_api_last_heartbeat"] = time.time()  # Watchdog: init heartbeat
-                update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
-                # Tell Godot we're connected
-                _conn_ok_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connected"})
-                for ws_client in list(state["connected_ws_clients"]):
-                    try:
-                        await ws_client.send(_conn_ok_msg)
-                    except Exception:
-                        pass
+                if not _is_stealth:
+                    update_display(TamaState.CALM, "Connected! Dis-moi bonjour !")
+                # Tell Godot we're connected (skip during stealth)
+                if not _is_stealth:
+                    _conn_ok_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connected"})
+                    for ws_client in list(state["connected_ws_clients"]):
+                        try:
+                            await ws_client.send(_conn_ok_msg)
+                        except Exception:
+                            pass
 
                 audio_out_queue = asyncio.Queue()
                 audio_in_queue = asyncio.Queue(maxsize=5)  # Match official Google example
 
                 state["force_speech"] = False
                 state["_tama_is_speaking"] = False  # Track globally for echo cancellation
+                state["_api_processing_tool"] = False  # Guard: pause sends during tool processing
+
+                # ── Circuit Breaker: degrade to text-only after rapid crashes ──
+                _circuit_breaker_active = state.get("_circuit_breaker_active", False)
+                if _circuit_breaker_active:
+                    print("  ⚡ CIRCUIT BREAKER active — running in text-only mode (no images)")
 
                 # ── Conversation greeting: tell Tama to speak first ──
                 if state["current_mode"] == "conversation":
@@ -877,6 +887,10 @@ async def run_gemini_loop(pya):
                 async def send_audio():
                     while True:
                         blob = await audio_in_queue.get()
+                        # ── Stability fix: don't send audio while Gemini is processing tools ──
+                        # Concurrent audio + tool_response is the #1 trigger for 1011 crashes
+                        if state.get("_api_processing_tool", False):
+                            continue  # Drop this chunk silently — tool processing takes priority
                         try:
                             await session.send_realtime_input(audio=blob)
                             state["_api_audio_chunks_sent"] += 1
@@ -985,30 +999,53 @@ async def run_gemini_loop(pya):
                             await asyncio.sleep(5.0)
                             continue
 
-                        jpeg_bytes = await asyncio.to_thread(capture_all_screens)
-                        blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
+                        # ── Stability fix: skip image during tool processing or active speech ──
+                        # Sending images while Gemini processes tools or speaks is the #1 1011 trigger
+                        _skip_image = (
+                            state.get("_api_processing_tool", False) or
+                            state.get("_tama_is_speaking", False) or
+                            _circuit_breaker_active  # Circuit breaker: text-only mode after rapid crashes
+                        )
 
-                        # Fire Flash-Lite pre-classification in parallel (non-blocking)
                         await asyncio.to_thread(refresh_window_cache)
                         active_title = get_cached_active_title()
                         open_win_titles = [w.title for w in get_cached_windows()]
-                        lite_task = asyncio.create_task(
-                            pre_classify(jpeg_bytes, active_title, open_win_titles, state.get("current_task"))
-                        )
 
-                        try:
-                            await session.send_realtime_input(media=blob)
-                            state["_api_screen_pulses"] += 1
-                        except Exception:
-                            print("⚠️  Video stream interrompu (session fermée)")
-                            lite_task.cancel()
-                            break
+                        if not _skip_image:
+                            jpeg_bytes = await asyncio.to_thread(capture_all_screens)
+                            blob = types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
+
+                            # Fire Flash-Lite pre-classification in parallel (non-blocking)
+                            lite_task = asyncio.create_task(
+                                pre_classify(jpeg_bytes, active_title, open_win_titles, state.get("current_task"))
+                            )
+
+                            try:
+                                await session.send_realtime_input(media=blob)
+                                state["_api_screen_pulses"] += 1
+                            except Exception:
+                                print("⚠️  Video stream interrompu (session fermée)")
+                                lite_task.cancel()
+                                break
+                        else:
+                            # No image — still need lite pre-classify from cache if possible
+                            lite_task = None
+                            if not _circuit_breaker_active:
+                                # Capture for lite even if we don't send to Gemini
+                                try:
+                                    jpeg_bytes = await asyncio.to_thread(capture_all_screens)
+                                    lite_task = asyncio.create_task(
+                                        pre_classify(jpeg_bytes, active_title, open_win_titles, state.get("current_task"))
+                                    )
+                                except Exception:
+                                    pass
 
                         # Wait for Flash-Lite (max 2s — never block the scan loop)
-                        try:
-                            await asyncio.wait_for(lite_task, timeout=2.0)
-                        except (asyncio.TimeoutError, Exception):
-                            pass  # Graceful fallback: Live API handles it alone
+                        if lite_task is not None:
+                            try:
+                                await asyncio.wait_for(lite_task, timeout=2.0)
+                            except (asyncio.TimeoutError, Exception):
+                                pass  # Graceful fallback: Live API handles it alone
 
                         if active_title != state["last_active_window_title"]:
                             state["last_active_window_title"] = active_title
@@ -1102,20 +1139,37 @@ async def run_gemini_loop(pya):
                                 speak_directive = "CURIOUS"
 
                             # ── Escalation (highest priority first) ──
+                            # STRIKE/ULTIMATUM: forced directives (genuine emergency)
+                            # WARNING/SUSPICIOUS: contextual — Gemini decides
                             if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
                                 speak_directive = "STRIKE: close_distracting_tab NOW."
                             elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 8):
                                 speak_directive = "ULTIMATUM"
-                            elif state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 8):
-                                speak_directive = "WARNING"
-                            elif state["suspicion_above_3_start"] and (time.time() - state["suspicion_above_3_start"] > 3):
-                                speak_directive = "SUSPICIOUS"
+                            elif state["suspicion_above_3_start"]:
+                                # ── Organic mode: give Gemini context, let it decide ──
+                                # Instead of forcing "WARNING" or "SUSPICIOUS", we send
+                                # the actual situation so Gemini can respond naturally.
+                                C = state.get("_confidence", 1.0)
+                                current_cat = state["current_category"]
+                                current_ali = state["current_alignment"]
+                                s_val = int(state["current_suspicion_index"])
+                                # Build context string
+                                ctx_parts = [f"ALERT S:{s_val}/10 C:{C:.1f}"]
+                                ctx_parts.append(f"now:{current_cat}(A={current_ali})")
+                                # Recent distraction info
+                                if current_ali >= 0.8 and current_cat == "SANTE":
+                                    ctx_parts.append("user IS working — S elevated from recent distractions")
+                                elif current_ali <= 0.5 and current_cat == "BANNIE":
+                                    ctx_parts.append("user on banned app — confront")
+                                elif current_ali <= 0.5:
+                                    ctx_parts.append("user drifting — nudge gently")
+                                speak_directive = " | ".join(ctx_parts)
 
                         task_info = f"task:{state['current_task']}" if state["current_task"] else "task:NONE"
                         tama_state = state["current_tama_state"]
 
                         # Mood context — compressed shorthand
-                        mood_ctx = get_mood_context(state.get("language", "fr"))
+                        mood_ctx = get_mood_context(state.get("language", "en"))
 
                         # Flash-Lite pre-classification hint
                         lite_hint = get_pre_classify_hint()
@@ -1179,6 +1233,8 @@ async def run_gemini_loop(pya):
                                 # Compact repeat pulse — "still here" info
                                 system_text = f"[SYSTEM] win:{active_title} dur:{active_duration}s S:{si:.1f} {speak_directive}"
 
+                            # Text pulses are lightweight — always send them to keep connection alive
+                            # (unlike images/audio, text won't trigger 1011)
                             await session.send_realtime_input(text=system_text)
 
                         if state["current_suspicion_index"] <= 0:
@@ -1209,11 +1265,27 @@ async def run_gemini_loop(pya):
                                 server = response.server_content
 
                                 if server and server.interrupted:
-                                    print("  ⚡ Interrupted — user barged in")
+                                    if is_speaking:
+                                        print("  ⚡ Interrupted — user barged in")
+                                        state["_last_speech_ended"] = time.time()
+                                        # Reset mouth to neutral (prevent viseme stuck on last shape)
+                                        rest_msg = json.dumps({"command": "VISEME", "shape": "REST"})
+                                        for ws_client in list(state["connected_ws_clients"]):
+                                            try:
+                                                main_loop = state["main_loop"]
+                                                if main_loop and main_loop.is_running():
+                                                    asyncio.run_coroutine_threadsafe(ws_client.send(rest_msg), main_loop)
+                                            except Exception:
+                                                pass
+                                        # Return to idle_wall if calm and not chatting
+                                        si = state["current_suspicion_index"]
+                                        if si < 3 and state["current_mode"] != "conversation":
+                                            send_anim_to_godot("Idle_wall", False)
                                     while not audio_out_queue.empty():
                                         audio_out_queue.get_nowait()
                                     is_speaking = False
                                     state["_tama_is_speaking"] = False
+                                    state["_mood_anim_set"] = False
                                     continue
 
                                 # ── Transcription logs: PROOF Google heard us ──
@@ -1275,6 +1347,7 @@ async def run_gemini_loop(pya):
                                                 state["_api_audio_chunks_recv"] += 1
 
                                 if server and server.turn_complete:
+                                    _was_speaking = is_speaking  # Capture before resetting
                                     if is_speaking:
                                         state["_last_speech_ended"] = time.time()
                                         si = state["current_suspicion_index"]
@@ -1292,9 +1365,10 @@ async def run_gemini_loop(pya):
                                             except Exception:
                                                 pass
                                     is_speaking = False
-                                    state["_tama_is_speaking"] = False  # Fix 7
-                                    state["_mood_anim_set"] = False  # Reset for next speech turn
-                                    print("  ✅ Tama done speaking")
+                                    state["_tama_is_speaking"] = False
+                                    state["_mood_anim_set"] = False
+                                    if _was_speaking:
+                                        print("  ✅ Tama done speaking")
 
                                     # Send any deferred tool responses NOW (after turn is done)
                                     # Sending them mid-speech causes Gemini to re-generate the same audio
@@ -1309,6 +1383,7 @@ async def run_gemini_loop(pya):
                                         deferred_tool_responses = []
 
                                 if response.tool_call:
+                                    state["_api_processing_tool"] = True  # Pause audio/image sends
                                     try:
                                         function_responses_to_send = []
                                         for fc in response.tool_call.function_calls:
@@ -1327,27 +1402,44 @@ async def run_gemini_loop(pya):
 
                                                 delta = compute_delta_s(ali, cat)
 
+                                                # ── Break grace: don't punish during pause suggestion ──
+                                                # Tama just proposed a break — it's absurd to then
+                                                # raise suspicion if the user watches YouTube.
+                                                if state["break_reminder_active"] and delta > 0:
+                                                    delta = 0.0
+
                                                 # ── Confidence system: "l'inertie de la méfiance" ──
                                                 # C modulates BOTH gain and decay of S.
                                                 # Low trust → S rises faster AND decays slower.
+                                                # BUT: when alignment is good, decay is floored —
+                                                # if you're ACTUALLY working, S must drop meaningfully.
                                                 C = state.get("_confidence", 1.0)
 
                                                 if delta < 0:
-                                                    # Decay: ΔS = base × C
+                                                    # Decay: ΔS = base × effective_C
                                                     time_on_current = time.time() - state.get("active_window_start_time", time.time())
 
                                                     if time_on_current < 30 and state["current_suspicion_index"] > 1:
                                                         # Quick switch while suspicious → trust erodes
-                                                        C = max(0.1, C - 0.15)
+                                                        C = max(0.2, C - 0.10)
                                                     elif time_on_current >= 60:
-                                                        # Sustained productive work → trust slowly recovers
-                                                        C = min(1.0, C + 0.02)
+                                                        # Sustained productive work → trust recovers (slowly — C is medium-term)
+                                                        C = min(1.0, C + 0.03)
 
                                                     state["_confidence"] = C
-                                                    delta = delta * C
+
+                                                    # Floor: productive work (A >= 0.8) always decays S
+                                                    # at minimum 50% of base rate, regardless of confidence.
+                                                    # This prevents the absurd scenario where Blender = SANTE
+                                                    # but S barely moves because C is crushed.
+                                                    if ali >= 0.8:
+                                                        effective_c = max(C, 0.5)
+                                                    else:
+                                                        effective_c = C
+                                                    delta = delta * effective_c
                                                 elif delta > 0:
                                                     # Gain: ΔS = base × (1 + (1 - C))
-                                                    # C=1.0 → ×1.0 (normal), C=0.1 → ×1.9 (hyper-nervous)
+                                                    # C=1.0 → ×1.0 (normal), C=0.2 → ×1.8 (hyper-nervous)
                                                     delta = delta * (1 + (1 - C))
 
                                                 state["current_suspicion_index"] = max(0.0, min(10.0, state["current_suspicion_index"] + delta))
@@ -1503,6 +1595,9 @@ async def run_gemini_loop(pya):
 
                                     except Exception as e:
                                         print(f"⚠️ Erreur function call : {e}")
+                                    finally:
+                                        # ── Always release the tool processing guard ──
+                                        state["_api_processing_tool"] = False
 
                                 if server and server.interrupted:
                                     while not audio_out_queue.empty():
@@ -1645,25 +1740,12 @@ async def run_gemini_loop(pya):
                         pass
                 state["current_mode"] = "libre"  # ← Prevent infinite hang
 
-            # ── Save crash context ONLY if Tama was audibly speaking ──
-            # If she wasn't speaking, the user didn't notice anything — stay silent
+            # ── Stealth reconnection: NEVER mention crashes to the user ──
+            # With affective_dialog enabled, 1011 crashes are expected (~every 2-5min)
+            # The reconnection is so fast the user shouldn't notice
             if not is_clean_conversation_end:
-                last_audio = state.get("_last_audio_play_time", 0)
-                was_speaking = (time.time() - last_audio) < 5.0 if last_audio > 0 else False
-                if state["is_session_active"] and state["current_mode"] == "deep_work" and was_speaking:
-                    session_min = int((time.time() - state["session_start_time"]) / 60) if state.get("session_start_time") else 0
-                    state["_crash_context"] = {
-                        "task": state.get("current_task"),
-                        "window": state.get("last_active_window_title", "inconnue"),
-                        "suspicion": round(state.get("current_suspicion_index", 0), 1),
-                        "session_minutes": session_min,
-                        "crash_time": time.time(),
-                    }
-                    print(f"  💾 Crash while speaking — context saved")
-                else:
-                    # Silent crash — user didn't notice, don't mention it
-                    state.pop("_crash_context", None)
-                    print(f"  🔇 Silent crash — user didn't notice, no recovery message")
+                state.pop("_crash_context", None)  # Never save crash context → never mention it
+                print(f"  🔇 Stealth reconnect — user won't notice")
 
             if is_clean_conversation_end:
                 # Clean conversation end (silence timeout) — not a failure
@@ -1673,16 +1755,38 @@ async def run_gemini_loop(pya):
                 is_server_error = "1007" in err_str or "1008" in err_str or "1011" in err_str or "policy violation" in err_str.lower() or "internal error" in err_str.lower() or "invalid argument" in err_str.lower()
 
                 if is_server_error:
-                    # 1008 = stale resume handle, 1011 = internal server error
-                    # Both require clearing the resume handle to avoid stale-handle loops
-                    state["_session_resume_handle"] = None
+                    # 1008 = stale resume handle → must clear to avoid loops
+                    # 1011 = internal server error → handle is still valid, keep it for seamless resume
+                    is_stale_handle = "1008" in err_str
+                    if is_stale_handle:
+                        state["_session_resume_handle"] = None
+                        print("  🔑 Resume handle cleared (1008 stale)")
+                    else:
+                        print(f"  🔑 Resume handle preserved (1011 — handle still valid)")
+
+                    # ── Circuit Breaker: activate after 3 rapid crashes ──
+                    _crash_times = state.get("_crash_timestamps", [])
+                    _crash_times.append(time.time())
+                    # Keep only crashes from last 5 minutes
+                    _crash_times = [t for t in _crash_times if time.time() - t < 300]
+                    state["_crash_timestamps"] = _crash_times
+
+                    if len(_crash_times) >= 3 and not state.get("_circuit_breaker_active", False):
+                        state["_circuit_breaker_active"] = True
+                        print(f"  🔴 CIRCUIT BREAKER ACTIVATED — {len(_crash_times)} crashes in 5min")
+                        print(f"     → Switching to text-only mode (no images) to stabilize")
+                    elif len(_crash_times) < 2 and state.get("_circuit_breaker_active", False):
+                        # Crashes have subsided — deactivate circuit breaker
+                        state["_circuit_breaker_active"] = False
+                        print(f"  🟢 Circuit breaker deactivated — connection stabilized")
+
                     if _consecutive_failures <= 2:
                         print(f"  ⚡ Connexion refusée — retry rapide #{_consecutive_failures}...")
                     else:
                         print(f"  ⚠️ Erreur serveur persistante ({_consecutive_failures}x) — backoff exponentiel...")
                 else:
                     import traceback
-                    print(f"\n❌ [ERROR] {e}")
+                    print(f"\n❌ [ERROR] {err_str}")
                     traceback.print_exc()
         finally:
             state["gemini_connected"] = False  # ← Session ended (clean or crash)
@@ -1695,17 +1799,26 @@ async def run_gemini_loop(pya):
             state["current_mode"] = "libre"
 
         if state["is_session_active"] or state["current_mode"] == "conversation":
-            # Exponential backoff: 2s, 4s, 8s, 15s cap
-            retry_delay = min(15.0, 2.0 * (2 ** min(_consecutive_failures - 1, 3)))
-            print(f"🔄 Reconnexion dans {retry_delay:.0f}s... (tentative #{_consecutive_failures})")
-            update_display(TamaState.CALM, f"Reconnexion... ({_consecutive_failures})")
-            # Tell Godot we're reconnecting so it can show loading indicator
-            _conn_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "reconnecting", "attempt": _consecutive_failures, "delay": retry_delay})
-            for ws_client in list(state["connected_ws_clients"]):
-                try:
-                    await ws_client.send(_conn_msg)
-                except Exception:
-                    pass
+            # ── Stealth reconnection: fast and invisible ──
+            # 1011 with affective_dialog is expected — reconnect ASAP with no visual change
+            is_1011 = "1011" in err_str or "internal error" in err_str.lower()
+            if is_1011 and _consecutive_failures <= 3:
+                # Ultra-fast stealth reconnect — no UI change, no Godot notification
+                retry_delay = 0.3
+                print(f"🔄 Stealth reconnect in {retry_delay}s (1011 #{_consecutive_failures})")
+                # DON'T update display — keep Tama in her current pose
+                # DON'T notify Godot — animation continues seamlessly
+            else:
+                # Non-1011 or persistent failure — normal visible reconnection
+                retry_delay = min(15.0, 2.0 * (2 ** min(_consecutive_failures - 1, 3)))
+                print(f"🔄 Reconnexion dans {retry_delay:.0f}s... (tentative #{_consecutive_failures})")
+                update_display(TamaState.CALM, f"Reconnexion... ({_consecutive_failures})")
+                _conn_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "reconnecting", "attempt": _consecutive_failures, "delay": retry_delay})
+                for ws_client in list(state["connected_ws_clients"]):
+                    try:
+                        await ws_client.send(_conn_msg)
+                    except Exception:
+                        pass
             await asyncio.sleep(retry_delay)
         else:
             _consecutive_failures = 0

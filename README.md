@@ -56,4 +56,4 @@ godot/
 
 - **[HIGH PRIORITY] Session Time**: Add a setting at the very top of the Settings panel to adjust the duration of a Deep Work session (e.g., 25min, 50min, custom).
 - ~~**Settings UI**: When an API key is already valid and the user clicks to edit it, instead of showing an empty field, display an obfuscated version of the key (e.g., first few and last few characters visible, rest hidden).~~ ✅ Done
-- **Settings i18n**: The Settings panel labels ("Clé valide", "Permissions", "Durée du Deep Work", etc.) are hardcoded in French. They should switch to English when the language is set to EN.
+- ~~**Settings i18n**: The Settings panel labels ("Clé valide", "Permissions", "Durée du Deep Work", etc.) are hardcoded in French. They should switch to English when the language is set to EN.~~ ✅ Done — see `godot/locale.gd`

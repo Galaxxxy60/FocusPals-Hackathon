@@ -199,7 +199,7 @@ Generate a SHORT, structured summary in {language_name} with:
 Keep it under 200 words. Be direct, like a coach reviewing performance."""
 
 
-async def generate_session_summary(language: str = "fr") -> str | None:
+async def generate_session_summary(language: str = "en") -> str | None:
     """
     Generate a session summary using Gemini 3.1 Flash-Lite.
     Called at session end. Returns markdown text or None on failure.

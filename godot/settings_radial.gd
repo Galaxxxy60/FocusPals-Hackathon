@@ -6,11 +6,13 @@ extends CanvasLayer
 signal action_triggered(action_id: String)
 signal request_hide()
 
+var _L = preload("res://locale.gd").new()
+
 var ITEMS := [
-	{"icon": "⚙️", "label": "Settings",      "id": "settings", "color": Color(0.4, 0.8, 1.0),  "scale": 0.85},
-	{"icon": "💬", "label": "Parler",         "id": "talk",     "color": Color(0.6, 0.4, 1.0),  "scale": 1.0},
-	{"icon": "⚡", "label": "Work Session",   "id": "session",  "color": Color(0.4, 1.0, 0.5),  "scale": 1.35},
-	{"icon": "⛔", "label": "Quitter",        "id": "quit",     "color": Color(1.0, 0.3, 0.3),  "scale": 0.85},
+	{"icon": "⚙️", "label": "Settings",      "id": "settings", "color": Color(0.4, 0.8, 1.0),  "scale": 0.85, "loc_key": "radial_settings"},
+	{"icon": "💬", "label": "Talk",           "id": "talk",     "color": Color(0.6, 0.4, 1.0),  "scale": 1.0,  "loc_key": "radial_talk"},
+	{"icon": "⚡", "label": "Work Session",   "id": "session",  "color": Color(0.4, 1.0, 0.5),  "scale": 1.35, "loc_key": "radial_session"},
+	{"icon": "⛔", "label": "Quit",           "id": "quit",     "color": Color(1.0, 0.3, 0.3),  "scale": 0.85, "loc_key": "radial_quit"},
 ]
 
 const ARC_RADIUS := 120.0
@@ -55,6 +57,12 @@ func _item_pos(index: int) -> Vector2:
 	var r := ARC_RADIUS * _progress
 	return center + Vector2(-r * cos(angle), r * sin(angle))
 
+func set_lang(lang_code: String) -> void:
+	_L.set_lang(lang_code)
+	for item in ITEMS:
+		if item.has("loc_key"):
+			item["label"] = _L.t(item["loc_key"])
+
 func open() -> void:
 	if is_open:
 		return
@@ -62,6 +70,10 @@ func open() -> void:
 	visible = true
 	_close_timer = 0.0
 	_hovered = -1
+	# Update labels to current language
+	for item in ITEMS:
+		if item.has("loc_key"):
+			item["label"] = _L.t(item["loc_key"])
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
 	var tw := create_tween()
 	tw.tween_property(self, "_progress", 1.0, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)

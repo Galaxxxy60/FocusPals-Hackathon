@@ -73,7 +73,7 @@ def compute_mood_bias() -> float:
 
 # ─── Mood Context for Gemini Prompt ─────────────────────────
 
-def get_mood_context(lang: str = "fr") -> str:
+def get_mood_context(lang: str = "en") -> str:
     """
     Returns a natural language description of Tama's current mood.
     Injected into the [SYSTEM] prompt at each scan.

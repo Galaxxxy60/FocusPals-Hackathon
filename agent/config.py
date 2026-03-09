@@ -107,7 +107,7 @@ state = {
     "main_loop": None,
     "tray_icon": None,
     "selected_mic_index": None,
-    "language": "fr",  # "fr" or "en" — configurable via Settings panel
+    "language": "en",  # "en", "fr", "ja", "zh" — configurable via Settings panel
     "tama_volume": 1.0,  # 0.0 (mute) to 1.0 (full) — Tama's voice volume
     "tama_scale": 100,   # 50-150% — Tama window size percentage
     "screen_share_allowed": True,   # User can disable screen capture from Settings
@@ -149,6 +149,10 @@ state = {
     "_pending_strike": None,          # Dict with hwnd/mode/title/reason — set by prepare_close_tab, consumed by fire_hand_animation
     "_strike_requested": False,       # True when fire_strike() called but close target not ready yet
     "_strike_in_progress": False,     # True from first fire_strike until post-close reset — blocks re-fires
+    # API stability guards
+    "_api_processing_tool": False,    # True when processing tool calls — pauses audio/image sends to prevent 1011
+    "_circuit_breaker_active": False, # True after 3+ crashes in 5min — degrades to text-only (no images)
+    "_crash_timestamps": [],          # Rolling list of recent crash times for circuit breaker logic
 }
 
 

@@ -40,12 +40,17 @@ var _loopback_playback: AudioStreamGeneratorPlayback
 var _is_testing_mic := false
 var _test_btn_ref: Button = null  # currently active test button
 
+# Localization
+var _L = preload("res://locale.gd").new()
+
 const PANEL_WIDTH := 360.0
 const MARGIN_RIGHT := 10.0
 const MAX_HEIGHT_RATIO := 0.75
 const LANGUAGES := [
 	{"code": "fr", "label": "Français"},
 	{"code": "en", "label": "English"},
+	{"code": "ja", "label": "日本語"},
+	{"code": "zh", "label": "中文"},
 ]
 
 # ── UI node references ──
@@ -209,7 +214,7 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "fr", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true, tama_scale: int = 100, key_hint: String = "") -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "en", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true, tama_scale: int = 100, key_hint: String = "") -> void:
 	_mics = mics
 	_selected_index = selected
 	_api_key_has_key = has_api_key
@@ -266,6 +271,7 @@ func _clear_ui() -> void:
 		_panel_container = null
 
 func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: int = 100) -> void:
+	_L.set_lang(lang)
 	var vp := get_viewport().get_visible_rect().size
 	var max_h := vp.y * MAX_HEIGHT_RATIO
 
@@ -291,7 +297,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	root_vbox.add_child(title_bar)
 
 	var title := Label.new()
-	title.text = "⚙️  Réglages"
+	title.text = _L.t("settings_title")
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -335,12 +341,12 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_scroll.add_child(_vbox)
 
 	# ══════ SECTION: Session ══════
-	var sess_section := _make_collapsible_section("⏱️  Session", false)
+	var sess_section := _make_collapsible_section(_L.t("section_session"), false)
 	_vbox.add_child(sess_section["root"])
 	var sess_content: VBoxContainer = sess_section["content"]
 
 	var sess_lbl := Label.new()
-	sess_lbl.text = "Durée du Deep Work"
+	sess_lbl.text = _L.t("deep_work_duration")
 	sess_lbl.add_theme_font_size_override("font_size", 10)
 	sess_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	sess_content.add_child(sess_lbl)
@@ -371,13 +377,13 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	sess_row.add_child(_session_label)
 
 	# ══════ SECTION: Audio (Mic + Volume) ══════
-	var audio_section := _make_collapsible_section("🎤  Audio", false)
+	var audio_section := _make_collapsible_section(_L.t("section_audio"), false)
 	_vbox.add_child(audio_section["root"])
 	var audio_content: VBoxContainer = audio_section["content"]
 
 	# ── Sub: Microphone ──
 	var mic_lbl := Label.new()
-	mic_lbl.text = "Microphone"
+	mic_lbl.text = _L.t("microphone")
 	mic_lbl.add_theme_font_size_override("font_size", 10)
 	mic_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	audio_content.add_child(mic_lbl)
@@ -398,7 +404,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	audio_content.add_child(_make_sub_sep())
 
 	var vol_lbl := Label.new()
-	vol_lbl.text = "Volume Tama"
+	vol_lbl.text = _L.t("volume_tama")
 	vol_lbl.add_theme_font_size_override("font_size", 10)
 	vol_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	audio_content.add_child(vol_lbl)
@@ -429,13 +435,13 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	vol_row.add_child(_volume_label)
 
 	# ══════ SECTION: API (Key + Usage) ══════
-	var api_section := _make_collapsible_section("🔑  API", false)
+	var api_section := _make_collapsible_section(_L.t("section_api"), false)
 	_vbox.add_child(api_section["root"])
 	var api_content: VBoxContainer = api_section["content"]
 
 	# ── Sub: API Key ──
 	var key_lbl := Label.new()
-	key_lbl.text = "Clé API Gemini"
+	key_lbl.text = _L.t("api_key_label")
 	key_lbl.add_theme_font_size_override("font_size", 10)
 	key_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	api_content.add_child(key_lbl)
@@ -446,7 +452,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 
 	_api_key_input = LineEdit.new()
 	_api_key_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_api_key_input.placeholder_text = "Collez votre clé API..."
+	_api_key_input.placeholder_text = _L.t("api_key_placeholder")
 	_api_key_input.add_theme_stylebox_override("normal", _make_input_style())
 	_api_key_input.add_theme_stylebox_override("focus", _make_input_focus_style())
 	_api_key_input.add_theme_font_size_override("font_size", 11)
@@ -489,7 +495,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	api_content.add_child(_make_sub_sep())
 
 	var usage_lbl := Label.new()
-	usage_lbl.text = "Utilisation"
+	usage_lbl.text = _L.t("api_usage_label")
 	usage_lbl.add_theme_font_size_override("font_size", 10)
 	usage_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	api_content.add_child(usage_lbl)
@@ -505,20 +511,20 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	api_content.add_child(_usage_label)
 
 	var note := Label.new()
-	note.text = "Depuis le lancement"
+	note.text = _L.t("api_since_launch")
 	note.add_theme_font_size_override("font_size", 9)
 	note.add_theme_color_override("font_color", Color(0.4, 0.45, 0.55, 0.6))
 	api_content.add_child(note)
 
 	# ══════ SECTION: General (Language + Tama Size) ══════
-	var gen_section := _make_collapsible_section("🌐  Général", false)
+	var gen_section := _make_collapsible_section(_L.t("section_general"), false)
 	_vbox.add_child(gen_section["root"])
 	_vbox.move_child(gen_section["root"], 0)  # Move to TOP
 	var gen_content: VBoxContainer = gen_section["content"]
 
 	# ── Sub: Language ──
 	var lang_lbl := Label.new()
-	lang_lbl.text = "Langue / Language"
+	lang_lbl.text = _L.t("language_label")
 	lang_lbl.add_theme_font_size_override("font_size", 10)
 	lang_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	gen_content.add_child(lang_lbl)
@@ -542,7 +548,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	gen_content.add_child(_make_sub_sep())
 
 	var size_lbl := Label.new()
-	size_lbl.text = "Taille de Tama"
+	size_lbl.text = _L.t("tama_size")
 	size_lbl.add_theme_font_size_override("font_size", 10)
 	size_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
 	gen_content.add_child(size_lbl)
@@ -596,7 +602,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	size_row.add_child(_size_label)
 
 	# ══════ SECTION: Permissions (Screen Share + Mic) ══════
-	var perm_section := _make_collapsible_section("🔒  Permissions", false)
+	var perm_section := _make_collapsible_section(_L.t("section_permissions"), false)
 	_vbox.add_child(perm_section["root"])
 	var perm_content: VBoxContainer = perm_section["content"]
 
@@ -611,13 +617,13 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	screen_row.add_child(screen_lbl_box)
 
 	var screen_title := Label.new()
-	screen_title.text = "🖥️  Partage d'écran"
+	screen_title.text = _L.t("screen_share_title")
 	screen_title.add_theme_font_size_override("font_size", 11)
 	screen_title.add_theme_color_override("font_color", Color(0.8, 0.85, 0.95))
 	screen_lbl_box.add_child(screen_title)
 
 	var screen_desc := Label.new()
-	screen_desc.text = "Tama voit votre écran"
+	screen_desc.text = _L.t("screen_share_desc")
 	screen_desc.add_theme_font_size_override("font_size", 9)
 	screen_desc.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
 	screen_lbl_box.add_child(screen_desc)
@@ -642,13 +648,13 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	mic_row.add_child(mic_lbl_box)
 
 	var mic_title := Label.new()
-	mic_title.text = "🎤  Microphone"
+	mic_title.text = _L.t("mic_permission_title")
 	mic_title.add_theme_font_size_override("font_size", 11)
 	mic_title.add_theme_color_override("font_color", Color(0.8, 0.85, 0.95))
 	mic_lbl_box.add_child(mic_title)
 
 	var mic_desc := Label.new()
-	mic_desc.text = "Tama vous entend"
+	mic_desc.text = _L.t("mic_permission_desc")
 	mic_desc.add_theme_font_size_override("font_size", 9)
 	mic_desc.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
 	mic_lbl_box.add_child(mic_desc)
@@ -750,7 +756,7 @@ func _add_mic_button(index: int) -> void:
 	_mic_container.add_child(row)
 
 	var btn := Button.new()
-	btn.text = ("  ✓  " if is_selected else "  ○  ") + mic_name + ("   ACTIF" if is_selected else "")
+	btn.text = ("  ✓  " if is_selected else "  ○  ") + mic_name + ("   " + _L.t("mic_active") if is_selected else "")
 	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.custom_minimum_size.y = 32
@@ -768,7 +774,7 @@ func _add_mic_button(index: int) -> void:
 	# Test button
 	var test_btn := Button.new()
 	test_btn.text = "🔊"
-	test_btn.tooltip_text = "Tester ce micro"
+	test_btn.tooltip_text = _L.t("test_mic_tooltip")
 	test_btn.custom_minimum_size = Vector2(36, 32)
 	var test_style := _make_btn_style()
 	test_style.bg_color = Color(0.08, 0.12, 0.22, 0.7)
@@ -847,7 +853,15 @@ func _on_api_key_btn_pressed() -> void:
 
 func _on_language_selected(idx: int) -> void:
 	if idx >= 0 and idx < LANGUAGES.size():
-		language_changed.emit(LANGUAGES[idx]["code"])
+		var new_lang: String = str(LANGUAGES[idx]["code"])
+		language_changed.emit(new_lang)
+		# Live rebuild: re-create the entire UI with the new language
+		if is_open and _panel_container:
+			var vol := _volume_slider.value if _volume_slider else 1.0
+			var sess := int(_session_slider.value) if _session_slider else 50
+			var scale := int(_size_slider.value) if _size_slider else 100
+			_clear_ui()
+			_build_ui(new_lang, vol, sess, scale)
 
 func _on_screen_share_toggled(enabled: bool) -> void:
 	_screen_share_allowed = enabled
@@ -938,16 +952,16 @@ func _update_api_status() -> void:
 	if _api_status_label == null:
 		return
 	if _api_key_checking:
-		_api_status_label.text = "⏳ Vérification en cours..."
+		_api_status_label.text = _L.t("api_status_checking")
 		_api_status_label.add_theme_color_override("font_color", Color(0.6, 0.7, 0.9, 0.8))
 	elif _api_key_valid == 1:
-		_api_status_label.text = "✅ Clé valide"
+		_api_status_label.text = _L.t("api_status_valid")
 		_api_status_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4, 0.9))
 	elif _api_key_valid == 0:
-		_api_status_label.text = "❌ Clé invalide"
+		_api_status_label.text = _L.t("api_status_invalid")
 		_api_status_label.add_theme_color_override("font_color", Color(0.95, 0.3, 0.25, 0.9))
 	else:
-		_api_status_label.text = "⚠️ Clé requise pour démarrer"
+		_api_status_label.text = _L.t("api_status_required")
 		_api_status_label.add_theme_color_override("font_color", Color(0.9, 0.5, 0.3, 0.8))
 
 # ─── API Usage Text ───────────────────────────────────────
@@ -968,9 +982,9 @@ func _update_usage_text() -> void:
 
 	var time_str := _format_duration(connect_secs)
 	_usage_label.text = ""
-	_usage_label.append_text("[color=#8899bb]🔌 Connexions[/color]  [color=#ccddf4]" + str(connections) + "[/color]")
-	_usage_label.append_text("      [color=#8899bb]⏱ Temps[/color]  [color=#ccddf4]" + time_str + "[/color]\n")
-	_usage_label.append_text("[color=#8899bb]📸 Scans[/color]  [color=#ccddf4]" + _format_number(screen_pulses) + "[/color]")
+	_usage_label.append_text("[color=#8899bb]🔌 " + _L.t("usage_connections") + "[/color]  [color=#ccddf4]" + str(connections) + "[/color]")
+	_usage_label.append_text("      [color=#8899bb]⏱ " + _L.t("usage_time") + "[/color]  [color=#ccddf4]" + time_str + "[/color]\n")
+	_usage_label.append_text("[color=#8899bb]📸 " + _L.t("usage_scans") + "[/color]  [color=#ccddf4]" + _format_number(screen_pulses) + "[/color]")
 	_usage_label.append_text("      [color=#8899bb]⚙ Fn calls[/color]  [color=#ccddf4]" + _format_number(function_calls) + "[/color]\n")
 	_usage_label.append_text("[color=#8899bb]🎤 Audio ↑[/color]  [color=#ccddf4]" + _format_number(audio_sent) + "[/color]")
 	_usage_label.append_text("      [color=#8899bb]🔊 Audio ↓[/color]  [color=#ccddf4]" + _format_number(audio_recv) + "[/color]\n")

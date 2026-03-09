@@ -343,8 +343,8 @@ async def ws_handler(websocket):
                     if mic_idx >= 0:
                         select_mic(mic_idx)
                 elif cmd == "SET_LANGUAGE":
-                    lang = data.get("language", "fr")
-                    if lang in ("fr", "en"):
+                    lang = data.get("language", "en")
+                    if lang in ("fr", "en", "ja", "zh"):
                         state["language"] = lang
                         print(f"🌐 Langue changée : {lang.upper()}")
                 elif cmd == "SET_TAMA_VOLUME":
@@ -495,7 +495,7 @@ async def broadcast_ws_state():
 async def _generate_end_summary():
     """Generate a session summary via Flash-Lite when a session ends."""
     try:
-        lang = state.get("language", "fr")
+        lang = state.get("language", "en")
         summary = await generate_session_summary(lang)
         if summary:
             state["_session_summary"] = summary
