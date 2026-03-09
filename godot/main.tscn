@@ -2,6 +2,41 @@
 
 [ext_resource type="Script" uid="uid://dk11vbtj4hllf" path="res://main.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dw2nxp5ti8x50" path="res://Tama._ver2.glb" id="2_h2yge"]
+[ext_resource type="Texture2D" uid="uid://cj0s3b8oeq88" path="res://Tama_Texture512.png" id="3_h2yge"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1bvp3"]
+shading_mode = 0
+albedo_texture = ExtResource("3_h2yge")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_lquwl"]
+shading_mode = 0
+albedo_texture = ExtResource("3_h2yge")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7mycd"]
+shading_mode = 0
+albedo_texture = ExtResource("3_h2yge")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_272bh"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
+shading_mode = 0
+albedo_texture = ExtResource("3_h2yge")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_5vw27"]
+transparency = 2
+alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
+shading_mode = 0
+albedo_texture = ExtResource("3_h2yge")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kek77"]
+shading_mode = 0
+albedo_texture = ExtResource("3_h2yge")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4c57u"]
+shading_mode = 0
+albedo_color = Color(0.12720278, 0.094880484, 0.13016507, 1)
 
 [node name="Node3D" type="Node3D" unique_id=436502441]
 script = ExtResource("1_script")
@@ -9,7 +44,7 @@ script = ExtResource("1_script")
 [node name="Tama" parent="." unique_id=1360962571 instance=ExtResource("2_h2yge")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4677993, 1.1920929e-07, -0.109035015)
 
-[node name="Skeleton3D" parent="Tama/Armature" parent_id_path=PackedInt32Array(1360962571, 1463778169) index="0" unique_id=1502824807]
+[node name="Skeleton3D" parent="Tama/Armature" parent_id_path=PackedInt32Array(1360962571, 1340713865) index="0" unique_id=723650353]
 bones/0/position = Vector3(-0.49244112, 0.9312169, 0.012451796)
 bones/0/rotation = Quaternion(0.0011233228, -0.7071065, -0.0011233069, 0.7071054)
 bones/1/rotation = Quaternion(1.6790671e-09, 4.173115e-07, 0.0015886577, 0.99999875)
@@ -56,6 +91,16 @@ bones/41/position = Vector3(-0.25815862, 0.027787397, 0.031388406)
 bones/42/position = Vector3(0.15045404, 0.4904002, 0.039363593)
 bones/43/position = Vector3(-0.57824206, 0.0431419, 0.022076495)
 bones/44/position = Vector3(0.004816562, 0.3312649, 0.021962315)
+
+[node name="Geo_Body_004" parent="Tama/Armature/Skeleton3D" index="0" unique_id=228578961]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0016786456, -0.13961363, 0.018167794)
+surface_material_override/0 = SubResource("StandardMaterial3D_1bvp3")
+surface_material_override/1 = SubResource("StandardMaterial3D_lquwl")
+surface_material_override/2 = SubResource("StandardMaterial3D_7mycd")
+surface_material_override/3 = SubResource("StandardMaterial3D_272bh")
+surface_material_override/4 = SubResource("StandardMaterial3D_5vw27")
+surface_material_override/5 = SubResource("StandardMaterial3D_kek77")
+surface_material_override/6 = SubResource("StandardMaterial3D_4c57u")
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1997184296]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.32610798, 1.0462117, 2.1872618)

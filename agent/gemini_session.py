@@ -1390,36 +1390,23 @@ async def run_gemini_loop(pya):
                                                         print(f"  ⏱️ Response latency: {latency:.1f}s")
                                                     state["_user_speech_turn_start"] = None  # Reset for next turn
 
-                                                speech_allowed = state["force_speech"] or state["break_reminder_active"]
-                                                if state["current_mode"] == "conversation":
-                                                    speech_allowed = True
-                                                elif state["session_start_time"] and (time.time() - state["session_start_time"] < 30):
-                                                    speech_allowed = True
-                                                # Allow speech at each escalation stage
-                                                if not speech_allowed and state["suspicion_above_3_start"] and (time.time() - state["suspicion_above_3_start"] > 5):
-                                                    speech_allowed = True
-                                                if not speech_allowed and state["suspicion_above_6_start"] and (time.time() - state["suspicion_above_6_start"] > 20):
-                                                    speech_allowed = True
-                                                if not speech_allowed and state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
-                                                    speech_allowed = True
-                                                if not speech_allowed and (time.time() - state["user_spoke_at"]) < USER_SPEECH_TIMEOUT:
-                                                    speech_allowed = True
-                                                if speech_allowed:
-                                                    is_speaking = True
-                                                    state["_tama_is_speaking"] = True  # Fix 7
-                                                    print("  🗣️ Tama starts speaking")
-                                                    # Apply body animation now that speech is confirmed.
-                                                    # Race condition fix: report_mood often arrives BEFORE the first
-                                                    # audio chunk (is_speaking was still False when mood was received).
-                                                    # So we check: if mood was already stored, apply it now.
-                                                    if state.get("_mood_anim_set"):
-                                                        # report_mood arrived before audio — apply stored mood
-                                                        _m = state.get("_current_mood", "calm")
-                                                        _i = state.get("_current_mood_intensity", 0.5)
-                                                        send_mood_to_godot(_m, _i)
-                                                    else:
-                                                        # No mood yet — use wall_talk as safe fallback
-                                                        send_anim_to_godot("Idle_wall_Talk", False)
+                                                # Trust Gemini: if it generated audio, play it.
+                                                # Speech gating is handled at the prompt level (MUZZLED/UNMUZZLED).
+                                                is_speaking = True
+                                                state["_tama_is_speaking"] = True
+                                                print("  🗣️ Tama starts speaking")
+                                                # Apply body animation now that speech is confirmed.
+                                                # Race condition fix: report_mood often arrives BEFORE the first
+                                                # audio chunk (is_speaking was still False when mood was received).
+                                                # So we check: if mood was already stored, apply it now.
+                                                if state.get("_mood_anim_set"):
+                                                    # report_mood arrived before audio — apply stored mood
+                                                    _m = state.get("_current_mood", "calm")
+                                                    _i = state.get("_current_mood_intensity", 0.5)
+                                                    send_mood_to_godot(_m, _i)
+                                                else:
+                                                    # No mood yet — use wall_talk as safe fallback
+                                                    send_anim_to_godot("Idle_wall_Talk", False)
 
                                             if is_speaking:
                                                 audio_out_queue.put_nowait(part.inline_data.data)

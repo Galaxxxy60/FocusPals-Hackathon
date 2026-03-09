@@ -229,6 +229,9 @@ var _glitch_intensity: float = 0.0       # Current intensity (smoothed)
 var _glitch_target: float = 0.0          # Target intensity (0 or 1)
 const GLITCH_FADE_IN_SPEED: float = 2.0  # How fast glitch appears
 const GLITCH_FADE_OUT_SPEED: float = 4.0 # How fast glitch disappears
+var _glitch_quitting: bool = false        # True during quit glitch sequence
+const GLITCH_QUIT_MAX: float = 8.0        # Max intensity before closing
+const GLITCH_QUIT_RAMP: float = 4.0       # Ramp speed (accelerates)
 
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
@@ -871,6 +874,8 @@ func _hide_quit_confirmation() -> void:
 
 func _do_quit() -> void:
 	_hide_quit_confirmation()
+	# Start dramatic glitch sequence before actually quitting
+	_start_quit_glitch()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "quit"}))
 
@@ -1162,8 +1167,8 @@ func _handle_message(raw: String) -> void:
 	# ── Commandes depuis Python ──
 	var command = data.get("command", "")
 	if command == "QUIT":
-		print("👋 Signal QUIT reçu, fermeture propre.")
-		get_tree().quit()
+		print("👋 Signal QUIT reçu, glitch de fermeture...")
+		_start_quit_glitch()
 		return
 	elif command == "START_SESSION":
 		if not session_active:
@@ -1944,26 +1949,48 @@ func _setup_glitch_effect() -> void:
 	print("📺 Glitch effect ready (hidden)")
 
 func _set_glitch_active(active: bool) -> void:
+	if _glitch_quitting:
+		return  # Don't interrupt quit sequence
 	_glitch_target = 1.0 if active else 0.0
 	if active and _glitch_quad:
-		_glitch_quad.visible = true  # Make visible immediately when activating
+		_glitch_quad.visible = true
 		print("📺 Glitch ON — API disconnected")
 	elif not active:
 		print("📺 Glitch fading out — API reconnected")
 
+func _start_quit_glitch() -> void:
+	"""Dramatic glitch ramp before closing — Tama dissolves."""
+	if _glitch_quitting:
+		return  # Already quitting
+	_glitch_quitting = true
+	_glitch_target = GLITCH_QUIT_MAX
+	if _glitch_quad:
+		_glitch_quad.visible = true
+	print("📺 QUIT GLITCH — Tama is dissolving...")
+
 func _update_glitch(delta: float) -> void:
 	if _glitch_material == null:
 		return
-	# Smooth interpolation toward target
-	if _glitch_intensity < _glitch_target:
-		_glitch_intensity = minf(_glitch_intensity + GLITCH_FADE_IN_SPEED * delta, _glitch_target)
-	elif _glitch_intensity > _glitch_target:
-		_glitch_intensity = maxf(_glitch_intensity - GLITCH_FADE_OUT_SPEED * delta, _glitch_target)
-	# Update shader
-	_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
-	# Hide quad entirely when fully faded out (saves GPU)
-	if _glitch_intensity < 0.001 and _glitch_quad:
-		_glitch_quad.visible = false
+
+	if _glitch_quitting:
+		# Accelerating ramp: gets faster as intensity rises
+		var ramp_speed := GLITCH_QUIT_RAMP * (1.0 + _glitch_intensity * 0.5)
+		_glitch_intensity = minf(_glitch_intensity + ramp_speed * delta, GLITCH_QUIT_MAX)
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		# When max reached — goodbye
+		if _glitch_intensity >= GLITCH_QUIT_MAX - 0.01:
+			print("👋 Glitch max — fermeture.")
+			get_tree().quit()
+	else:
+		# Normal glitch fade in/out
+		if _glitch_intensity < _glitch_target:
+			_glitch_intensity = minf(_glitch_intensity + GLITCH_FADE_IN_SPEED * delta, _glitch_target)
+		elif _glitch_intensity > _glitch_target:
+			_glitch_intensity = maxf(_glitch_intensity - GLITCH_FADE_OUT_SPEED * delta, _glitch_target)
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		# Hide quad entirely when fully faded out (saves GPU)
+		if _glitch_intensity < 0.001 and _glitch_quad:
+			_glitch_quad.visible = false
 
 # ─── User Speaking Acknowledgment ───────────────────
 func _setup_ack_audio() -> void:

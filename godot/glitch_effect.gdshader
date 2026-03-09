@@ -7,8 +7,8 @@
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_test_disabled, depth_draw_never, cull_disabled;
 
-// Master intensity: 0.0 = no glitch, 1.0 = full glitch
-uniform float intensity : hint_range(0.0, 1.0) = 0.0;
+// Master intensity: 0.0 = off, 1.0 = normal glitch, >1.0 = dramatic (quit effect)
+uniform float intensity : hint_range(0.0, 10.0) = 0.0;
 // Vibration strength
 uniform float shake_power = 0.03;
 // Vibration rate (probability of glitch frame)
@@ -31,21 +31,35 @@ void fragment() {
 	vec4 pixel_color;
 
 	if (intensity >= 0.001) {
-		float scaled_rate = shake_rate * intensity;
+		// At high intensity (>1), everything escalates dramatically
+		float scaled_rate = min(shake_rate * intensity, 1.0);
 		float scaled_power = shake_power * intensity;
 		float scaled_color = shake_color_rate * intensity;
+		// Speed + block size escalate for dramatic exit
+		float scaled_speed = shake_speed + intensity * 3.0;
+		float scaled_block = max(shake_block_size - intensity * 5.0, 3.0);
 
 		float enable_shift = float(
-			random(trunc(TIME * shake_speed))
+			random(trunc(TIME * scaled_speed))
 			< scaled_rate
 		);
 
 		uv.x += (
 			random(
-				(trunc(SCREEN_UV.y * shake_block_size) / shake_block_size)
+				(trunc(SCREEN_UV.y * scaled_block) / scaled_block)
 			+	TIME
 			) - 0.5
 		) * scaled_power * enable_shift;
+
+		// At extreme intensity, also shift Y (vertical tearing)
+		if (intensity > 2.0) {
+			uv.y += (
+				random(
+					(trunc(SCREEN_UV.x * scaled_block * 0.5) / (scaled_block * 0.5))
+				+	TIME * 1.3
+				) - 0.5
+			) * scaled_power * 0.3 * enable_shift;
+		}
 
 		pixel_color = textureLod(screen_texture, uv, 0.0);
 		pixel_color.r = mix(
@@ -58,6 +72,12 @@ void fragment() {
 			textureLod(screen_texture, uv + vec2(-scaled_color, 0.0), 0.0).b,
 			enable_shift
 		);
+
+		// At extreme intensity, fade to black (Tama dissolving)
+		if (intensity > 3.0) {
+			float fade = clamp((intensity - 3.0) / 5.0, 0.0, 1.0);
+			pixel_color.rgb *= (1.0 - fade);
+		}
 	} else {
 		pixel_color = textureLod(screen_texture, uv, 0.0);
 	}
