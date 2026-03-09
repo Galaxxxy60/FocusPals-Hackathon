@@ -31,6 +31,7 @@ from audio import detect_voice_activity
 from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot
 from mood_engine import get_mood_context, track_infraction, track_compliance
 from flash_lite import pre_classify, get_pre_classify_hint, clear_classification_history, generate_session_summary
+from app_control import execute_action as jarvis_execute
 
 
 # ─── Screen Capture & Window Cache ──────────────────────────
@@ -144,6 +145,28 @@ Ton ton ESCALADE naturellement : curieuse → méfiante → déçue → agacée 
 • ENCOURAGEMENT = UN compliment tsundere
 • ULTIMATUM = dernier avertissement avant fermeture
 • STRIKE = réplique finale + fire_strike() + close_distracting_tab
+
+═══ MODE JARVIS (Assistance) ═══
+
+Tu peux aussi AIDER Nicolas dans ses logiciels. Quand il te demande :
+- "ouvre [app]" → app_control(action="open_app", target="[app]")
+- "passe sur [fenêtre]" → app_control(action="switch_window", target="[titre fenêtre]")
+- "minimise ça" → app_control(action="minimize", target="current")
+- "maximise ça" → app_control(action="maximize", target="current")
+- "sauvegarde" / "Ctrl+S" → app_control(action="shortcut", target="ctrl+s")
+- "annuler" / "Ctrl+Z" → app_control(action="shortcut", target="ctrl+z")
+- "cherche [X]" → app_control(action="shortcut", target="ctrl+f") puis app_control(action="type_text", target="[X]")
+- "ouvre [URL/site]" → app_control(action="open_url", target="[url]")
+- "Google [query]" → app_control(action="search_web", target="[query]")
+- "monte le son" → app_control(action="volume_up", target="up")
+- "baisse le son" → app_control(action="volume_down", target="down")
+- "mute" → app_control(action="volume_mute", target="mute")
+- "screenshot" → app_control(action="screenshot", target="clipboard")
+- "écris [texte]" → app_control(action="type_text", target="[texte]")
+
+RÈGLE : Ces actions sont TOUJOURS autorisées — elles aident Nicolas.
+RÈGLE : Confirme ULTRA BRIÈVEMENT après l'action ("fait", "voilà", "c'est bon").
+RÈGLE : Tu peux aussi utiliser app_control de ta propre initiative si ça aide (ex: ouvrir la doc qu'il cherche).
 """
 
 SYSTEM_PROMPT_EN = """═══ WHO YOU ARE ═══
@@ -206,6 +229,28 @@ Your tone ESCALATES naturally: curious → suspicious → disappointed → annoy
 • ENCOURAGEMENT = ONE tsundere compliment
 • ULTIMATUM = final warning before closing
 • STRIKE = final line + fire_strike() + close_distracting_tab
+
+═══ JARVIS MODE (Assistance) ═══
+
+You can also HELP Nicolas inside his apps. When he asks:
+- "open [app]" → app_control(action="open_app", target="[app]")
+- "switch to [window]" → app_control(action="switch_window", target="[window title]")
+- "minimize this" → app_control(action="minimize", target="current")
+- "maximize this" → app_control(action="maximize", target="current")
+- "save" / "Ctrl+S" → app_control(action="shortcut", target="ctrl+s")
+- "undo" / "Ctrl+Z" → app_control(action="shortcut", target="ctrl+z")
+- "search [X]" → app_control(action="shortcut", target="ctrl+f") then app_control(action="type_text", target="[X]")
+- "open [URL/site]" → app_control(action="open_url", target="[url]")
+- "Google [query]" → app_control(action="search_web", target="[query]")
+- "volume up" → app_control(action="volume_up", target="up")
+- "volume down" → app_control(action="volume_down", target="down")
+- "mute" → app_control(action="volume_mute", target="mute")
+- "screenshot" → app_control(action="screenshot", target="clipboard")
+- "type [text]" → app_control(action="type_text", target="[text]")
+
+RULE: These actions are ALWAYS allowed — they help Nicolas.
+RULE: Confirm ULTRA BRIEFLY after the action ("done", "there you go", "got it").
+RULE: You can also use app_control on your own initiative if it helps (e.g. opening the docs he's looking for).
 """
 
 CONVO_PROMPT_FR = """Tu es Tama, la coach de productivité auto-proclamée de Nicolas. En dehors des sessions de boulot, tu es aussi sa pote.
@@ -222,7 +267,32 @@ Ta personnalité :
 - Tu tutoies, c'est ton ami
 - Réponses COURTES (1-3 phrases max)
 
-Là il a cliqué pour discuter avec toi. Pas de surveillance, juste une conversation naturelle entre potes. Ne mentionne JAMAIS de termes techniques (pas de "indice", "catégorie", "alignement", etc.)."""
+Là il t'a appelée ("Hey Tama"). Tu es dispo pour discuter ET pour l'aider.
+Conversation naturelle entre potes. Ne mentionne JAMAIS de termes techniques (pas de "indice", "catégorie", "alignement", etc.).
+
+Tu as des POUVOIRS. Tu peux contrôler son PC avec app_control :
+- Ouvrir des apps : app_control(action="open_app", target="vscode")
+- Chercher une app : app_control(action="find_app", target="blender") → retourne la LISTE des exe trouvés
+- Lancer un exe précis : app_control(action="run_exe", target="C:\\chemin\\vers\\app.exe")
+- Changer de fenêtre : app_control(action="switch_window", target="Chrome")
+- Minimiser/Maximiser : app_control(action="minimize", target="current")
+- Raccourcis clavier : app_control(action="shortcut", target="ctrl+s") → ou des mots : "save", "undo", "copy"
+- Taper du texte : app_control(action="type_text", target="ton texte")
+- Ouvrir un site : app_control(action="open_url", target="https://...")
+- Recherche Google : app_control(action="search_web", target="comment faire X")
+- Screenshot : app_control(action="screenshot", target="clipboard")
+- Volume : app_control(action="volume_up/volume_down/volume_mute", target="up/down/mute")
+
+WORKFLOW INTELLIGENT pour ouvrir une app :
+1. Essaie open_app d'abord
+2. Si ça rate (status=error), utilise find_app pour chercher
+3. Regarde les résultats et choisis le bon exe
+4. Lance avec run_exe(path)
+5. Si rien trouvé, demande au user où c'est
+
+RÈGLE : Utilise ces pouvoirs dès qu'il te demande un truc. Pas besoin de permission.
+RÈGLE : Confirme ULTRA BRIÈVEMENT ("fait", "voilà", "tiens").
+RÈGLE : Tu peux PROPOSER d'aider ("tu veux que j'ouvre ça pour toi ?")."""
 
 CONVO_PROMPT_EN = """You are Tama, Nicolas's self-proclaimed productivity coach. Outside of work sessions, you're also his friend.
 
@@ -238,7 +308,32 @@ Your personality:
 - Casual tone, he's your friend
 - SHORT responses (1-3 sentences max)
 
-He just clicked to chat with you. No monitoring, just a natural conversation between friends. NEVER mention technical terms (no "index", "category", "alignment", etc.)."""
+He just called you ("Hey Tama"). You're available to chat AND to help him.
+Natural conversation between friends. NEVER mention technical terms (no "index", "category", "alignment", etc.).
+
+You have POWERS. You can control his PC with app_control:
+- Open apps: app_control(action="open_app", target="vscode")
+- Search for an app: app_control(action="find_app", target="blender") → returns LIST of found exes
+- Run a specific exe: app_control(action="run_exe", target="C:\\path\\to\\app.exe")
+- Switch windows: app_control(action="switch_window", target="Chrome")
+- Minimize/Maximize: app_control(action="minimize", target="current")
+- Keyboard shortcuts: app_control(action="shortcut", target="ctrl+s") → or words: "save", "undo", "copy"
+- Type text: app_control(action="type_text", target="your text")
+- Open a website: app_control(action="open_url", target="https://...")
+- Google search: app_control(action="search_web", target="how to do X")
+- Screenshot: app_control(action="screenshot", target="clipboard")
+- Volume: app_control(action="volume_up/volume_down/volume_mute", target="up/down/mute")
+
+SMART WORKFLOW to open an app:
+1. Try open_app first
+2. If it fails (status=error), use find_app to search
+3. Look at results and pick the right exe
+4. Launch with run_exe(path)
+5. If nothing found, ask the user where it is
+
+RULE: Use these powers whenever he asks for something. No permission needed.
+RULE: Confirm ULTRA BRIEFLY ("done", "there", "got it").
+RULE: You can OFFER to help ("want me to open that for you?")."""
 
 
 def get_system_prompt():
@@ -320,6 +415,24 @@ TOOLS = [
                     },
                     required=["mood", "intensity"]
                 )
+            ),
+            types.FunctionDeclaration(
+                name="app_control",
+                description="Control applications on Nicolas's desktop. Can open apps, switch windows, minimize/maximize, send keyboard shortcuts, type text, open URLs, search the web, take screenshots, or adjust volume. Use this to HELP him.",
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={
+                        "action": types.Schema(
+                            type="STRING",
+                            description="One of: open_app, switch_window, minimize, maximize, shortcut, type_text, open_url, search_web, screenshot, volume_up, volume_down, volume_mute"
+                        ),
+                        "target": types.Schema(
+                            type="STRING",
+                            description="App name, window title, URL, text to type, shortcut keys (e.g. 'ctrl+s'), or 'current' for active window. For shortcuts, use natural words too (e.g. 'save', 'undo', 'copy')."
+                        ),
+                    },
+                    required=["action", "target"],
+                ),
             )
         ]
     )
@@ -560,13 +673,13 @@ async def run_gemini_loop(pya):
     )
 
     # ── Voice: Kore = dynamique & expressive, colle au perso Tama ──
-    _voice_config = types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                voice_name="Kore"
-            )
-        )
-    )
+    # Language code map — tells Gemini what language to expect from mic input
+    _lang_code_map = {
+        "en": "en-US",
+        "fr": "fr-FR",
+        "ja": "ja-JP",
+        "zh": "zh-CN",
+    }
 
     _consecutive_failures = 0  # Track rapid failures for backoff
 
@@ -588,7 +701,7 @@ async def run_gemini_loop(pya):
                     await ws_client.send(msg)
                 except Exception:
                     pass
-            update_display(TamaState.CALM, "Connecting for conversation...")
+            update_display(TamaState.CALM, "Hey Tama — Connexion... 🫰")
         elif state["current_mode"] != "deep_work":  # Don't reset mode on reconnection
             state["current_mode"] = "deep_work"
             update_display(TamaState.CALM, "Connecting to Google WebSocket...")
@@ -614,8 +727,19 @@ async def run_gemini_loop(pya):
         if cfg.client is None:
             continue
 
-        # ── Build configs FRESH each connection (picks up latest resume handle) ──
+        # ── Build configs FRESH each connection (picks up latest resume handle + language) ──
         resume_handle = state.get("_session_resume_handle")
+        current_lang = state.get("language", "en")
+        lang_code = _lang_code_map.get(current_lang, "en-US")
+
+        _voice_config = types.SpeechConfig(
+            language_code=lang_code,
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                    voice_name="Kore"
+                )
+            )
+        )
 
         config_deep_work = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -643,6 +767,7 @@ async def run_gemini_loop(pya):
         config_conversation = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             system_instruction=types.Content(parts=[types.Part(text=get_convo_prompt())]),
+            tools=TOOLS,  # Hey Tama mode: app_control (Jarvis) + report_mood
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             session_resumption=types.SessionResumptionConfig(
@@ -697,9 +822,9 @@ async def run_gemini_loop(pya):
                     state["_last_speech_ended"] = time.time()  # Init timer so nudge doesn't fire instantly
                     state["_convo_nudge_sent"] = False
                     greeting_text = (
-                        "L'utilisateur vient de cliquer pour discuter avec toi. Salue-le naturellement !"
+                        "L'utilisateur vient de t'appeler (\"Hey Tama\"). Salue-le naturellement ! Tu es dispo pour discuter et pour l'aider."
                         if state.get("language") != "en" else
-                        "The user just clicked to chat with you. Greet them naturally!"
+                        "The user just called you (\"Hey Tama\"). Greet them naturally! You're available to chat and to help."
                     )
                     try:
                         await session.send_client_content(
@@ -1579,6 +1704,41 @@ async def run_gemini_loop(pya):
                                                     types.FunctionResponse(
                                                         name="fire_strike",
                                                         response={"status": "strike_delivered"},
+                                                        id=fc.id
+                                                    )
+                                                )
+
+                                            elif fc.name == "app_control":
+                                                action_name = fc.args.get("action", "")
+                                                target_name = fc.args.get("target", "")
+                                                print(f"  🤖 JARVIS: {action_name} → '{target_name}'")
+
+                                                # Execute the action
+                                                result = jarvis_execute(action_name, target_name)
+                                                print(f"  🤖 JARVIS result: {result.get('message', '?')}")
+
+                                                # Send visual hand tap to Godot (so user sees Tama doing the action)
+                                                tx = result.get("target_x", -1)
+                                                ty = result.get("target_y", -1)
+                                                if tx > 0 and ty > 0:
+                                                    jarvis_msg = json.dumps({
+                                                        "command": "JARVIS_TAP",
+                                                        "x": tx, "y": ty,
+                                                        "action": action_name
+                                                    })
+                                                    main_loop = state["main_loop"]
+                                                    for ws_client in list(state["connected_ws_clients"]):
+                                                        try:
+                                                            if main_loop and main_loop.is_running():
+                                                                asyncio.run_coroutine_threadsafe(ws_client.send(jarvis_msg), main_loop)
+                                                        except Exception:
+                                                            pass
+                                                    print(f"  🤖 JARVIS_TAP sent to Godot: ({tx}, {ty})")
+
+                                                function_responses_to_send.append(
+                                                    types.FunctionResponse(
+                                                        name="app_control",
+                                                        response=result,
                                                         id=fc.id
                                                     )
                                                 )

@@ -599,6 +599,99 @@ func _spawn_hand_window() -> void:
 	)
 
 
+# ─── Jarvis Hand (Gentle Tap Animation) ─────────────────────
+var _jarvis_hand: Window = null
+
+# Emoji per action — gives visual feedback about WHAT Tama is doing
+const JARVIS_EMOJIS = {
+	"open_app": "👆",
+	"switch_window": "👆",
+	"minimize": "👇",
+	"maximize": "☝️",
+	"shortcut": "⌨️",
+	"type_text": "⌨️",
+	"open_url": "🌐",
+	"search_web": "🔍",
+	"screenshot": "📸",
+	"volume_up": "🔊",
+	"volume_down": "🔉",
+	"volume_mute": "🔇",
+}
+
+func _spawn_jarvis_hand(target: Vector2i, action: String) -> void:
+	"""Spawn a gentle hand window that taps the target — Tama's Jarvis assist is VISIBLE."""
+	# Clean up any existing jarvis hand
+	if _jarvis_hand and is_instance_valid(_jarvis_hand):
+		_jarvis_hand.queue_free()
+		_jarvis_hand = null
+
+	# ── Start position: Tama's hand bone (same as Strike) ──
+	var win_pos := DisplayServer.window_get_position()
+	var win_size := DisplayServer.window_get_size()
+	var start_x: int = win_pos.x + int(win_size.x * 0.5)
+	var start_y: int = win_pos.y + int(win_size.y * 0.45)
+	if _strike_hand_bone_idx >= 0 and _skeleton != null and _camera != null:
+		var bone_global := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx)
+		var screen_pos := _camera.unproject_position(bone_global.origin)
+		start_x = int(screen_pos.x) + win_pos.x
+		start_y = int(screen_pos.y) + win_pos.y
+
+	# ── Pick emoji based on action type ──
+	var emoji: String = JARVIS_EMOJIS.get(action, "☝️")
+	var done_emoji: String = "✨"
+
+	# ── Create window hidden ──
+	_jarvis_hand = Window.new()
+	_jarvis_hand.title = "TamaJarvis"
+	_jarvis_hand.size = Vector2i(100, 100)
+	_jarvis_hand.position = Vector2i(start_x - 50, start_y - 50)
+	_jarvis_hand.borderless = true
+	_jarvis_hand.transparent_bg = true
+	_jarvis_hand.always_on_top = true
+	_jarvis_hand.unfocusable = true
+	_jarvis_hand.transparent = true
+	_jarvis_hand.gui_embed_subwindows = false
+	_jarvis_hand.visible = false
+
+	var label := Label.new()
+	label.text = emoji
+	label.add_theme_font_size_override("font_size", 48)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_jarvis_hand.add_child(label)
+	add_child(_jarvis_hand)
+
+	# Wait 2 frames for transparency
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_instance_valid(_jarvis_hand):
+		return
+	_jarvis_hand.visible = true
+
+	# ── Animate: smooth glide to target (softer than Strike) ──
+	var target_pos := Vector2i(target.x - 50, target.y - 50)
+	var tween := create_tween()
+	tween.set_ease(Tween.EASE_OUT)
+	tween.set_trans(Tween.TRANS_BACK)  # Slight overshoot — feels natural
+	tween.tween_property(_jarvis_hand, "position", target_pos, 0.5)
+	tween.tween_callback(func():
+		if is_instance_valid(label):
+			label.text = done_emoji  # ✨ = action complete!
+	)
+	tween.tween_interval(0.6)
+	tween.tween_callback(func():
+		if _jarvis_hand and is_instance_valid(_jarvis_hand):
+			_jarvis_hand.queue_free()
+			_jarvis_hand = null
+		# Fade out arm IK gently
+		if _gaze_modifier:
+			_gaze_modifier.arm_ik_blend_target = 0.0
+		# Return gaze to neutral after action
+		set_gaze(GazeTarget.NEUTRAL, 2.0)
+	)
+	print("🤖 Jarvis hand: %s → (%d, %d) [%s]" % [emoji, target.x, target.y, action])
+
 # ─── IMBA Mode (Super Saiyan Power-Up) ──────────────────────
 func _activate_imba(level: int) -> void:
 	"""Power up! Activate IMBA visual effects instantly (1 or 0)."""
@@ -1146,6 +1239,23 @@ func _handle_message(raw: String) -> void:
 		var ty := int(data.get("y", -1))
 		_strike_target = Vector2i(tx, ty)
 		print("🎯 STRIKE_TARGET received: (%d, %d)" % [tx, ty])
+		return
+	elif command == "JARVIS_TAP":
+		# Jarvis mode: Tama's hand gently taps the target (not a strike — an assist)
+		var jtx := int(data.get("x", -1))
+		var jty := int(data.get("y", -1))
+		var jaction: String = data.get("action", "")
+		print("🤖 JARVIS_TAP: (%d, %d) action=%s" % [jtx, jty, jaction])
+		if jtx > 0 and jty > 0:
+			_spawn_jarvis_hand(Vector2i(jtx, jty), jaction)
+			# Arm IK: point toward the tap target (gentle, not aggressive)
+			if _gaze_modifier:
+				var target_3d := _screen_to_arm_target(float(jtx), float(jty))
+				_gaze_modifier.arm_ik_target = target_3d
+				_gaze_modifier.arm_ik_active = true
+				_gaze_modifier.arm_ik_blend_target = 0.7  # Softer than Strike (which uses 1.0)
+			# Brief gaze toward the target
+			set_gaze_at_screen_point(float(jtx), float(jty), 4.0)
 		return
 	elif command == "TAMA_ANIM":
 		var anim_name = data.get("anim", "")

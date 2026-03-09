@@ -10,7 +10,7 @@ var _L = preload("res://locale.gd").new()
 
 var ITEMS := [
 	{"icon": "⚙️", "label": "Settings",      "id": "settings", "color": Color(0.4, 0.8, 1.0),  "scale": 0.85, "loc_key": "radial_settings"},
-	{"icon": "💬", "label": "Talk",           "id": "talk",     "color": Color(0.6, 0.4, 1.0),  "scale": 1.0,  "loc_key": "radial_talk"},
+	{"icon": "🫰", "label": "Hey Tama",       "id": "talk",     "color": Color(0.6, 0.4, 1.0),  "scale": 1.0,  "loc_key": "radial_talk"},
 	{"icon": "⚡", "label": "Work Session",   "id": "session",  "color": Color(0.4, 1.0, 0.5),  "scale": 1.35, "loc_key": "radial_session"},
 	{"icon": "⛔", "label": "Quit",           "id": "quit",     "color": Color(1.0, 0.3, 0.3),  "scale": 0.85, "loc_key": "radial_quit"},
 ]

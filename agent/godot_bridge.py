@@ -53,12 +53,12 @@ def _handle_menu_action(action: str):
             print("⏸️ Session déjà en cours.")
     elif action == "talk":
         if state["is_session_active"]:
-            print("💬 Déjà en session Deep Work — Tama t'écoute déjà !")
+            print("🫰 Déjà en session Deep Work — Tama t'écoute déjà !")
         elif state["conversation_requested"] or state["current_mode"] == "conversation":
-            print("💬 Conversation déjà en cours.")
+            print("🫰 Hey Tama déjà actif.")
         else:
             state["conversation_requested"] = True
-            print("💬 Mode conversation demandé !")
+            print("🫰 Hey Tama activé !")
             # Immediately notify Godot that we're connecting
             # This gives instant visual feedback before the Gemini API connection is established
             import websockets as _ws_lib

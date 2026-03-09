@@ -216,10 +216,10 @@ func _build_strings() -> void:
 			"zh": "设置",
 		},
 		"radial_talk": {
-			"fr": "Parler",
-			"en": "Talk",
-			"ja": "会話",
-			"zh": "对话",
+			"fr": "Hey Tama",
+			"en": "Hey Tama",
+			"ja": "Hey Tama",
+			"zh": "Hey Tama",
 		},
 		"radial_session": {
 			"fr": "Session",

@@ -8,3 +8,4 @@ pygetwindow
 pywinauto
 websockets
 pystray
+pyperclip
