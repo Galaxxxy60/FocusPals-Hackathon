@@ -1438,6 +1438,16 @@ func _handle_message(raw: String) -> void:
 			_set_glitch_active(false)  # Reconnected — clear glitch
 		return
 
+	# ── Auto-clear glitch on stealth reconnection ──
+	# Stealth reconnects (1011) don't send CONNECTION_STATUS, but broadcast
+	# includes gemini_connected=true once the API is back.
+	if data.has("gemini_connected"):
+		var gc: bool = data.get("gemini_connected", false)
+		if gc and _glitch_intensity > 0.0 and not _glitch_quitting:
+			_set_glitch_active(false)
+			_hide_status_indicator()
+			_set_headphones_visible(false)
+
 	# ── Mode Libre : on ignore les données de surveillance ──
 	if not data.get("session_active", false):
 		return
