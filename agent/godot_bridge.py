@@ -346,7 +346,10 @@ async def ws_handler(websocket):
                     lang = data.get("language", "en")
                     if lang in ("fr", "en", "ja", "zh"):
                         state["language"] = lang
-                        print(f"🌐 Langue changée : {lang.upper()}")
+                        # Persist to user_prefs.json so it survives restarts
+                        from audio import _save_prefs
+                        _save_prefs({"language": lang})
+                        print(f"🌐 Langue changée : {lang.upper()} (sauvegardée)")
                 elif cmd == "SET_TAMA_VOLUME":
                     vol = float(data.get("volume", 1.0))
                     state["tama_volume"] = max(0.0, min(1.0, vol))

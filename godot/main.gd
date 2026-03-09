@@ -222,6 +222,14 @@ var _gemini_status: String = "disconnected"
 # ─── Headphones (visible when Tama can't hear/respond) ───
 var _headphones_node: Node3D = null
 
+# ─── Glitch Effect (visual indicator when API is disconnected) ───
+var _glitch_quad: MeshInstance3D = null   # Full-screen quad in front of camera
+var _glitch_material: ShaderMaterial = null
+var _glitch_intensity: float = 0.0       # Current intensity (smoothed)
+var _glitch_target: float = 0.0          # Target intensity (0 or 1)
+const GLITCH_FADE_IN_SPEED: float = 2.0  # How fast glitch appears
+const GLITCH_FADE_OUT_SPEED: float = 4.0 # How fast glitch disappears
+
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
 var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
@@ -292,6 +300,7 @@ func _ready() -> void:
 	call_deferred("_setup_headphones")
 	_setup_ack_audio()
 	call_deferred("_setup_gaze")
+	call_deferred("_setup_glitch_effect")  # After _setup_gaze (needs _camera)
 	call_deferred("_setup_gaze_debug")
 	call_deferred("_setup_spring_bones_module")
 	call_deferred("_setup_anim_tree")
@@ -507,6 +516,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			print("💪 Arm IK target: %s" % str(target_3d))
 		# Delay hand window spawn to sync with the hand "bounce" in Strike_Base
 		get_tree().create_timer(0.6).timeout.connect(_spawn_hand_window)
+	# F8 = Debug Glitch: toggle glitch effect on/off
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F8:
+		var glitch_on = _glitch_target < 0.5
+		_set_glitch_active(glitch_on)
+		if glitch_on:
+			_show_status_indicator("📺 Glitch: ON (F8)", Color(1.0, 0.3, 0.3))
+		else:
+			_hide_status_indicator()
+		print("📺 [DEBUG] F8 → Glitch %s" % ("ON" if glitch_on else "OFF"))
 	if _spring_bones_node:
 		_spring_bones_node.handle_input(event)
 
@@ -1014,6 +1032,9 @@ func _process(delta: float) -> void:
 	if Time.get_unix_time_from_system() - _last_anim_command_time > ANIM_COMMAND_COOLDOWN:
 		_update_suspicion_anim()
 
+	# Glitch effect smooth fade
+	_update_glitch(delta)
+
 	# Blink system
 	_update_blink(delta)
 
@@ -1400,13 +1421,16 @@ func _handle_message(raw: String) -> void:
 		if conn_status == "connecting":
 			_show_status_indicator("Tama se connecte", Color(0.5, 0.7, 1.0, 0.9))
 			_set_headphones_visible(true)
+			_set_glitch_active(false)  # Initial connection — no glitch
 		elif conn_status == "reconnecting":
 			var attempt = data.get("attempt", 1)
 			_show_status_indicator("Reconnexion (" + str(attempt) + ")", Color(0.9, 0.7, 0.3, 0.9))
 			_set_headphones_visible(true)
+			_set_glitch_active(true)   # API lost — glitch Tama!
 		elif conn_status == "connected":
 			_hide_status_indicator()
 			_set_headphones_visible(false)
+			_set_glitch_active(false)  # Reconnected — clear glitch
 		return
 
 	# ── Mode Libre : on ignore les données de surveillance ──
@@ -1878,6 +1902,68 @@ func _set_headphones_visible(show: bool) -> void:
 		_headphones_node.visible = show
 
 # (Silence watchdog removed — headphones now only reflect connection status)
+
+# ─── Glitch Effect (API disconnection visual) ───────────────
+func _setup_glitch_effect() -> void:
+	# Need the camera to attach the quad — _setup_gaze finds it
+	if _camera == null:
+		push_warning("⚠️ Glitch: Camera not found — glitch effect disabled")
+		return
+
+	# Create a full-screen quad as child of camera (moves with it)
+	_glitch_quad = MeshInstance3D.new()
+	_glitch_quad.name = "GlitchQuad"
+	var quad := QuadMesh.new()
+	# Oversized quad — orthogonal camera shows same size regardless of Z
+	quad.size = Vector2(10.0, 10.0)
+	_glitch_quad.mesh = quad
+	# Place just in front of camera (Z = -1 in camera-local space)
+	_glitch_quad.position = Vector3(0.0, 0.0, -1.0)
+
+	# Load and apply the spatial shader
+	var shader = load("res://glitch_effect.gdshader")
+	if shader:
+		_glitch_material = ShaderMaterial.new()
+		_glitch_material.shader = shader
+		_glitch_material.set_shader_parameter("intensity", 0.0)
+		_glitch_material.set_shader_parameter("shake_power", 0.03)
+		_glitch_material.set_shader_parameter("shake_rate", 0.3)
+		_glitch_material.set_shader_parameter("shake_speed", 5.0)
+		_glitch_material.set_shader_parameter("shake_block_size", 30.5)
+		_glitch_material.set_shader_parameter("shake_color_rate", 0.015)
+		# render_priority > 0 ensures the quad draws AFTER Tama's meshes
+		_glitch_material.render_priority = 100
+		_glitch_quad.material_override = _glitch_material
+		print("📺 Glitch effect shader loaded (spatial quad)")
+	else:
+		push_warning("⚠️ glitch_effect.gdshader not found")
+
+	_camera.add_child(_glitch_quad)
+	# Start hidden — no GPU cost when inactive
+	_glitch_quad.visible = false
+	print("📺 Glitch effect ready (hidden)")
+
+func _set_glitch_active(active: bool) -> void:
+	_glitch_target = 1.0 if active else 0.0
+	if active and _glitch_quad:
+		_glitch_quad.visible = true  # Make visible immediately when activating
+		print("📺 Glitch ON — API disconnected")
+	elif not active:
+		print("📺 Glitch fading out — API reconnected")
+
+func _update_glitch(delta: float) -> void:
+	if _glitch_material == null:
+		return
+	# Smooth interpolation toward target
+	if _glitch_intensity < _glitch_target:
+		_glitch_intensity = minf(_glitch_intensity + GLITCH_FADE_IN_SPEED * delta, _glitch_target)
+	elif _glitch_intensity > _glitch_target:
+		_glitch_intensity = maxf(_glitch_intensity - GLITCH_FADE_OUT_SPEED * delta, _glitch_target)
+	# Update shader
+	_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+	# Hide quad entirely when fully faded out (saves GPU)
+	if _glitch_intensity < 0.001 and _glitch_quad:
+		_glitch_quad.visible = false
 
 # ─── User Speaking Acknowledgment ───────────────────
 func _setup_ack_audio() -> void:

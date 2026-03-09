@@ -182,8 +182,15 @@ def open_settings_popup(icon=None, item=None):
 
 def setup_tray():
     """Initialize system tray icon and menu."""
-    from audio import resolve_default_mic
+    from audio import resolve_default_mic, _load_prefs
     resolve_default_mic()
+
+    # Restore saved language preference
+    prefs = _load_prefs()
+    saved_lang = prefs.get("language", "")
+    if saved_lang in ("en", "fr", "ja", "zh"):
+        state["language"] = saved_lang
+        print(f"🌐 Langue restaurée depuis les préférences : {saved_lang.upper()}")
     
     image = create_tray_image(TamaState.CALM)
     menu = (
