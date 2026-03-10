@@ -156,6 +156,17 @@ state = {
     "_crash_timestamps": [],          # Rolling list of recent crash times for circuit breaker logic
 }
 
+# ─── Debug Tweaks (runtime-adjustable via F2 menu) ──────────
+# These are global multipliers that modulate the A.S.C. engine.
+# Saved to user_prefs.json so they persist across restarts.
+tweaks = {
+    "suspicion_gain_mult": 1.0,   # Multiplier on positive ΔS (higher = angrier faster)
+    "suspicion_decay_mult": 1.0,  # Multiplier on negative ΔS (higher = calms faster)
+    "confidence": 1.0,            # Direct override for C (0.1–1.0), synced to state["_confidence"]
+    "mood_decay_secs": 20.0,      # Seconds for mood to fade back to calm
+    "pulse_delay_mult": 1.0,      # Multiplier on pulse interval (higher = less frequent scans)
+}
+
 
 # ─── A.S.C. (Alignment Suspicion Control) Engine ────────────
 
@@ -169,27 +180,36 @@ def compute_can_be_closed(window_title: str) -> bool:
 
 
 def compute_delta_s(alignment: float, category: str) -> float:
-    """Deterministic ΔS formula based on A.S.C. spec."""
+    """Deterministic ΔS formula based on A.S.C. spec.
+    Applies tweaks["suspicion_gain_mult"] and tweaks["suspicion_decay_mult"]."""
     if alignment >= 1.0:  # Aligned
         if category == "BANNIE":
-            return 0.3
-        return -3.0       # Fast decay when working — reward compliance
+            base = 0.3
+        else:
+            base = -3.0       # Fast decay when working — reward compliance
     elif alignment >= 0.5:  # Doubt — category matters!
         if category == "BANNIE":
-            return 1.5   # Banned app even in doubt → fast escalation
+            base = 1.5   # Banned app even in doubt → fast escalation
         elif category in ("FLUX", "ZONE_GRISE"):
-            return 0.8   # Foreground music/messaging → meaningful buildup
+            base = 0.8   # Foreground music/messaging → meaningful buildup
         elif category == "PROCRASTINATION_PRODUCTIVE":
-            return 0.6
-        return 0.3        # SANTE in doubt → minimal
+            base = 0.6
+        else:
+            base = 0.3        # SANTE in doubt → minimal
     else:  # Misaligned (A = 0.0)
         if category == "BANNIE":
-            return 3.0    # ~3 pulses to S=9 (15 seconds)
+            base = 3.0    # ~3 pulses to S=9 (15 seconds)
         elif category == "ZONE_GRISE":
-            return 1.5
+            base = 1.5
         elif category == "FLUX":
-            return 0.8
+            base = 0.8
         elif category == "PROCRASTINATION_PRODUCTIVE":
-            return 0.8
+            base = 0.8
         else:
-            return 1.5
+            base = 1.5
+
+    # Apply tweak multipliers
+    if base > 0:
+        return base * tweaks["suspicion_gain_mult"]
+    else:
+        return base * tweaks["suspicion_decay_mult"]

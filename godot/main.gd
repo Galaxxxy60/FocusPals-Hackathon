@@ -213,6 +213,8 @@ var radial_menu = null
 const RadialMenuScript = preload("res://settings_radial.gd")
 var settings_panel = null
 const SettingsPanelScript = preload("res://settings_panel.gd")
+var debug_tweaks = null
+const DebugTweaksScript = preload("res://debug_tweaks.gd")
 
 
 # ─── UI Module (separate script) ───────────────────────
@@ -450,7 +452,11 @@ func _setup_radial_menu() -> void:
 	settings_panel.screen_share_toggled.connect(_on_screen_share_toggled)
 	settings_panel.mic_toggled.connect(_on_mic_toggled)
 	settings_panel.tama_scale_changed.connect(_on_tama_scale_changed)
-	print("🎛️ Radial menu + Settings panel OK")
+	# Debug tweaks (hidden, F2)
+	debug_tweaks = CanvasLayer.new()
+	debug_tweaks.set_script(DebugTweaksScript)
+	add_child(debug_tweaks)
+	print("🎛️ Radial menu + Settings panel + Debug Tweaks OK")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -463,6 +469,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				print("🎛️ [DEBUG] F1 → Ouverture du radial menu")
 				radial_menu.open()
+	# F2 = hidden debug tweaks panel
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F2:
+		if debug_tweaks:
+			debug_tweaks.toggle()
+			print("🔧 [DEBUG] F2 → Tweaks %s" % ("OPEN" if debug_tweaks.is_open else "CLOSED"))
 	# F3 = debug gaze: Tama follows mouse cursor + visual debug
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F3:
 		_debug_gaze_mouse = !_debug_gaze_mouse
@@ -760,13 +771,18 @@ func _on_radial_action(action_id: String) -> void:
 		ws.send_text(msg)
 
 func _on_radial_hide() -> void:
-	if settings_panel and settings_panel.is_open:
-		return
-	if _quit_layer:
-		return  # Don't re-enable click-through — quit dialog needs clicks
-	_safe_restore_passthrough()
+	# ALWAYS send HIDE_RADIAL to Python to reset state["radial_shown"]
+	# Otherwise the edge monitor thinks radial is still open and won't re-trigger it.
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
+	# Only restore click-through if no other panel needs clicks
+	if settings_panel and settings_panel.is_open:
+		return
+	if debug_tweaks and debug_tweaks.is_open:
+		return
+	if _quit_layer:
+		return
+	_safe_restore_passthrough()
 
 var _quit_layer: CanvasLayer = null
 
@@ -888,7 +904,7 @@ func _on_settings_panel_closed() -> void:
 	_apply_tama_scale_full()
 	_safe_restore_passthrough()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
+		ws.send_text(JSON.stringify({"command": "SETTINGS_CLOSED"}))
 
 func _on_api_key_submitted(key: String) -> void:
 	print("🔑 API key submitted")
@@ -935,6 +951,8 @@ func _safe_restore_passthrough() -> void:
 	if radial_menu and radial_menu.is_open:
 		return
 	if settings_panel and settings_panel.is_open:
+		return
+	if debug_tweaks and debug_tweaks.is_open:
 		return
 	if _quit_layer:
 		return
@@ -1232,6 +1250,12 @@ func _handle_message(raw: String) -> void:
 		print("🔑 API key validation result: %s" % str(valid))
 		if settings_panel:
 			settings_panel.update_key_valid(valid)
+		return
+	elif command == "TWEAKS_DATA":
+		var values = data.get("values", {})
+		print("🔧 TWEAKS_DATA received: %s" % str(values))
+		if debug_tweaks:
+			debug_tweaks.update_values(values)
 		return
 	elif command == "USER_SPEAKING":
 		# Subtle acknowledgment — Tama looks at user

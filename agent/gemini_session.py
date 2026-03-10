@@ -25,7 +25,7 @@ from config import (
     FORMAT, CHANNELS, SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE, CHUNK_SIZE,
     BROWSER_KEYWORDS, USER_SPEECH_TIMEOUT, CONVERSATION_SILENCE_TIMEOUT,
     CURIOUS_DURATION_THRESHOLD,
-    compute_can_be_closed, compute_delta_s,
+    compute_can_be_closed, compute_delta_s, tweaks,
 )
 from audio import detect_voice_activity
 from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot
@@ -1330,7 +1330,7 @@ async def run_gemini_loop(pya):
                         else:
                             pulse_delay = 3.0
 
-                        await asyncio.sleep(pulse_delay)
+                        await asyncio.sleep(pulse_delay * tweaks["pulse_delay_mult"])
 
                 # --- 3. Receive AI Responses ---
                 async def reset_calm_after_delay():

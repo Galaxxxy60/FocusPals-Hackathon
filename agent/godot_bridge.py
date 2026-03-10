@@ -16,16 +16,22 @@ import threading
 
 import websockets
 
-from config import application_path, state, BREAK_CHECKPOINTS, BREAK_DURATIONS
+from config import application_path, state, tweaks, BREAK_CHECKPOINTS, BREAK_DURATIONS
 from audio import get_available_mics, refresh_mic_cache, select_mic, resolve_default_mic
 from ui import TamaState, start_session, quit_app, update_display
 from flash_lite import get_lite_stats, clear_classification_history, generate_session_summary
 
 
 # ─── Click-Through Toggle ───────────────────────────────────
+# ARCHITECTURE: Click-through uses a CENTRALIZED MANAGER pattern.
+# Instead of panels toggling click-through directly, each panel sets its own
+# state flag, then calls _update_click_through(). The manager checks ALL flags
+# and only enables click-through when NO panel needs mouse input.
+# This prevents one panel closing from breaking another panel's clicks.
+# See CLICK_THROUGH_GUIDE.md for the full documentation.
 
 def _toggle_click_through(enable: bool):
-    """Toggle WS_EX_TRANSPARENT on the Godot window."""
+    """Low-level Win32 toggle. DO NOT call directly — use _update_click_through()."""
     hwnd = state["godot_hwnd"]
     if not hwnd:
         return
@@ -40,6 +46,19 @@ def _toggle_click_through(enable: bool):
     else:
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE,
                               WS_EX_LAYERED | WS_EX_TOOLWINDOW)
+
+
+def _update_click_through():
+    """Centralized click-through manager — checks ALL panel state flags.
+    Click-through is only enabled when NO panel needs mouse input.
+    Call this after ANY state flag change."""
+    needs_clicks = (
+        state.get("radial_shown", False)
+        or state.get("_settings_panel_open", False)
+        or state.get("_tweaks_panel_open", False)
+        # ↓ Add future panel flags here ↓
+    )
+    _toggle_click_through(not needs_clicks)
 
 
 # ─── Menu Action Handler ───────────────────────────────────
@@ -70,6 +89,33 @@ def _handle_menu_action(action: str):
         _send_settings_to_godot()
     elif action == "quit":
         quit_app(state["tray_icon"], None)
+
+
+# ─── Debug Tweaks Persistence ──────────────────────────────
+
+def _load_tweaks():
+    """Load tweaks from user_prefs.json (under 'tweaks' key)."""
+    from audio import _load_prefs
+    prefs = _load_prefs()
+    saved = prefs.get("tweaks", {})
+    for k in tweaks:
+        if k in saved:
+            try:
+                tweaks[k] = float(saved[k])
+            except (ValueError, TypeError):
+                pass
+    # Sync confidence to state
+    state["_confidence"] = tweaks["confidence"]
+
+
+def _save_tweaks():
+    """Persist current tweaks to user_prefs.json."""
+    from audio import _save_prefs
+    _save_prefs({"tweaks": dict(tweaks)})
+
+
+# Load saved tweaks at import time (startup)
+_load_tweaks()
 
 
 # ─── Settings Helpers ──────────────────────────────────────
@@ -224,13 +270,13 @@ def mouse_edge_monitor():
         if not near_edge or not in_zone:
             state["_mouse_was_away"] = True
 
-        if near_edge and in_zone and not state["radial_shown"] and state["_mouse_was_away"] and time.time() > state["_radial_cooldown_until"] and not state["_mic_panel_pending"] and state["connected_ws_clients"]:
+        if near_edge and in_zone and not state["radial_shown"] and state["_mouse_was_away"] and time.time() > state["_radial_cooldown_until"] and not state.get("_settings_panel_open", False) and not state.get("_tweaks_panel_open", False) and state["connected_ws_clients"]:
             state["radial_shown"] = True
             state["_mouse_was_away"] = False
             radial_shown_time = time.time()
             state["_radial_cooldown_until"] = 0
             print(f"🖱️ [EdgeMonitor] SHOW_RADIAL ({pt.x}, {pt.y}) screen_w={screen_w}")
-            _toggle_click_through(False)
+            _update_click_through()  # radial_shown=True → CT off
             msg = json.dumps({"command": "SHOW_RADIAL"})
             main_loop = state["main_loop"]
             for ws_client in list(state["connected_ws_clients"]):
@@ -254,7 +300,7 @@ def mouse_edge_monitor():
                         asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
                 except Exception:
                     pass
-            _toggle_click_through(True)
+            _update_click_through()  # radial_shown=False → manager decides
 
         time.sleep(0.1)
 
@@ -277,17 +323,18 @@ async def ws_handler(websocket):
                     state["radial_shown"] = False
                     state["_mouse_was_away"] = True
                     state["_radial_cooldown_until"] = 0
-                    if not state["_mic_panel_pending"]:
-                        _toggle_click_through(True)
-                    else:
-                        state["_mic_panel_pending"] = False
+                    _update_click_through()  # manager checks all flags
                 elif cmd == "MENU_ACTION":
                     action = data.get("action", "")
                     _handle_menu_action(action)
+                elif cmd == "SETTINGS_CLOSED":
+                    state["_settings_panel_open"] = False
+                    _update_click_through()  # manager checks all flags
+                    print("⚙️ Settings panel closed")
                 elif cmd == "GET_SETTINGS":
-                    state["_mic_panel_pending"] = True
+                    state["_settings_panel_open"] = True
                     state["radial_shown"] = False
-                    _toggle_click_through(False)
+                    _update_click_through()  # settings_panel_open=True → CT off
                     import config
                     has_api_key = bool(config.GEMINI_API_KEY)
                     # Respond IMMEDIATELY with cached mic data
@@ -374,6 +421,32 @@ async def ws_handler(websocket):
                     scale = int(data.get("scale", 100))
                     state["tama_scale"] = max(50, min(150, scale))
                     print(f"📐 Taille Tama : {state['tama_scale']}%")
+                elif cmd == "SHOW_TWEAKS":
+                    state["_tweaks_panel_open"] = True
+                    _update_click_through()  # tweaks=True → CT off
+                    print("🔧 Tweaks panel opened")
+                elif cmd == "HIDE_TWEAKS":
+                    state["_tweaks_panel_open"] = False
+                    _update_click_through()  # manager checks all flags
+                    print("🔧 Tweaks panel closed")
+                elif cmd == "GET_TWEAKS":
+                    _load_tweaks()  # Refresh from disk
+                    response = json.dumps({
+                        "command": "TWEAKS_DATA",
+                        "values": dict(tweaks)
+                    })
+                    await websocket.send(response)
+                    print(f"🔧 GET_TWEAKS → {tweaks}")
+                elif cmd == "SET_TWEAK":
+                    key = data.get("key", "")
+                    val = float(data.get("value", 0))
+                    if key in tweaks:
+                        tweaks[key] = val
+                        # Sync confidence to state dict too
+                        if key == "confidence":
+                            state["_confidence"] = val
+                        _save_tweaks()
+                        print(f"🔧 TWEAK {key} = {val}")
                 elif cmd == "STRIKE_FIRE":
                     # Godot handles the visual hand animation (multi-window)
                     # Python just closes the tab/window
@@ -448,7 +521,7 @@ async def broadcast_ws_state():
                 # like a human's emotions naturally subsiding.
                 # Gemini remains the authority — any new report_mood overrides this.
                 MOOD_GRACE_SECS = 5.0    # Hold the mood for a few seconds after speech
-                MOOD_DECAY_SECS = 20.0   # Total fade duration after grace period
+                MOOD_DECAY_SECS = tweaks["mood_decay_secs"]  # Total fade duration (tweakable via F2)
                 current_mood = state.get("_current_mood", "calm")
                 if current_mood != "calm" and not state.get("_tama_is_speaking", False):
                     mood_set_at = state.get("_mood_set_at", 0)
