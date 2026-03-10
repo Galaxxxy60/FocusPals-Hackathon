@@ -1782,6 +1782,35 @@ async def run_gemini_loop(pya):
                                 ))
                                 audio_data = scaled
 
+                            # ── Voice Glitch DSP ──
+                            # When API is disconnecting, distort Tama's voice
+                            # (bitcrushing + random stutter/silence on the actual audio)
+                            if not state.get("gemini_connected", True):
+                                import struct as _st
+                                import random as _rnd
+                                n = len(audio_data) // 2
+                                if n > 0:
+                                    samples = list(_st.unpack(f"<{n}h", audio_data))
+                                    # Bitcrush: reduce bit depth (shift right then left)
+                                    shift = 4  # Aggressive: 16-bit → ~12-bit effective
+                                    for i in range(n):
+                                        samples[i] = (samples[i] >> shift) << shift
+                                    # Random chunk stutter/silence (process in blocks of 64 samples)
+                                    block_size = 64
+                                    for blk_start in range(0, n, block_size):
+                                        blk_end = min(blk_start + block_size, n)
+                                        roll = _rnd.random()
+                                        if roll < 0.2:
+                                            # Silence this block
+                                            for i in range(blk_start, blk_end):
+                                                samples[i] = 0
+                                        elif roll < 0.35:
+                                            # Repeat first sample (stutter)
+                                            val = samples[blk_start]
+                                            for i in range(blk_start, blk_end):
+                                                samples[i] = val
+                                    audio_data = _st.pack(f"<{n}h", *samples)
+
                             # Viseme detection — analyze chunk before playing
                             if detect_viseme is not None:
                                 viseme, amplitude = detect_viseme(audio_data)
