@@ -232,6 +232,8 @@ const GLITCH_FADE_OUT_SPEED: float = 4.0 # How fast glitch disappears
 var _glitch_quitting: bool = false        # True during quit glitch sequence
 const GLITCH_QUIT_MAX: float = 8.0        # Max intensity before closing
 const GLITCH_QUIT_RAMP: float = 4.0       # Ramp speed (accelerates)
+var _glitch_audio: AudioStreamPlayer = null
+var _glitch_audio_playback: AudioStreamGeneratorPlayback = null
 
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
@@ -1956,6 +1958,14 @@ func _setup_glitch_effect() -> void:
 	_camera.add_child(_glitch_quad)
 	# Start hidden — no GPU cost when inactive
 	_glitch_quad.visible = false
+	# Setup glitch audio (procedural noise)
+	_glitch_audio = AudioStreamPlayer.new()
+	var gen := AudioStreamGenerator.new()
+	gen.mix_rate = 16000.0  # Low sample rate = grittier
+	gen.buffer_length = 0.1
+	_glitch_audio.stream = gen
+	_glitch_audio.volume_db = -40.0  # Start very quiet
+	add_child(_glitch_audio)
 	print("📺 Glitch effect ready (hidden)")
 
 func _set_glitch_active(active: bool) -> void:
@@ -1987,6 +1997,7 @@ func _update_glitch(delta: float) -> void:
 		var ramp_speed := GLITCH_QUIT_RAMP * (1.0 + _glitch_intensity * 0.5)
 		_glitch_intensity = minf(_glitch_intensity + ramp_speed * delta, GLITCH_QUIT_MAX)
 		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		_push_glitch_audio()
 		# When max reached — goodbye
 		if _glitch_intensity >= GLITCH_QUIT_MAX - 0.01:
 			print("👋 Glitch max — fermeture.")
@@ -1998,9 +2009,44 @@ func _update_glitch(delta: float) -> void:
 		elif _glitch_intensity > _glitch_target:
 			_glitch_intensity = maxf(_glitch_intensity - GLITCH_FADE_OUT_SPEED * delta, _glitch_target)
 		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		if _glitch_intensity > 0.1:
+			_push_glitch_audio()
+		elif _glitch_audio.playing:
+			_glitch_audio.stop()
+			_glitch_audio_playback = null
 		# Hide quad entirely when fully faded out (saves GPU)
 		if _glitch_intensity < 0.001 and _glitch_quad:
 			_glitch_quad.visible = false
+
+func _push_glitch_audio() -> void:
+	"""Generate procedural glitch noise matching the visual intensity."""
+	if _glitch_audio == null:
+		return
+	# Start playback if not running
+	if not _glitch_audio.playing:
+		_glitch_audio.play()
+		_glitch_audio_playback = _glitch_audio.get_stream_playback()
+	if _glitch_audio_playback == null:
+		return
+	# Volume scales with intensity: -30dB at 0.5 → -6dB at 8.0
+	var t := clampf(_glitch_intensity / GLITCH_QUIT_MAX, 0.0, 1.0)
+	_glitch_audio.volume_db = lerpf(-30.0, -6.0, t)
+	# Fill available buffer with glitch noise
+	var frames_avail := _glitch_audio_playback.get_frames_available()
+	# Cap per-frame work to avoid stalls
+	var to_fill := mini(frames_avail, 512)
+	# Stutter probability increases with intensity
+	var mute_chance := 0.5 - t * 0.3  # 0.5 at low → 0.2 at max (more continuous)
+	# Bitcrush step: coarser at low intensity, finer at high
+	var crush_step := lerpf(0.3, 0.05, t)
+	for i in range(to_fill):
+		var noise := randf_range(-1.0, 1.0)
+		# Random muting → digital stutter
+		if randf() < mute_chance:
+			noise = 0.0
+		# Bitcrush simulation
+		noise = snappedf(noise, crush_step)
+		_glitch_audio_playback.push_frame(Vector2(noise, noise))
 
 # ─── User Speaking Acknowledgment ───────────────────
 func _setup_ack_audio() -> void:

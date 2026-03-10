@@ -409,17 +409,19 @@ def prepare_close_tab(reason: str, target_window: str = None):
             return {"status": "error", "message": f"Could not find window matching '{target_window}'. Provide the exact title from open_windows list."}
 
         title = target.title.lower()
-
-        if not compute_can_be_closed(title):
-            return {"status": "error", "message": f"Did not close. '{target.title}' is a protected app."}
-
         hwnd = target._hWnd
 
+        # Detect browser FIRST — browser tabs should ALWAYS be closeable.
+        # The protected list is for apps (Blender, VS Code, etc.), not web page content.
+        # Without this, page titles like "la notion du temps" falsely match "Notion" (the app).
         mode = "app"
         for browser in BROWSER_KEYWORDS:
             if browser in title:
                 mode = "browser"
                 break
+
+        if mode == "app" and not compute_can_be_closed(title):
+            return {"status": "error", "message": f"Did not close. '{target.title}' is a protected app."}
 
         # Compute target coordinates (window's close button area)
         import ctypes
@@ -638,7 +640,10 @@ async def run_gemini_loop(pya):
     _consecutive_failures = 0  # Track rapid failures for backoff
 
     while True:
-        update_display(TamaState.CALM, "Mode Libre — Tama est là 🥷")
+        err_str = ""  # Must survive all try/except/finally branches
+        _is_reconnecting = _consecutive_failures > 0
+        if not _is_reconnecting:
+            update_display(TamaState.CALM, "Mode Libre — Tama est là 🥷")
         while not state["is_session_active"] and not state["conversation_requested"]:
             await asyncio.sleep(0.3)
 
@@ -1620,8 +1625,16 @@ async def run_gemini_loop(pya):
                                                 timing = fc.args.get('timing_intent', '')
                                                 print(f"  🥊🔥 GEMINI INITIATED STRIKE: {timing}")
 
-                                                # ── Anti-doublon: block re-fires during an active strike flow ──
-                                                if state.get("_strike_in_progress"):
+                                                # ── Ghost strike guard ──
+                                                # If S is already low and no close_distracting_tab is pending,
+                                                # this fire_strike is a phantom (Gemini re-generated after deferred
+                                                # tool response). Ignore it silently.
+                                                si_now = state["current_suspicion_index"]
+                                                is_ghost = si_now < 5 and not state.get("_strike_in_progress")
+                                                if is_ghost:
+                                                    print(f"  🥊👻 Ghost strike ignored (S={si_now:.0f}, no close pending)")
+                                                elif state.get("_strike_in_progress"):
+                                                    # ── Anti-doublon: block re-fires during an active strike flow ──
                                                     print("  🥊 Strike already in progress — ignoring duplicate fire_strike")
                                                 else:
                                                     state["_strike_in_progress"] = True
@@ -1639,12 +1652,25 @@ async def run_gemini_loop(pya):
                                                         # Normal case: fire_strike arrives before close_distracting_tab
                                                         # → flag it, grace_then_close will send the anim after preparing target
                                                         state["_strike_requested"] = True
+                                                        state["_strike_requested_at"] = time.time()
                                                         print("  🥊 Strike requested — waiting for close_distracting_tab to prepare target")
 
+                                                        # ── Auto-timeout: if close_distracting_tab never arrives, clean up ──
+                                                        async def strike_request_timeout():
+                                                            await asyncio.sleep(4.0)
+                                                            if state.get("_strike_requested"):
+                                                                print("  🥊⏰ Strike request timed out (4s) — close_distracting_tab never came")
+                                                                state["_strike_requested"] = False
+                                                                state["_strike_in_progress"] = False
+                                                        asyncio.create_task(strike_request_timeout())
+
+                                                # ALWAYS send tool response — Gemini requires responses to
+                                                # ALL function calls before it can call close_distracting_tab.
+                                                # Without this, close_distracting_tab never gets called.
                                                 function_responses_to_send.append(
                                                     types.FunctionResponse(
                                                         name="fire_strike",
-                                                        response={"status": "strike_delivered"},
+                                                        response={"status": "ignored_ghost" if is_ghost else "strike_ready"},
                                                         id=fc.id
                                                     )
                                                 )
@@ -1811,9 +1837,15 @@ async def run_gemini_loop(pya):
                     except asyncio.CancelledError:
                         pass
                     except Exception as e:
-                        import traceback
-                        print(f"\\n🚨 TASK CRASHED [{name}]: {e}")
-                        traceback.print_exc()
+                        err_msg = str(e)
+                        # Expected reconnection errors — log quietly
+                        is_expected = any(k in err_msg for k in ("Connection dropped", "Conversation ended", "Conversation stalled", "Watchdog"))
+                        if is_expected:
+                            print(f"  🔄 [{name}] {err_msg}")
+                        else:
+                            import traceback
+                            print(f"\\n🚨 TASK CRASHED [{name}]: {e}")
+                            traceback.print_exc()
                         raise
 
                 async with asyncio.TaskGroup() as tg:
@@ -1827,7 +1859,7 @@ async def run_gemini_loop(pya):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            err_str = str(e)
+            err_str = str(e)  # Capture BEFORE any logic that uses it
             is_clean_conversation_end = "Conversation ended" in err_str or "Conversation stalled" in err_str
 
             # ── Conversation crash: notify Godot so Tama does go_away animation ──
@@ -1862,8 +1894,6 @@ async def run_gemini_loop(pya):
                     if is_stale_handle:
                         state["_session_resume_handle"] = None
                         print("  🔑 Resume handle cleared (1008 stale)")
-                    else:
-                        print(f"  🔑 Resume handle preserved (1011 — handle still valid)")
 
                     # ── Circuit Breaker: activate after 3 rapid crashes ──
                     _crash_times = state.get("_crash_timestamps", [])
@@ -1882,7 +1912,7 @@ async def run_gemini_loop(pya):
                         print(f"  🟢 Circuit breaker deactivated — connection stabilized")
 
                     if _consecutive_failures <= 2:
-                        print(f"  ⚡ Connexion refusée — retry rapide #{_consecutive_failures}...")
+                        pass  # Silent — stealth reconnect handles messaging
                     else:
                         print(f"  ⚠️ Erreur serveur persistante ({_consecutive_failures}x) — backoff exponentiel...")
                 else:

@@ -148,6 +148,7 @@ state = {
     # Strike fire sync (frame-precise hand animation trigger)
     "_pending_strike": None,          # Dict with hwnd/mode/title/reason — set by prepare_close_tab, consumed by fire_hand_animation
     "_strike_requested": False,       # True when fire_strike() called but close target not ready yet
+    "_strike_requested_at": 0,        # Timestamp when _strike_requested was set — for auto-timeout
     "_strike_in_progress": False,     # True from first fire_strike until post-close reset — blocks re-fires
     # API stability guards
     "_api_processing_tool": False,    # True when processing tool calls — pauses audio/image sends to prevent 1011

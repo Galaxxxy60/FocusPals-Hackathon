@@ -265,6 +265,7 @@ async def ws_handler(websocket):
     """Handle incoming WebSocket messages from Godot."""
     state["connected_ws_clients"].add(websocket)
     try:
+      try:
         async for message in websocket:
             try:
                 data = json.loads(message)
@@ -382,8 +383,17 @@ async def ws_handler(websocket):
             except Exception as e:
                 print(f"⚠️ [WS] Erreur commande: {e}")
                 import traceback; traceback.print_exc()
+      except websockets.exceptions.ConnectionClosedError:
+          print("🔌 [WS] Godot disconnected (no close frame) — reconnection will be automatic")
+      except ConnectionResetError:
+          print("🔌 [WS] Godot connection reset — reconnection will be automatic")
+      except OSError as e:
+          if e.winerror == 64:  # WinError 64: network name no longer available
+              print("🔌 [WS] Network name unavailable — Godot likely restarted")
+          else:
+              raise
     finally:
-        state["connected_ws_clients"].remove(websocket)
+        state["connected_ws_clients"].discard(websocket)
 
 
 # ─── WebSocket State Broadcaster ────────────────────────────

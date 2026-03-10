@@ -40,6 +40,7 @@ var _names: Dictionary = {}
 const WANTED = {
 	"idle_wall": "Idle_wall",
 	"idle_wall_talk": "Idle_wall_Talk",
+	"idle_wall_hair": "Idle_wall_HairAction",
 	"off_wall": "OffThewall",
 	"idle": "Idle",
 	"suspicious": "Suspicious",
@@ -66,6 +67,11 @@ var _strike_time: float = 0.0
 
 # Track SM node for change detection
 var _prev_node: String = ""
+
+# ─── Random Idle Hair Fix Timer ────────────────────────────
+var _idle_hair_timer: float = 0.0
+const IDLE_HAIR_MIN_CD: float = 20.0   # Min seconds between hair fixes
+const IDLE_HAIR_MAX_CD: float = 60.0   # Max seconds between hair fixes
 
 # ─── Crossfade durations per transition type ─────────────────
 const XFADE_TRANSITION: float = 0.15   # Wall ↔ OffThewall
@@ -145,6 +151,7 @@ func _build_tree() -> void:
 		"idle_wall": Vector2(0, 100),
 		"idle_wall_talk": Vector2(0, -50),
 		"idle_wall_talk_return": Vector2(0, -150),
+		"idle_wall_hair": Vector2(-100, 200),
 		"off_wall": Vector2(200, 100),
 		"idle": Vector2(400, 0),
 		"suspicious": Vector2(400, 100),
@@ -230,6 +237,18 @@ func _build_tree() -> void:
 		_add_trans(sm, "idle_wall_talk_return", "idle_wall", XFADE_WALL_TALK, true)  # auto-advance
 		# Also allow leaving wall from talk pose (if suspicion rises mid-remark)
 		_add_trans(sm, "idle_wall_talk", "off_wall", XFADE_TRANSITION)
+
+	# Idle_wall_Hair — random hair fix while sitting on wall
+	# Plays once → auto-advance back to idle_wall
+	if _names.has("idle_wall_hair"):
+		_add_trans(sm, "idle_wall", "idle_wall_hair", XFADE_WALL_TALK)
+		_add_trans(sm, "idle_wall_hair", "idle_wall", XFADE_WALL_TALK, true)  # auto-return
+		# Interruption: allow leaving wall or starting talk during hair fix
+		_add_trans(sm, "idle_wall_hair", "off_wall", XFADE_TRANSITION)
+		if _names.has("idle_wall_talk"):
+			_add_trans(sm, "idle_wall_hair", "idle_wall_talk", XFADE_WALL_TALK)
+		# Initialize random timer
+		_idle_hair_timer = randf_range(IDLE_HAIR_MIN_CD, IDLE_HAIR_MAX_CD)
 
 	# ── Create AnimationTree node ──
 	_tree = AnimationTree.new()
@@ -520,6 +539,14 @@ func _process(delta: float) -> void:
 		_on_sm_node_changed(_prev_node, cur_node)
 		_prev_node = cur_node
 
+	# ── Random idle hair fix trigger ──
+	if current_state == State.ON_WALL and cur_node == "idle_wall" and _names.has("idle_wall_hair"):
+		_idle_hair_timer -= delta
+		if _idle_hair_timer <= 0:
+			_playback.travel("idle_wall_hair")
+			_idle_hair_timer = randf_range(IDLE_HAIR_MIN_CD, IDLE_HAIR_MAX_CD)
+			print("🎬 → idle_wall_hair (random trigger, next in %.0fs)" % _idle_hair_timer)
+
 	# ── Strike fire detection (animation position trigger) ──
 	if current_state == State.STRIKING and not _strike_fired:
 		var fire_at: float = STRIKE_FIRE_AT.get(cur_node, STRIKE_FIRE_FALLBACK)
@@ -602,6 +629,15 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 	# idle_wall_talk_return ended → back to idle_wall (auto-advance)
 	elif from_node == "idle_wall_talk_return" and to_node == "idle_wall":
 		_set_state(State.ON_WALL)
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike": play_strike()
+			else: set_standing_anim(q)
+
+	# idle_wall_hair ended → back to idle_wall (auto-advance, stays ON_WALL)
+	elif from_node == "idle_wall_hair" and to_node == "idle_wall":
+		# State stays ON_WALL — just a cosmetic variation
 		if _queued_standing != "":
 			var q := _queued_standing
 			_queued_standing = ""
