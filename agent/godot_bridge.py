@@ -248,10 +248,17 @@ def mouse_edge_monitor():
     user32 = ctypes.windll.user32
     screen_w = user32.GetSystemMetrics(0)
 
+    # MonitorFromPoint constants
+    MONITOR_DEFAULTTONULL = 0
+
+    # Get handle to the primary monitor (where Godot lives)
+    origin = POINT(0, 0)
+    primary_monitor = user32.MonitorFromPoint(origin, MONITOR_DEFAULTTONULL)
+
     work_area = ctypes.wintypes.RECT()
     ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
     detect_y_min = work_area.bottom - 500
-    print(f"🖱️ [EdgeMonitor] Démarré — écran: {screen_w}px, zone Y: {detect_y_min}-{work_area.bottom}")
+    print(f"🖱️ [EdgeMonitor] Démarré — écran: {screen_w}px, zone Y: {detect_y_min}-{work_area.bottom}, primary_monitor: {primary_monitor}")
 
     radial_shown_time = 0
 
@@ -264,7 +271,12 @@ def mouse_edge_monitor():
             print(f"⚠️ [EdgeMonitor] DPI DRIFT! screen_w changed: {screen_w} → {live_screen_w}")
             screen_w = live_screen_w
 
-        near_edge = (screen_w - 5) <= pt.x <= screen_w
+        # Check if cursor is on the PRIMARY monitor (where Godot/Tama lives)
+        # This prevents false triggers on secondary monitors in any arrangement
+        cursor_monitor = user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONULL)
+        on_primary = (cursor_monitor == primary_monitor)
+
+        near_edge = on_primary and (screen_w - 5) <= pt.x <= screen_w
         in_zone = pt.y >= detect_y_min
 
         if not near_edge or not in_zone:
