@@ -56,7 +56,7 @@ def _update_click_through():
         state.get("radial_shown", False)
         or state.get("_settings_panel_open", False)
         or state.get("_tweaks_panel_open", False)
-        # ↓ Add future panel flags here ↓
+        or state.get("_quit_dialog_open", False)
     )
     _toggle_click_through(not needs_clicks)
 
@@ -339,6 +339,12 @@ async def ws_handler(websocket):
                 elif cmd == "MENU_ACTION":
                     action = data.get("action", "")
                     _handle_menu_action(action)
+                elif cmd == "SHOW_QUIT":
+                    state["_quit_dialog_open"] = True
+                    _update_click_through()
+                elif cmd == "QUIT_CLOSED":
+                    state["_quit_dialog_open"] = False
+                    _update_click_through()
                 elif cmd == "SETTINGS_CLOSED":
                     state["_settings_panel_open"] = False
                     _update_click_through()  # manager checks all flags

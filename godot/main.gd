@@ -790,6 +790,9 @@ func _show_quit_confirmation() -> void:
 	if _quit_layer:
 		return  # Already visible
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
+	# Tell Python to disable Win32 click-through
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "SHOW_QUIT"}))
 
 	_quit_layer = CanvasLayer.new()
 	_quit_layer.layer = 200
@@ -884,9 +887,8 @@ func _hide_quit_confirmation() -> void:
 		_quit_layer.queue_free()
 		_quit_layer = null
 	_safe_restore_passthrough()
-	# Tell Python to re-enable click-through via WinAPI
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
+		ws.send_text(JSON.stringify({"command": "QUIT_CLOSED"}))
 
 func _do_quit() -> void:
 	_hide_quit_confirmation()
