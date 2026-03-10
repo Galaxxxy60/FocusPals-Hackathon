@@ -28,7 +28,7 @@ from config import (
     compute_can_be_closed, compute_delta_s, tweaks,
 )
 from audio import detect_voice_activity
-from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot
+from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot, broadcast_to_godot
 from mood_engine import get_mood_context, track_infraction, track_compliance
 from flash_lite import pre_classify, get_pre_classify_hint, clear_classification_history, generate_session_summary
 from app_control import execute_action as jarvis_execute
@@ -524,13 +524,7 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             tx = pending.get("target_x", 0)
             ty = pending.get("target_y", 0)
             target_msg = json.dumps({"command": "STRIKE_TARGET", "x": tx, "y": ty})
-            main_loop = state["main_loop"]
-            for ws_client in list(state["connected_ws_clients"]):
-                try:
-                    if main_loop and main_loop.is_running():
-                        asyncio.run_coroutine_threadsafe(ws_client.send(target_msg), main_loop)
-                except Exception:
-                    pass
+            broadcast_to_godot(target_msg)
             print(f"  🎯 STRIKE_TARGET sent to Godot: ({tx}, {ty})")
 
             # ── Now that target is ready, send the Strike anim ──
@@ -605,20 +599,9 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
 async def run_gemini_loop(pya):
     """The core Gemini Live API loop — handles reconnection, mode switching, and all async tasks."""
 
-    # ── VAD configs per mode ──
-    # Deep work: LOW sensitivity = fewer false triggers, conservative
-    _vad_deep_work = types.RealtimeInputConfig(
-        automatic_activity_detection=types.AutomaticActivityDetection(
-            disabled=False,
-            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
-            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
-            prefix_padding_ms=20,
-            silence_duration_ms=500,
-        )
-    )
-    # Conversation: LOW sensitivity = avoid phantom interruptions from ambient noise
-    # (was HIGH/300ms but Google kept interpreting clicks/breathing as speech)
-    _vad_conversation = types.RealtimeInputConfig(
+    # ── VAD config (shared between deep_work and conversation) ──
+    # LOW sensitivity = fewer false triggers from clicks/breathing
+    _vad_config = types.RealtimeInputConfig(
         automatic_activity_detection=types.AutomaticActivityDetection(
             disabled=False,
             start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
@@ -641,8 +624,8 @@ async def run_gemini_loop(pya):
 
     while True:
         err_str = ""  # Must survive all try/except/finally branches
-        _is_reconnecting = _consecutive_failures > 0
-        if not _is_reconnecting:
+        _is_stealth = _consecutive_failures > 0
+        if not _is_stealth:
             update_display(TamaState.CALM, "Mode Libre — Tama est là 🥷")
         while not state["is_session_active"] and not state["conversation_requested"]:
             await asyncio.sleep(0.3)
@@ -666,8 +649,7 @@ async def run_gemini_loop(pya):
             update_display(TamaState.CALM, "Connecting to Google WebSocket...")
 
         # Tell Godot we're connecting (before the connection attempt)
-        # Skip notification during stealth reconnects (consecutive failures = stealth)
-        _is_stealth = _consecutive_failures > 0
+        # Skip notification during stealth reconnects
         if not _is_stealth:
             _conn_ing_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connecting"})
             for ws_client in list(state["connected_ws_clients"]):
@@ -717,7 +699,7 @@ async def run_gemini_loop(pya):
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow(),
             ),
-            realtime_input_config=_vad_deep_work,
+            realtime_input_config=_vad_config,
             thinking_config=types.ThinkingConfig(
                 thinking_budget=512,
             ),
@@ -735,13 +717,12 @@ async def run_gemini_loop(pya):
             proactivity=types.ProactivityConfig(proactive_audio=True),
             enable_affective_dialog=True,  # Expressivity > stability (stealth reconnect handles crashes)
             speech_config=_voice_config,
-            realtime_input_config=_vad_conversation,
+            realtime_input_config=_vad_config,
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow(),
             ),
         )
 
-        err_str = ""  # Initialized before try — used by stealth reconnect logic after finally
         try:
             active_config = config_conversation if state["current_mode"] == "conversation" else config_deep_work
             async with cfg.client.aio.live.connect(model=MODEL, config=active_config) as session:
@@ -770,6 +751,18 @@ async def run_gemini_loop(pya):
                 state["force_speech"] = False
                 state["_tama_is_speaking"] = False  # Track globally for echo cancellation
                 state["_api_processing_tool"] = False  # Guard: pause sends during tool processing
+                state["_strike_in_progress"] = False  # Reset strike state on reconnection
+                state["_strike_requested"] = False
+
+                # ── After stealth reconnect: reset mood to calm ──
+                # The old Gemini context is gone — if Tama was angry before the crash,
+                # the new session knows nothing about it. Reset visual state to match.
+                if _is_stealth and state.get("_current_mood", "calm") != "calm":
+                    state["_current_mood"] = "calm"
+                    state["_current_mood_intensity"] = 0.3
+                    state["_mood_anim_set"] = False
+                    broadcast_to_godot(json.dumps({"command": "TAMA_MOOD", "mood": "calm", "intensity": 0.3}))
+                    print("  🎭 Mood reset → calm (stealth reconnect)")
 
                 # ── Circuit Breaker: degrade to text-only after rapid crashes ──
                 _circuit_breaker_active = state.get("_circuit_breaker_active", False)
@@ -936,13 +929,7 @@ async def run_gemini_loop(pya):
                                             if time.time() - _last_ack > 3.0:  # 3s cooldown
                                                 state["_last_user_speaking_ack"] = time.time()
                                                 ack_msg = json.dumps({"command": "USER_SPEAKING"})
-                                                for ws_client in list(state["connected_ws_clients"]):
-                                                    try:
-                                                        main_loop = state["main_loop"]
-                                                        if main_loop and main_loop.is_running():
-                                                            asyncio.run_coroutine_threadsafe(ws_client.send(ack_msg), main_loop)
-                                                    except Exception:
-                                                        pass
+                                                broadcast_to_godot(ack_msg)
 
                                     await audio_in_queue.put(blob)
                                 else:
@@ -986,19 +973,8 @@ async def run_gemini_loop(pya):
                 async def send_screen_pulse():
                     """In deep_work: screenshot + analysis. In conversation: lightweight chat context."""
                     if state["current_mode"] == "conversation":
+                        # Greeting already sent via send_client_content before TaskGroup
                         state["user_spoke_at"] = time.time()
-                        await asyncio.sleep(2.0)
-                        try:
-                            if state.get("language") == "en":
-                                await session.send_realtime_input(
-                                    text="The user just clicked 'Talk' to chat with you. Greet them! Be natural and short."
-                                )
-                            else:
-                                await session.send_realtime_input(
-                                    text="Salue l'utilisateur ! Il a appuyé sur 'Parler' pour discuter avec toi. Sois naturelle et courte."
-                                )
-                        except Exception:
-                            return
                     elif state.get("_resuming_from_crash") and state.get("_crash_context"):
                         # Reconnection after crash → Tama acknowledges and resumes
                         ctx = state.pop("_crash_context")
@@ -1031,6 +1007,16 @@ async def run_gemini_loop(pya):
                             pass
                         await asyncio.sleep(3)
                         state["force_speech"] = False
+
+                    elif _is_stealth and state["current_mode"] == "deep_work":
+                        # Stealth reconnection (1011) → tell Gemini to stay silent
+                        # Without this, Gemini thinks it's a new session and says "C'est parti"
+                        try:
+                            await session.send_realtime_input(
+                                text="[SYSTEM] Seamless reconnection — session already in progress. Do NOT speak. Do NOT greet. Do NOT acknowledge the reconnection. Stay MUZZLED and silently resume watching. Wait for the next pulse."
+                            )
+                        except Exception:
+                            pass
 
                     elif state.get("just_started_session"):
                         # Fresh session (not a reconnection) → Tama greets naturally
@@ -1354,13 +1340,7 @@ async def run_gemini_loop(pya):
                                         state["_last_speech_ended"] = time.time()
                                         # Reset mouth to neutral (prevent viseme stuck on last shape)
                                         rest_msg = json.dumps({"command": "VISEME", "shape": "REST"})
-                                        for ws_client in list(state["connected_ws_clients"]):
-                                            try:
-                                                main_loop = state["main_loop"]
-                                                if main_loop and main_loop.is_running():
-                                                    asyncio.run_coroutine_threadsafe(ws_client.send(rest_msg), main_loop)
-                                            except Exception:
-                                                pass
+                                        broadcast_to_godot(rest_msg)
                                         # Return to idle_wall if calm and not chatting
                                         si = state["current_suspicion_index"]
                                         if si < 3 and state["current_mode"] != "conversation":
@@ -1428,13 +1408,7 @@ async def run_gemini_loop(pya):
                                             send_anim_to_godot("Idle_wall", False)
                                         # Reset mouth to neutral
                                         rest_msg = json.dumps({"command": "VISEME", "shape": "REST"})
-                                        for ws_client in list(state["connected_ws_clients"]):
-                                            try:
-                                                main_loop = state["main_loop"]
-                                                if main_loop and main_loop.is_running():
-                                                    asyncio.run_coroutine_threadsafe(ws_client.send(rest_msg), main_loop)
-                                            except Exception:
-                                                pass
+                                        broadcast_to_godot(rest_msg)
                                     is_speaking = False
                                     state["_tama_is_speaking"] = False
                                     state["_mood_anim_set"] = False
@@ -1545,13 +1519,7 @@ async def run_gemini_loop(pya):
                                                     "alignment": ali,
                                                     "category": cat
                                                 })
-                                                for ws_client in list(state["connected_ws_clients"]):
-                                                    try:
-                                                        main_loop = state["main_loop"]
-                                                        if main_loop and main_loop.is_running():
-                                                            asyncio.run_coroutine_threadsafe(ws_client.send(scan_msg), main_loop)
-                                                    except Exception:
-                                                        pass
+                                                broadcast_to_godot(scan_msg)
 
                                             elif fc.name == "close_distracting_tab":
                                                 reason = fc.args.get("reason", "Distraction")
@@ -1589,13 +1557,7 @@ async def run_gemini_loop(pya):
                                                 # Always send facial expression (UV swap eyes/mouth)
                                                 # This is lightweight — doesn't make Tama appear/disappear
                                                 mood_msg = json.dumps({"command": "TAMA_MOOD", "mood": mood, "intensity": intensity})
-                                                main_loop = state["main_loop"]
-                                                for ws_client in list(state["connected_ws_clients"]):
-                                                    try:
-                                                        if main_loop and main_loop.is_running():
-                                                            asyncio.run_coroutine_threadsafe(ws_client.send(mood_msg), main_loop)
-                                                    except Exception:
-                                                        pass
+                                                broadcast_to_godot(mood_msg)
 
                                                 # Only change body animation if Tama is speaking
                                                 # When muzzled (S<3, no audio), don't make her appear/disappear
@@ -1693,13 +1655,7 @@ async def run_gemini_loop(pya):
                                                         "x": tx, "y": ty,
                                                         "action": action_name
                                                     })
-                                                    main_loop = state["main_loop"]
-                                                    for ws_client in list(state["connected_ws_clients"]):
-                                                        try:
-                                                            if main_loop and main_loop.is_running():
-                                                                asyncio.run_coroutine_threadsafe(ws_client.send(jarvis_msg), main_loop)
-                                                        except Exception:
-                                                            pass
+                                                    broadcast_to_godot(jarvis_msg)
                                                     print(f"  🤖 JARVIS_TAP sent to Godot: ({tx}, {ty})")
 
                                                 function_responses_to_send.append(
@@ -1818,13 +1774,7 @@ async def run_gemini_loop(pya):
                                 amp_delta = abs(amplitude - last_amp) if 'last_amp' in dir() else 1.0
                                 if viseme != last_viseme or amp_delta > 0.15:
                                     viseme_msg = json.dumps({"command": "VISEME", "shape": viseme, "amp": round(float(amplitude), 2)})
-                                    main_loop = state["main_loop"]
-                                    for ws_client in list(state["connected_ws_clients"]):
-                                        try:
-                                            if main_loop and main_loop.is_running():
-                                                asyncio.run_coroutine_threadsafe(ws_client.send(viseme_msg), main_loop)
-                                        except Exception:
-                                            pass
+                                    broadcast_to_godot(viseme_msg)
                                     last_viseme = viseme
                                     last_amp = amplitude
 
@@ -1888,7 +1838,18 @@ async def run_gemini_loop(pya):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            err_str = str(e)  # Capture BEFORE any logic that uses it
+            # ExceptionGroup wraps the real error — unwrap to find the actual message
+            # str(ExceptionGroup) = "unhandled errors in a TaskGroup" which hides "1011"
+            if isinstance(e, ExceptionGroup):
+                # Dig into sub-exceptions to find the real error message
+                _sub_msgs = []
+                for sub_exc in e.exceptions:
+                    _sub_msgs.append(str(sub_exc))
+                    if sub_exc.__cause__:
+                        _sub_msgs.append(str(sub_exc.__cause__))
+                err_str = " | ".join(_sub_msgs)
+            else:
+                err_str = str(e)
             is_clean_conversation_end = "Conversation ended" in err_str or "Conversation stalled" in err_str
 
             # ── Conversation crash: notify Godot so Tama does go_away animation ──

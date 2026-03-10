@@ -36,7 +36,7 @@ albedo_texture = ExtResource("3_h2yge")
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4c57u"]
 shading_mode = 0
-albedo_color = Color(0.12720278, 0.094880484, 0.13016507, 1)
+albedo_color = Color(0, 0, 0, 1)
 
 [node name="Node3D" type="Node3D" unique_id=436502441]
 script = ExtResource("1_script")

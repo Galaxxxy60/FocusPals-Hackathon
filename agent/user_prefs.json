@@ -1,4 +1,11 @@
 {
   "selected_mic_name": "Microphone (Realtek(R) Audio)",
-  "language": "fr"
+  "language": "fr",
+  "tweaks": {
+    "suspicion_gain_mult": 5.0,
+    "suspicion_decay_mult": 1.0,
+    "confidence": 0.95,
+    "mood_decay_secs": 60.0,
+    "pulse_delay_mult": 1.0
+  }
 }

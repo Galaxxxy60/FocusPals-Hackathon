@@ -18,7 +18,7 @@ import websockets
 
 from config import application_path, state, tweaks, BREAK_CHECKPOINTS, BREAK_DURATIONS
 from audio import get_available_mics, refresh_mic_cache, select_mic, resolve_default_mic
-from ui import TamaState, start_session, quit_app, update_display
+from ui import TamaState, start_session, quit_app, update_display, broadcast_to_godot
 from flash_lite import get_lite_stats, clear_classification_history, generate_session_summary
 
 
@@ -165,32 +165,30 @@ def _get_key_hint() -> str:
     return "•" * 8 + key[-4:]
 
 
-def _send_settings_to_godot():
-    """Send current settings (mics + cached API key status) to all connected Godot clients."""
+def _build_settings_data(mics: list) -> dict:
+    """Build the SETTINGS_DATA payload. Single source of truth for all settings updates."""
     import config
-    mics = get_available_mics()  # returns cache if <30s old
-    has_api_key = bool(config.GEMINI_API_KEY)
-    response = json.dumps({
+    return {
         "command": "SETTINGS_DATA",
         "mics": mics,
         "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
-        "has_api_key": has_api_key,
+        "has_api_key": bool(config.GEMINI_API_KEY),
         "key_valid": state["_api_key_valid"],
         "key_hint": _get_key_hint(),
+        "language": state["language"],
         "tama_volume": state["tama_volume"],
         "session_duration": state.get("session_duration_minutes", 50),
         "api_usage": _get_api_usage_stats(),
         "screen_share_allowed": state["screen_share_allowed"],
         "mic_allowed": state["mic_allowed"],
         "tama_scale": state["tama_scale"]
-    })
-    main_loop = state["main_loop"]
-    for ws_client in list(state["connected_ws_clients"]):
-        try:
-            if main_loop and main_loop.is_running():
-                asyncio.run_coroutine_threadsafe(ws_client.send(response), main_loop)
-        except Exception:
-            pass
+    }
+
+
+def _send_settings_to_godot():
+    """Send current settings to all connected Godot clients."""
+    mics = get_available_mics()  # returns cache if <30s old
+    broadcast_to_godot(json.dumps(_build_settings_data(mics)))
 
 
 def _update_api_key(new_key: str) -> bool:
@@ -290,13 +288,7 @@ def mouse_edge_monitor():
             print(f"🖱️ [EdgeMonitor] SHOW_RADIAL ({pt.x}, {pt.y}) screen_w={screen_w}")
             _update_click_through()  # radial_shown=True → CT off
             msg = json.dumps({"command": "SHOW_RADIAL"})
-            main_loop = state["main_loop"]
-            for ws_client in list(state["connected_ws_clients"]):
-                try:
-                    if main_loop and main_loop.is_running():
-                        asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
-                except Exception as e:
-                    print(f"🖱️ [EdgeMonitor] Erreur envoi WS: {e}")
+            broadcast_to_godot(msg)
 
         # Safety timeout: if radial shown for >30s, something went wrong — ask Godot to hide it
         if state["radial_shown"] and (time.time() - radial_shown_time > 30.0):
@@ -305,13 +297,7 @@ def mouse_edge_monitor():
             # Let Godot decide whether to re-enable click-through
             # (it checks if settings/quit dialog is open before doing so)
             msg = json.dumps({"command": "HIDE_RADIAL"})
-            main_loop = state["main_loop"]
-            for ws_client in list(state["connected_ws_clients"]):
-                try:
-                    if main_loop and main_loop.is_running():
-                        asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
-                except Exception:
-                    pass
+            broadcast_to_godot(msg)
             _update_click_through()  # radial_shown=False → manager decides
 
         time.sleep(0.1)
@@ -353,26 +339,10 @@ async def ws_handler(websocket):
                     state["_settings_panel_open"] = True
                     state["radial_shown"] = False
                     _update_click_through()  # settings_panel_open=True → CT off
-                    import config
-                    has_api_key = bool(config.GEMINI_API_KEY)
                     # Respond IMMEDIATELY with cached mic data
                     mics = get_available_mics()  # returns cache if <30s old
-                    print(f"\u2699\ufe0f GET_SETTINGS: {len(mics)} micros (cache), selected={state['selected_mic_index']}, has_key={has_api_key}")
-                    response = json.dumps({
-                        "command": "SETTINGS_DATA",
-                        "mics": mics,
-                        "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
-                        "has_api_key": has_api_key,
-                        "key_valid": state["_api_key_valid"],
-                        "key_hint": _get_key_hint(),
-                        "language": state["language"],
-                        "tama_volume": state["tama_volume"],
-                        "session_duration": state.get("session_duration_minutes", 50),
-                        "api_usage": _get_api_usage_stats(),
-                        "screen_share_allowed": state["screen_share_allowed"],
-                        "mic_allowed": state["mic_allowed"],
-                        "tama_scale": state["tama_scale"]
-                    })
+                    print(f"\u2699\ufe0f GET_SETTINGS: {len(mics)} micros (cache), selected={state['selected_mic_index']}")
+                    response = json.dumps(_build_settings_data(mics))
                     await websocket.send(response)
                     # Refresh mics in background (if cache was stale, next open is instant)
                     async def _bg_refresh_mics(ws):
@@ -380,22 +350,7 @@ async def ws_handler(websocket):
                             fresh = await asyncio.to_thread(refresh_mic_cache)
                             await asyncio.to_thread(resolve_default_mic)
                             if fresh != mics:
-                                update = json.dumps({
-                                    "command": "SETTINGS_DATA",
-                                    "mics": fresh,
-                                    "selected": state["selected_mic_index"] if state["selected_mic_index"] is not None else -1,
-                                    "has_api_key": has_api_key,
-                                    "key_valid": state["_api_key_valid"],
-                                    "key_hint": _get_key_hint(),
-                                    "language": state["language"],
-                                    "tama_volume": state["tama_volume"],
-                                    "session_duration": state.get("session_duration_minutes", 50),
-                                    "api_usage": _get_api_usage_stats(),
-                                    "screen_share_allowed": state["screen_share_allowed"],
-                                    "mic_allowed": state["mic_allowed"],
-                                    "tama_scale": state["tama_scale"]
-                                })
-                                await ws.send(update)
+                                await ws.send(json.dumps(_build_settings_data(fresh)))
                         except Exception:
                             pass
                     asyncio.create_task(_bg_refresh_mics(websocket))
@@ -561,13 +516,7 @@ async def broadcast_ws_state():
                                 state["_current_mood"] = "calm"
                                 state["_current_mood_intensity"] = 0.3
                                 mood_msg = json.dumps({"command": "TAMA_MOOD", "mood": "calm", "intensity": 0.3})
-                                for ws_client in list(state["connected_ws_clients"]):
-                                    try:
-                                        main_loop = state["main_loop"]
-                                        if main_loop and main_loop.is_running():
-                                            asyncio.run_coroutine_threadsafe(ws_client.send(mood_msg), main_loop)
-                                    except Exception:
-                                        pass
+                                broadcast_to_godot(mood_msg)
                                 print(f"  🎭 Mood decayed → calm")
                         else:
                             state["_current_mood_intensity"] = decayed_intensity

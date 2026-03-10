@@ -75,13 +75,7 @@ def quit_app(icon, item):
     icon.stop()
     print("\n👋 Tama: Fermeture propre...")
     quit_msg = json.dumps({"command": "QUIT"})
-    main_loop = state["main_loop"]
-    for ws_client in list(state["connected_ws_clients"]):
-        try:
-            if main_loop and main_loop.is_running():
-                asyncio.run_coroutine_threadsafe(ws_client.send(quit_msg), main_loop)
-        except Exception:
-            pass
+    broadcast_to_godot(quit_msg)
     time.sleep(1.5)
     import subprocess
     subprocess.run("taskkill /F /IM focuspals.exe", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -100,13 +94,7 @@ def start_session(source="UI"):
         state["just_started_session"] = True
         update_display(TamaState.CALM, f"🚀 SESSION COMMENCÉE via {source} !")
         start_msg = json.dumps({"command": "START_SESSION"})
-        main_loop = state["main_loop"]
-        for ws_client in list(state["connected_ws_clients"]):
-            try:
-                if main_loop and main_loop.is_running():
-                    asyncio.run_coroutine_threadsafe(ws_client.send(start_msg), main_loop)
-            except Exception:
-                pass
+        broadcast_to_godot(start_msg)
 
 
 def start_session_from_tray(icon, item):
@@ -230,9 +218,9 @@ def update_display(tama_state: TamaState, message: str = ""):
     print("─" * 42)
 
 
-def send_anim_to_godot(anim_name: str, loop: bool = False):
-    """Send an animation command to Godot. Only Python decides when to animate."""
-    msg = json.dumps({"command": "TAMA_ANIM", "anim": anim_name, "loop": loop})
+def broadcast_to_godot(msg: str):
+    """Send a WebSocket message to all connected Godot clients (thread-safe).
+    This is the SINGLE place for the broadcast pattern — use it everywhere."""
     main_loop = state["main_loop"]
     for ws_client in list(state["connected_ws_clients"]):
         try:
@@ -240,6 +228,11 @@ def send_anim_to_godot(anim_name: str, loop: bool = False):
                 asyncio.run_coroutine_threadsafe(ws_client.send(msg), main_loop)
         except Exception:
             pass
+
+
+def send_anim_to_godot(anim_name: str, loop: bool = False):
+    """Send an animation command to Godot. Only Python decides when to animate."""
+    broadcast_to_godot(json.dumps({"command": "TAMA_ANIM", "anim": anim_name, "loop": loop}))
 
 
 # ─── Mood → Animation mapping (Gemini drives this) ─────────
@@ -257,7 +250,7 @@ _MOOD_ANIM_MAP = {
     "sarcastic":    ("Suspicious", "Suspicious", "Angry"),
     "annoyed":      ("Suspicious", "Angry", "Angry"),
     "angry":        ("Angry", "Angry", "Angry"),
-    "furious":      ("Angry", "Angry", "Strike"),
+    "furious":      ("Angry", "Angry", "Angry"),  # NEVER "Strike" — that's fire_strike's job
 }
 
 
