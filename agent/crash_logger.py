@@ -83,7 +83,7 @@ def _dump_state_to_log(log_handle):
         
         # Serialize state, handling non-serializable values
         safe_state = {}
-        for k, v in state.items():
+        for k, v in list(state.items()):  # Snapshot: prevent RuntimeError if state is mutated during crash
             try:
                 json.dumps(v)  # test if serializable
                 safe_state[k] = v

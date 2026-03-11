@@ -1488,35 +1488,13 @@ func _handle_message(raw: String) -> void:
 	session_elapsed_secs = data.get("session_elapsed_secs", 0)
 	session_duration_secs = data.get("session_duration_secs", 3000)
 
-	# ── Screen scan glance — periodic "I'm watching" head turn ──
-	_try_scan_glance()
+	# Gaze is now driven exclusively by Python's SCREEN_SCAN command
+	# (no more fake cosmetic glances)
 
 
-# ─── Screen Scan Glance ──────────────────────────────────
-func _try_scan_glance() -> void:
-	"""Periodically glance at the screen during deep work.
-	Makes Tama feel alive — she 'checks' what you're doing."""
-	if _scan_glance_cooldown > 0:
-		return
-	# Only glance when on the wall, idle, not talking, not already looking
-	if not _anim_tree_module:
-		return
-	if not _anim_tree_module.is_on_wall():
-		return
-	if _anim_tree_module.current_state != 1:  # 1 = ON_WALL (not WALL_TALK etc)
-		return
-	if _gaze_blend > 0.1:  # Already gazing somewhere (ack, conversation, etc)
-		return
-	if _is_speaking:
-		return
+# _try_scan_glance() REMOVED: gaze is now driven exclusively by
+# Python's SCREEN_SCAN command (real scans only, no fake cosmetic glances).
 
-	# Trigger glance: head subtle + eyes full side-eye
-	set_gaze_subtle(GazeTarget.SCREEN_CENTER, 2.0, 0.15)
-	_set_eye_look(-1.0, -0.3)
-	_scan_eye_active = true
-	_scan_glance_timer = SCAN_GLANCE_DURATION
-	# Reset cooldown so periodic glance doesn't fight
-	_scan_glance_cooldown = randf_range(SCAN_GLANCE_MIN_CD, SCAN_GLANCE_MAX_CD)
 
 
 func _get_tier() -> int:
