@@ -32,6 +32,11 @@ except Exception:
     except Exception:
         pass
 
+# ── SILENCE GRPC/ABSL C++ SPAM: must be set BEFORE any Google imports ──
+import os
+os.environ["GRPC_VERBOSITY"] = "ERROR"
+os.environ["GLOG_minloglevel"] = "2"
+
 # ── CRASH LOGGER: must init BEFORE any other imports ──
 from crash_logger import init_crash_logger, install_async_exception_handler
 init_crash_logger()

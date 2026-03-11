@@ -16,6 +16,8 @@ import time
 import mss
 import pyaudio
 import pygetwindow as gw
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pywinauto")
 import pythoncom
 from PIL import Image
 from google.genai import types
