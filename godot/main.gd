@@ -292,6 +292,14 @@ var _pending_leave_wall: bool = false      # Queue leave-wall after reverse wall
 
 # (Post-animation delta removed — using get_process_delta_time() directly)
 
+# ─── Mouse Dodge (hide when hovered + mini window on taskbar) ───
+const DODGE_HOVER_RADIUS: float = 120.0    # Distance (px) from Tama center to trigger dodge
+const DODGE_RETURN_RADIUS: float = 250.0   # Distance (px) to return (from Tama's spot)
+const DODGE_COOLDOWN: float = 0.5          # Seconds before she can dodge/return again
+var _dodge_active: bool = false             # True when Tama is hiding
+var _dodge_cooldown_timer: float = 0.0     # Prevents rapid flickering
+var _dodge_mini_window: Window = null       # Tiny floating window on taskbar
+
 func _ready() -> void:
 	_position_window()
 	_connect_ws()
@@ -464,6 +472,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				print("🎛️ [DEBUG] F1 → Fermeture du radial menu")
 				radial_menu.close()
 			else:
+				if _dodge_active:
+					_dodge_return()
 				print("🎛️ [DEBUG] F1 → Ouverture du radial menu")
 				radial_menu.open()
 	# F2 = hidden debug tweaks panel
@@ -510,7 +520,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
 			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
-	# F7 = Debug Strike: trigger strike via AnimTree + hand window �# ─── Multi-Window Hand Animation ───────────────────────────
+	# F7 = Debug Strike: trigger strike via AnimTree + hand window →# ─── Multi-Window Hand Animation ───────────────────────────
 var _hand_window: Window = null
 
 func _get_hand_bone_screen_pos() -> Vector2i:
@@ -630,46 +640,6 @@ func _spawn_jarvis_hand(target: Vector2i, action: String) -> void:
 			if _gaze_modifier:
 				_gaze_modifier.arm_ik_blend_target = 0.0
 			set_gaze(GazeTarget.NEUTRAL, 2.0)
-	)
-	print("🤖 Jarvis hand: %s → (%d, %d) [%s]" % [emoji, target.x, target.y, action])windows = false
-	_jarvis_hand.visible = false
-
-	var label := Label.new()
-	label.text = emoji
-	label.add_theme_font_size_override("font_size", 48)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_jarvis_hand.add_child(label)
-	add_child(_jarvis_hand)
-
-	# Wait 2 frames for transparency
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if not is_instance_valid(_jarvis_hand):
-		return
-	_jarvis_hand.visible = true
-
-	# ── Animate: smooth glide to target (softer than Strike) ──
-	var target_pos := Vector2i(target.x - 50, target.y - 50)
-	var tween := create_tween().bind_node(_jarvis_hand)
-	tween.set_ease(Tween.EASE_OUT)
-	tween.set_trans(Tween.TRANS_BACK)  # Slight overshoot — feels natural
-	tween.tween_property(_jarvis_hand, "position", target_pos, 0.5)
-	tween.tween_callback(func():
-		if is_instance_valid(label):
-			label.text = done_emoji  # ✨ = action complete!
-	)
-	tween.tween_interval(0.6)
-	tween.tween_callback(func():
-		if _jarvis_hand and is_instance_valid(_jarvis_hand):
-			_jarvis_hand.queue_free()
-			_jarvis_hand = null
-		# Fade out arm IK gently
-		if _gaze_modifier:
-			_gaze_modifier.arm_ik_blend_target = 0.0
-		# Return gaze to neutral after action
-		set_gaze(GazeTarget.NEUTRAL, 2.0)
 	)
 	print("🤖 Jarvis hand: %s → (%d, %d) [%s]" % [emoji, target.x, target.y, action])
 
@@ -902,6 +872,110 @@ func _reposition_bottom_right() -> void:
 	var y := usable.position.y + usable.size.y - win_size.y
 	DisplayServer.window_set_position(Vector2i(x, y))
 
+func _get_tama_screen_center() -> Vector2i:
+	"""Approximate screen position of Tama's body center."""
+	var win_pos := DisplayServer.window_get_position()
+	var win_size := DisplayServer.window_get_size()
+	# Tama is roughly center-X, 55% down in the window
+	return Vector2i(win_pos.x + win_size.x / 2, win_pos.y + int(win_size.y * 0.55))
+
+func _update_mouse_dodge(delta: float) -> void:
+	"""Check if mouse is hovering Tama. If so, hide her + show mini on taskbar."""
+	# Don't dodge during UI interaction, quit sequence, or glitch teleport
+	if _glitch_quitting or _glitch_teleporting:
+		return
+	if _quit_layer:
+		return
+	if (radial_menu and radial_menu.is_open) or (settings_panel and settings_panel.is_open):
+		return
+	if debug_tweaks and debug_tweaks.is_open:
+		return
+
+	# Cooldown to prevent flickering
+	if _dodge_cooldown_timer > 0:
+		_dodge_cooldown_timer -= delta
+		return
+
+	var mouse := DisplayServer.mouse_get_position()
+	var tama_center := _get_tama_screen_center()
+
+	if not _dodge_active:
+		# Check if mouse is near Tama
+		var dist := Vector2(mouse - tama_center).length()
+		if dist < DODGE_HOVER_RADIUS:
+			_dodge_hide()
+	else:
+		# Check if mouse moved away from Tama's position
+		var dist := Vector2(mouse - tama_center).length()
+		if dist > DODGE_RETURN_RADIUS:
+			_dodge_show()
+
+func _dodge_hide() -> void:
+	"""Hide Tama + spawn mini emoji on taskbar."""
+	_dodge_active = true
+	_dodge_cooldown_timer = DODGE_COOLDOWN
+
+	# Hide the 3D model
+	var tama = get_node_or_null("Tama")
+	if tama:
+		tama.visible = false
+
+	# Glitch flash
+	_glitch_intensity = 2.5
+
+	# Spawn mini Tama on the taskbar
+	if _dodge_mini_window and is_instance_valid(_dodge_mini_window):
+		_dodge_mini_window.queue_free()
+
+	var usable := DisplayServer.screen_get_usable_rect()
+	_dodge_mini_window = Window.new()
+	_dodge_mini_window.title = "TamaMini"
+	_dodge_mini_window.size = Vector2i(60, 60)
+	# Bottom-left, sitting on the taskbar
+	_dodge_mini_window.position = Vector2i(usable.position.x + 80, usable.position.y + usable.size.y - 50)
+	_dodge_mini_window.borderless = true
+	_dodge_mini_window.transparent_bg = true
+	_dodge_mini_window.always_on_top = true
+	_dodge_mini_window.unfocusable = true
+	_dodge_mini_window.transparent = true
+	_dodge_mini_window.gui_embed_subwindows = false
+	_dodge_mini_window.visible = false
+
+	var label := Label.new()
+	label.text = "🐱"
+	label.add_theme_font_size_override("font_size", 36)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_dodge_mini_window.add_child(label)
+	add_child(_dodge_mini_window)
+
+	# Show after 2 frames (transparency needs time)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if _dodge_mini_window and is_instance_valid(_dodge_mini_window):
+		_dodge_mini_window.visible = true
+	print("⚡ Dodge! Tama hidden (mouse too close)")
+
+func _dodge_show() -> void:
+	"""Show Tama again + destroy mini window."""
+	_dodge_active = false
+	_dodge_cooldown_timer = DODGE_COOLDOWN
+
+	# Show the 3D model
+	var tama = get_node_or_null("Tama")
+	if tama:
+		tama.visible = true
+
+	# Glitch flash
+	_glitch_intensity = 1.5
+
+	# Destroy mini window
+	if _dodge_mini_window and is_instance_valid(_dodge_mini_window):
+		_dodge_mini_window.queue_free()
+		_dodge_mini_window = null
+	print("⚡ Return! Tama visible again")
+
 func _apply_camera_zoom() -> void:
 	## Live preview: zoom camera while slider is dragged (CanvasLayers unaffected)
 	if _camera == null or _base_cam_size <= 0:
@@ -1026,6 +1100,9 @@ func _process(delta: float) -> void:
 
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
 	_sync_gaze_to_modifier()
+
+	# ─── Mouse Dodge ───────────────────────────────────────────
+	_update_mouse_dodge(delta)
 
 	# ─── Strike Fire ──────────────────────────────────────────
 	# Handled by AnimTree module (strike_fire_point signal → _on_tree_strike_fire)
