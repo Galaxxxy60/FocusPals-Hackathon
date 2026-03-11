@@ -577,7 +577,7 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
                 print("  🥊 Strike anim triggered (was waiting for target)")
             # Always send the anim — either fire_strike requested it or grace_then_close owns it
             send_anim_to_godot("Strike", False)
-            update_display(TamaState.ANGRY, f"JE FERME ÇA ! ({reason[:30]})")
+            print(f\"  🥊 Tama agit : fermeture de la distraction ({reason[:40]})\")
 
             # Safety timeout: if Godot doesn't send STRIKE_FIRE within 5s, fire anyway
             # (handles: animation glitch, Godot disconnected, etc.)
@@ -625,7 +625,7 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
 
             await asyncio.sleep(2)
             state["force_speech"] = False
-            update_display(TamaState.CALM, "Je te surveille toujours.")
+            print("  ✅ Strike terminé — Tama continue de surveiller.")
         else:
             print(f"  ⚠️ close bloqué: {result.get('message', '?')}")
             state["_strike_in_progress"] = False
@@ -1456,7 +1456,7 @@ async def run_gemini_loop(pya):
                 # --- 3. Receive AI Responses ---
                 async def reset_calm_after_delay():
                     await asyncio.sleep(4)
-                    update_display(TamaState.CALM, "Je te surveille toujours.")
+                    print("  🟢 Tama: retour au calme.")
 
                 async def receive_responses():
                     is_speaking = False
