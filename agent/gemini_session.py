@@ -577,7 +577,7 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
                 print("  🥊 Strike anim triggered (was waiting for target)")
             # Always send the anim — either fire_strike requested it or grace_then_close owns it
             send_anim_to_godot("Strike", False)
-            print(f\"  🥊 Tama agit : fermeture de la distraction ({reason[:40]})\")
+            print(f"  🥊 Tama agit : fermeture de la distraction ({reason[:40]})")
 
             # Safety timeout: if Godot doesn't send STRIKE_FIRE within 5s, fire anyway
             # (handles: animation glitch, Godot disconnected, etc.)
