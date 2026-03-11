@@ -27,16 +27,11 @@ var _base_cam_x: float = 0.0      # Camera X position at startup
 
 # ─── Animation State Machine ──────────────────────────────
 # Tama is ALWAYS visible. At rest she loops Idle_wall (on the wall).
-# ON_WALL (Idle_wall loop) → TRANSITION_OFF (OffTheWall forward) → ACTIVE (Suspicious/Angry/Idle)
-# ACTIVE → TRANSITION_ON (OffTheWall reverse) → ON_WALL (Idle_wall loop)
-# STRIKING: Strike_Base → Strike_Dab → freeze
-enum Phase { ON_WALL, TRANSITION_OFF, ACTIVE, STRIKING, TRANSITION_ON }
-var phase: int = Phase.ON_WALL
+# All animation states are managed by tama_anim_tree.gd's StateMachine.
 var _started: bool = false  # True after first Idle_wall is played
 var conversation_active: bool = false  # True during casual chat (no deep work)
 var _convo_engagement: int = 0  # Number of speech exchanges — triggers OffTheWall at threshold
 const CONVO_ENGAGE_THRESHOLD: int = 3  # Back-and-forths before Tama gets off the wall
-var current_anim: String = ""
 var _anim_player: AnimationPlayer = null
 var _prev_suspicion_tier: int = -1
 var _last_anim_command_time: float = 0.0  # Timestamp of last Python anim command
@@ -57,10 +52,7 @@ const ANIM_COMMAND_COOLDOWN: float = 5.0  # Don't auto-anim if Python sent one r
 #   The hand bone rests at scale (1,1,1). During Strike animations,
 #   the hand "bounces" by scaling above 1.0 — that's the fire signal.
 #   Threshold is 1.05 to catch the exact moment the bounce starts.
-const STRIKE_FIRE_SCALE_THRESHOLD: float = 1.05  # Hand bone rests at 1.0 — bounce goes above 1
 var _strike_hand_bone_idx: int = -1  # Jnt_R_Hand, auto-discovered in _setup_gaze
-var _strike_fire_sent: bool = false  # Prevent duplicate fires per strike
-var _strike_frame_count: int = 0     # Frames elapsed since entering STRIKING (warm-up delay)
 
 # Arm IK bones (auto-discovered in _setup_gaze)
 var _arm1_bone_idx: int = -1   # Jnt_R_Arm1 (upper arm)
@@ -324,15 +316,16 @@ func _ready() -> void:
 
 func _start_idle_wall() -> void:
 	_ensure_anim_player()
-	# If AnimTree module is active, it handles idle_wall via its StateMachine
+	# AnimTree handles idle_wall via its StateMachine
 	if _anim_tree_module and _anim_tree_module._ready_ok:
 		_started = true
 		print("🧱 Tama démarre en Idle_wall (via AnimTree)")
 		return
-	_play("Idle_wall", true)
-	phase = Phase.ON_WALL
+	# Fallback: direct AnimationPlayer (should rarely happen)
+	if _anim_player:
+		_anim_player.play("Idle_wall", 0.2)
 	_started = true
-	print("🧱 Tama démarre en Idle_wall")
+	print("🧱 Tama démarre en Idle_wall (legacy fallback)")
 
 
 func _setup_anim_tree() -> void:
@@ -364,8 +357,8 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 
 	if old_state == "STRIKING":
 		_deactivate_imba()
-		# Fade out arm IK — the AnimTree path doesn't go through _play()
-		# so we must explicitly release the IK here
+		# Fade out arm IK — AnimTree state changes don't auto-release IK
+		# so we must explicitly release it here
 		if _gaze_modifier:
 			_gaze_modifier.arm_ik_blend_target = 0.0
 
@@ -517,121 +510,96 @@ func _unhandled_input(event: InputEvent) -> void:
 			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
 			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
-	# F7 = Debug Strike: play Strike_Base + launch Godot hand window → mouse cursor
-	if event is InputEventKey and event.pressed and event.keycode == KEY_F7:
-		print("🎯 [DEBUG] F7 → Strike + Hand Window + Arm IK")
-		_play("Strike_Base", false)
-		phase = Phase.ACTIVE
-		_strike_fire_sent = true  # Prevent real fire system from also firing
-		_activate_imba(1)  # IMBA level 1!
-		# Activate arm IK pointing towards mouse
-		if _gaze_modifier:
-			var mouse := DisplayServer.mouse_get_position()
-			var target_3d := _screen_to_arm_target(float(mouse.x), float(mouse.y))
-			_gaze_modifier.arm_ik_target = target_3d
-			_gaze_modifier.arm_ik_active = true
-			_gaze_modifier.arm_ik_blend_target = 1.0
-			print("💪 Arm IK target: %s" % str(target_3d))
-		# Delay hand window spawn to sync with the hand "bounce" in Strike_Base
-		get_tree().create_timer(0.6).timeout.connect(_spawn_hand_window)
-	# F8 = Debug Glitch: toggle glitch effect on/off
-	if event is InputEventKey and event.pressed and event.keycode == KEY_F8:
-		var glitch_on = _glitch_target < 0.5
-		_set_glitch_active(glitch_on)
-		if glitch_on:
-			_show_status_indicator("📺 Glitch: ON (F8)", Color(1.0, 0.3, 0.3))
-		else:
-			_hide_status_indicator()
-		print("📺 [DEBUG] F8 → Glitch %s" % ("ON" if glitch_on else "OFF"))
-	if _spring_bones_node:
-		_spring_bones_node.handle_input(event)
-
-
-# ─── Multi-Window Hand Animation ─────────────────────────────
+	# F7 = Debug Strike: trigger strike via AnimTree + hand window �# ─── Multi-Window Hand Animation ───────────────────────────
 var _hand_window: Window = null
 
-func _spawn_hand_window() -> void:
-	# Clean up any existing hand window
-	if _hand_window and is_instance_valid(_hand_window):
-		_hand_window.queue_free()
-		_hand_window = null
-
-	# ── Start position: Tama's hand bone ──
+func _get_hand_bone_screen_pos() -> Vector2i:
+	"""Get Tama's hand bone projected to screen coords, or center fallback."""
 	var win_pos := DisplayServer.window_get_position()
 	var win_size := DisplayServer.window_get_size()
-	var start_x: int = win_pos.x + int(win_size.x * 0.5)
-	var start_y: int = win_pos.y + int(win_size.y * 0.45)
-	var used_bone := false
+	var sx: int = win_pos.x + int(win_size.x * 0.5)
+	var sy: int = win_pos.y + int(win_size.y * 0.45)
 	if _strike_hand_bone_idx >= 0 and _skeleton != null and _camera != null:
 		var bone_global := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx)
-		var bone_world_pos := bone_global.origin
-		var screen_pos := _camera.unproject_position(bone_world_pos)
-		# viewport coords → screen coords (just add window position)
-		start_x = int(screen_pos.x) + win_pos.x
-		start_y = int(screen_pos.y) + win_pos.y
-		used_bone = true
-		print("🪟   [BONE] viewport=(%.0f,%.0f) → screen=(%d,%d)" % [screen_pos.x, screen_pos.y, start_x, start_y])
+		var screen_pos := _camera.unproject_position(bone_global.origin)
+		sx = int(screen_pos.x) + win_pos.x
+		sy = int(screen_pos.y) + win_pos.y
+	return Vector2i(sx, sy)
 
-	# ── Target: mouse cursor ──
-	var mouse := DisplayServer.mouse_get_position()
-	var src_label := "BONE" if used_bone else "FALLBACK"
-	print("🪟   [%s] Start=(%d,%d) → Target=(%d,%d)" % [src_label, start_x, start_y, mouse.x, mouse.y])
+func _create_floating_hand(win_ref: String, target_pos: Vector2i, start_emoji: String,
+		end_emoji: String, win_size: int, font_size: int,
+		ease: Tween.EaseType, trans: Tween.TransitionType,
+		duration: float, on_done: Callable) -> void:
+	"""Generic factory for floating emoji windows (strike hand + jarvis hand)."""
+	# Clean up existing
+	var existing: Window = get(win_ref)
+	if existing and is_instance_valid(existing):
+		existing.queue_free()
+		set(win_ref, null)
 
-	# ── Create window hidden (avoids white flash) ──
-	_hand_window = Window.new()
-	_hand_window.title = "TamaHand"
-	_hand_window.size = Vector2i(120, 120)
-	_hand_window.position = Vector2i(start_x - 60, start_y - 60)
-	_hand_window.borderless = true
-	_hand_window.transparent_bg = true
-	_hand_window.always_on_top = true
-	_hand_window.unfocusable = true
-	_hand_window.transparent = true
-	_hand_window.gui_embed_subwindows = false
-	_hand_window.visible = false  # Hidden until transparency is ready
+	var start := _get_hand_bone_screen_pos()
+	var half := win_size / 2
+
+	# Create transparent window
+	var win := Window.new()
+	win.title = "TamaHand"
+	win.size = Vector2i(win_size, win_size)
+	win.position = Vector2i(start.x - half, start.y - half)
+	win.borderless = true
+	win.transparent_bg = true
+	win.always_on_top = true
+	win.unfocusable = true
+	win.transparent = true
+	win.gui_embed_subwindows = false
+	win.visible = false
 
 	var label := Label.new()
-	label.text = "🖐️"
-	label.add_theme_font_size_override("font_size", 64)
+	label.text = start_emoji
+	label.add_theme_font_size_override("font_size", font_size)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_hand_window.add_child(label)
-	add_child(_hand_window)
+	win.add_child(label)
+	add_child(win)
+	set(win_ref, win)
 
-	# Wait 2 frames for transparency to take effect, THEN show
+	# Wait 2 frames for transparency, then show
 	await get_tree().process_frame
 	await get_tree().process_frame
-	if not is_instance_valid(_hand_window):
+	if not is_instance_valid(win):
 		return
-	_hand_window.visible = true  # Now transparent — safe to show
+	win.visible = true
 
-	# ── Animate ──
-	# Target: tab/window close button from Python, or mouse fallback
+	# Animate
+	var dest := Vector2i(target_pos.x - half, target_pos.y - half)
+	var tween := create_tween().bind_node(win)
+	tween.set_ease(ease)
+	tween.set_trans(trans)
+	tween.tween_property(win, "position", dest, duration)
+	tween.tween_callback(func():
+		if is_instance_valid(label):
+			label.text = end_emoji
+	)
+	tween.tween_interval(0.5)
+	tween.tween_callback(func():
+		var w: Window = get(win_ref)
+		if w and is_instance_valid(w):
+			w.queue_free()
+			set(win_ref, null)
+		on_done.call()
+	)
+
+func _spawn_hand_window() -> void:
+	"""Strike hand: aggressive punch toward target."""
 	var aim: Vector2i
 	if _strike_target.x >= 0:
 		aim = _strike_target
 	else:
-		aim = mouse
-	var target_pos := Vector2i(aim.x - 60, aim.y - 60)
-	var tween := create_tween().bind_node(_hand_window)
-	tween.set_ease(Tween.EASE_IN_OUT)
-	tween.set_trans(Tween.TRANS_CUBIC)
-	tween.tween_property(_hand_window, "position", target_pos, 0.7)
-	tween.tween_callback(func():
-		if is_instance_valid(label):
-			label.text = "👆"
-	)
-	tween.tween_interval(0.5)
-	tween.tween_callback(func():
-		if _hand_window and is_instance_valid(_hand_window):
-			_hand_window.queue_free()
-			_hand_window = null
-		# Arm IK fades out when state leaves STRIKING (in _on_tree_state_changed)
-		# Start IMBA fade out after hand window disappears
-		_deactivate_imba()
-		# Reset strike target for next time
-		_strike_target = Vector2i(-1, -1)
+		aim = DisplayServer.mouse_get_position()
+	_create_floating_hand("_hand_window", aim, "🖐️", "👆", 120, 64,
+		Tween.EASE_IN_OUT, Tween.TRANS_CUBIC, 0.7, func():
+			_deactivate_imba()
+			_strike_target = Vector2i(-1, -1)
 	)
 
 
@@ -655,38 +623,15 @@ const JARVIS_EMOJIS = {
 }
 
 func _spawn_jarvis_hand(target: Vector2i, action: String) -> void:
-	"""Spawn a gentle hand window that taps the target — Tama's Jarvis assist is VISIBLE."""
-	# Clean up any existing jarvis hand
-	if _jarvis_hand and is_instance_valid(_jarvis_hand):
-		_jarvis_hand.queue_free()
-		_jarvis_hand = null
-
-	# ── Start position: Tama's hand bone (same as Strike) ──
-	var win_pos := DisplayServer.window_get_position()
-	var win_size := DisplayServer.window_get_size()
-	var start_x: int = win_pos.x + int(win_size.x * 0.5)
-	var start_y: int = win_pos.y + int(win_size.y * 0.45)
-	if _strike_hand_bone_idx >= 0 and _skeleton != null and _camera != null:
-		var bone_global := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx)
-		var screen_pos := _camera.unproject_position(bone_global.origin)
-		start_x = int(screen_pos.x) + win_pos.x
-		start_y = int(screen_pos.y) + win_pos.y
-
-	# ── Pick emoji based on action type ──
+	"""Jarvis: gentle tap toward target."""
 	var emoji: String = JARVIS_EMOJIS.get(action, "☝️")
-	var done_emoji: String = "✨"
-
-	# ── Create window hidden ──
-	_jarvis_hand = Window.new()
-	_jarvis_hand.title = "TamaJarvis"
-	_jarvis_hand.size = Vector2i(100, 100)
-	_jarvis_hand.position = Vector2i(start_x - 50, start_y - 50)
-	_jarvis_hand.borderless = true
-	_jarvis_hand.transparent_bg = true
-	_jarvis_hand.always_on_top = true
-	_jarvis_hand.unfocusable = true
-	_jarvis_hand.transparent = true
-	_jarvis_hand.gui_embed_subwindows = false
+	_create_floating_hand("_jarvis_hand", target, emoji, "✨", 100, 48,
+		Tween.EASE_OUT, Tween.TRANS_BACK, 0.5, func():
+			if _gaze_modifier:
+				_gaze_modifier.arm_ik_blend_target = 0.0
+			set_gaze(GazeTarget.NEUTRAL, 2.0)
+	)
+	print("🤖 Jarvis hand: %s → (%d, %d) [%s]" % [emoji, target.x, target.y, action])windows = false
 	_jarvis_hand.visible = false
 
 	var label := Label.new()
@@ -788,7 +733,6 @@ func _show_quit_confirmation() -> void:
 	if _quit_layer:
 		return  # Already visible
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
-	# Tell Python to disable Win32 click-through
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SHOW_QUIT"}))
 
@@ -798,7 +742,7 @@ func _show_quit_confirmation() -> void:
 
 	# Full-screen click catcher (clicking outside = cancel)
 	var bg := ColorRect.new()
-	bg.color = Color(0, 0, 0, 0.01)  # Nearly invisible but captures clicks
+	bg.color = Color(0, 0, 0, 0.01)
 	bg.anchor_right = 1.0
 	bg.anchor_bottom = 1.0
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -822,7 +766,6 @@ func _show_quit_confirmation() -> void:
 	panel.custom_minimum_size = Vector2(220, 0)
 	_quit_layer.add_child(panel)
 
-	# Position center of viewport
 	var vp := get_viewport().get_visible_rect().size
 	panel.position = Vector2(vp.x / 2 - 110, vp.y / 2 - 50)
 
@@ -830,7 +773,6 @@ func _show_quit_confirmation() -> void:
 	vbox.add_theme_constant_override("separation", 14)
 	panel.add_child(vbox)
 
-	# Question
 	var lbl := Label.new()
 	lbl.text = "Tu veux vraiment\npartir ? 😿"
 	lbl.add_theme_font_size_override("font_size", 14)
@@ -838,47 +780,37 @@ func _show_quit_confirmation() -> void:
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(lbl)
 
-	# Buttons row
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(row)
 
-	# Oui button
-	var btn_yes := Button.new()
-	btn_yes.text = "  Oui  "
-	btn_yes.add_theme_font_size_override("font_size", 13)
-	var yes_style := StyleBoxFlat.new()
-	yes_style.bg_color = Color(0.6, 0.2, 0.2, 0.8)
-	yes_style.set_corner_radius_all(8)
-	yes_style.set_content_margin_all(8)
-	btn_yes.add_theme_stylebox_override("normal", yes_style)
-	var yes_hover := StyleBoxFlat.new()
-	yes_hover.bg_color = Color(0.8, 0.25, 0.25, 0.9)
-	yes_hover.set_corner_radius_all(8)
-	yes_hover.set_content_margin_all(8)
-	btn_yes.add_theme_stylebox_override("hover", yes_hover)
-	btn_yes.add_theme_color_override("font_color", Color(1, 0.9, 0.9))
-	btn_yes.pressed.connect(_do_quit)
-	row.add_child(btn_yes)
+	row.add_child(_build_styled_button("  Oui  ",
+		Color(0.6, 0.2, 0.2, 0.8), Color(0.8, 0.25, 0.25, 0.9),
+		Color(1, 0.9, 0.9), _do_quit))
+	row.add_child(_build_styled_button("  Non  ",
+		Color(0.15, 0.2, 0.35, 0.8), Color(0.25, 0.35, 0.55, 0.9),
+		Color(0.85, 0.9, 1.0), _hide_quit_confirmation))
 
-	# Non button
-	var btn_no := Button.new()
-	btn_no.text = "  Non  "
-	btn_no.add_theme_font_size_override("font_size", 13)
-	var no_style := StyleBoxFlat.new()
-	no_style.bg_color = Color(0.15, 0.2, 0.35, 0.8)
-	no_style.set_corner_radius_all(8)
-	no_style.set_content_margin_all(8)
-	btn_no.add_theme_stylebox_override("normal", no_style)
-	var no_hover := StyleBoxFlat.new()
-	no_hover.bg_color = Color(0.25, 0.35, 0.55, 0.9)
-	no_hover.set_corner_radius_all(8)
-	no_hover.set_content_margin_all(8)
-	btn_no.add_theme_stylebox_override("hover", no_hover)
-	btn_no.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
-	btn_no.pressed.connect(_hide_quit_confirmation)
-	row.add_child(btn_no)
+func _build_styled_button(text: String, bg: Color, hover_bg: Color,
+		font_color: Color, callback: Callable) -> Button:
+	"""Create a styled button for modal dialogs."""
+	var btn := Button.new()
+	btn.text = text
+	btn.add_theme_font_size_override("font_size", 13)
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.set_corner_radius_all(8)
+	s.set_content_margin_all(8)
+	btn.add_theme_stylebox_override("normal", s)
+	var h := StyleBoxFlat.new()
+	h.bg_color = hover_bg
+	h.set_corner_radius_all(8)
+	h.set_content_margin_all(8)
+	btn.add_theme_stylebox_override("hover", h)
+	btn.add_theme_color_override("font_color", font_color)
+	btn.pressed.connect(callback)
+	return btn
 
 func _hide_quit_confirmation() -> void:
 	if _quit_layer:
@@ -1538,50 +1470,6 @@ func _update_suspicion_anim() -> void:
 			else:
 				_anim_tree_module.set_standing_anim("angry")
 
-# ─── Callback quand une anim "play once" se termine ──────
-# (Legacy — kept for F7 debug. AnimTree handles transitions internally.)
-func _on_animation_finished(_anim_name: StringName) -> void:
-	pass
-
-# ─── Jouer une animation ─────────────────────────────────
-func _play(anim_name: String, loop: bool) -> void:
-	_ensure_anim_player()
-	if _anim_player == null:
-		return
-	var anims := _anim_player.get_animation_list()
-	var real_name := _find_best_anim(anims, [anim_name])
-	if real_name == "":
-		push_warning("⚠️ Animation introuvable: " + anim_name)
-		return
-	current_anim = real_name
-	# Force le mode loop/once directement sur la ressource
-	var anim := _anim_player.get_animation(real_name)
-	if anim:
-		anim.loop_mode = Animation.LOOP_LINEAR if loop else Animation.LOOP_NONE
-	_anim_player.play(real_name, 0.2)
-	_anim_player.speed_scale = 1.0
-	# Deactivate arm IK when leaving Strike animations
-	if _gaze_modifier and not "strike" in real_name.to_lower():
-		_gaze_modifier.arm_ik_blend_target = 0.0
-
-# ─── Jouer une animation en reverse ──────────────────────
-func _play_reverse(anim_name: String) -> void:
-	_ensure_anim_player()
-	if _anim_player == null:
-		return
-	var anims := _anim_player.get_animation_list()
-	var real_name := _find_best_anim(anims, [anim_name])
-	if real_name == "":
-		push_warning("⚠️ Animation introuvable (reverse): " + anim_name)
-		return
-	current_anim = real_name
-	var anim := _anim_player.get_animation(real_name)
-	if anim:
-		anim.loop_mode = Animation.LOOP_NONE
-	# Play from end → start (negative speed)
-	_anim_player.play(real_name, 0.2, -1.0, true)
-	print("⏪ Playing reverse: " + real_name)
-
 # ─── Utilitaires ─────────────────────────────────────────
 func _ensure_anim_player() -> void:
 	if _anim_player != null:
@@ -1590,24 +1478,6 @@ func _ensure_anim_player() -> void:
 	if tama == null:
 		return
 	_anim_player = _find_animation_player(tama)
-	if _anim_player and not _anim_player.animation_finished.is_connected(_on_animation_finished):
-		_anim_player.animation_finished.connect(_on_animation_finished)
-
-func _find_best_anim(available_anims: Array[StringName], priorities: Array) -> String:
-	# Pass 1: exact match (case-insensitive)
-	for p in priorities:
-		var p_lower := String(p).to_lower()
-		for a in available_anims:
-			if String(a).to_lower() == p_lower:
-				return String(a)
-	# Pass 2: substring match — handles GLB names like "F Strike_Base"
-	for p in priorities:
-		var p_lower := String(p).to_lower()
-		for a in available_anims:
-			var a_lower := String(a).to_lower()
-			if a_lower != "eeee" and p_lower in a_lower:
-				return String(a)
-	return ""
 
 func _find_animation_player(node: Node) -> AnimationPlayer:
 	for child in node.get_children():
@@ -2078,9 +1948,7 @@ func set_gaze_subtle(target: GazeTarget, speed: float = 3.0, max_blend: float = 
 		var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
 		var target_point = head_pos + offset
 		_gaze_world_target = target_point
-		_look_at_world_point(target_point, speed)
-		# Override blend target to partial (subtle glance)
-		_gaze_blend_target = max_blend
+		_look_at_world_point(target_point, speed, max_blend)
 	# Immediate sync to modifier (don't wait for next _process)
 	_sync_gaze_to_modifier()
 
@@ -2321,7 +2189,7 @@ func _get_head_world_pos() -> Vector3:
 	return Vector3(0, 1.3, 0)  # Approximate fallback
 
 # ─── Look-At via 3D Target Point ──────────────────────────────
-func _look_at_world_point(target: Vector3, speed: float = 5.0) -> void:
+func _look_at_world_point(target: Vector3, speed: float = 5.0, blend: float = 1.0) -> void:
 	"""Compute gaze rotation so head looks at a 3D world point."""
 	if not _gaze_active:
 		return
@@ -2339,16 +2207,16 @@ func _look_at_world_point(target: Vector3, speed: float = 5.0) -> void:
 
 	# Yaw: horizontal angle (uses full XZ plane — correct for left/right)
 	var yaw_rad: float = atan2(delta.x, delta.z)
-	# Pitch: vertical angle in YZ plane ONLY — ignoring lateral distance X.
-	# This prevents horizontal mouse movement from affecting head tilt.
-	# (Old: asin(dir.y) on normalized 3D vector — pitch changed when X changed)
-	var pitch_rad: float = atan2(delta.y, absf(delta.z))
+	# Pitch: use proper XZ ground distance (not just Z) so lateral targets
+	# don't cause exaggerated head tilt
+	var distance_xz: float = Vector2(delta.x, delta.z).length()
+	var pitch_rad: float = atan2(delta.y, distance_xz)
 	var yaw_deg: float = rad_to_deg(yaw_rad)
 	var pitch_deg: float = rad_to_deg(pitch_rad) + GAZE_PITCH_OFFSET_DEG
 
 	# -pitch_deg is required: the bone's Z-FORWARD rotation axis is inverted
 	# relative to the geometric pitch, so the negation corrects up/down direction.
-	_set_gaze_from_angles(yaw_deg, -pitch_deg, speed)
+	_set_gaze_from_angles(yaw_deg, -pitch_deg, speed, blend)
 
 func set_gaze_at_screen_point(screen_x: float, screen_y: float, speed: float = 8.0) -> void:
 	"""Map screen pixel coordinates to 3D world point and look there."""
@@ -2358,7 +2226,7 @@ func set_gaze_at_screen_point(screen_x: float, screen_y: float, speed: float = 8
 	_gaze_world_target = target_3d
 	_look_at_world_point(target_3d, speed)
 
-func _set_gaze_from_angles(yaw_deg: float, pitch_deg: float, speed: float) -> void:
+func _set_gaze_from_angles(yaw_deg: float, pitch_deg: float, speed: float, blend: float = 1.0) -> void:
 	"""Set gaze target from yaw/pitch angles in degrees."""
 	_gaze_lerp_speed = speed
 
@@ -2376,7 +2244,7 @@ func _set_gaze_from_angles(yaw_deg: float, pitch_deg: float, speed: float) -> vo
 	#   Pitch (nod up/down) = rotate around local Z (NOT X — X is roll/tilt!)
 	_gaze_target_head = Quaternion(Vector3.UP, head_yaw) * Quaternion(Vector3.FORWARD, head_pitch)
 	_gaze_target_neck = Quaternion(Vector3.UP, neck_yaw) * Quaternion(Vector3.FORWARD, neck_pitch)
-	_gaze_blend_target = 1.0
+	_gaze_blend_target = blend
 
 # ─── Debug Visualization ──────────────────────────────────────
 func _setup_gaze_debug() -> void:
