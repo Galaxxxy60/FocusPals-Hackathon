@@ -50,8 +50,11 @@ func _arc_center() -> Vector2:
 	var usable := DisplayServer.screen_get_usable_rect()
 	var win_pos := DisplayServer.window_get_position()
 	# Target: right edge of usable screen, 70% down
+	var win_size := DisplayServer.window_get_size()
 	var screen_x := float(usable.position.x + usable.size.x)
-	var screen_y := float(usable.position.y) + float(usable.size.y) * 0.7
+	# Y = bottom of usable area minus 30% of window height
+	# This matches the original vp.y * 0.7 when window is at bottom-right
+	var screen_y := float(usable.position.y + usable.size.y) - float(win_size.y) * 0.3
 	# Convert screen coords to local window coords
 	return Vector2(screen_x - float(win_pos.x), screen_y - float(win_pos.y))
 
