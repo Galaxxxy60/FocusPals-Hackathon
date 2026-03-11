@@ -45,8 +45,15 @@ func _ready() -> void:
 	add_child(_canvas)
 
 func _arc_center() -> Vector2:
-	var vp := get_viewport().get_visible_rect().size
-	return Vector2(vp.x, vp.y * 0.7)
+	# Use absolute screen coordinates so radial ALWAYS appears bottom-right
+	# regardless of where the main window is (e.g. during dodge teleport)
+	var usable := DisplayServer.screen_get_usable_rect()
+	var win_pos := DisplayServer.window_get_position()
+	# Target: right edge of usable screen, 70% down
+	var screen_x := float(usable.position.x + usable.size.x)
+	var screen_y := float(usable.position.y) + float(usable.size.y) * 0.7
+	# Convert screen coords to local window coords
+	return Vector2(screen_x - float(win_pos.x), screen_y - float(win_pos.y))
 
 func _item_pos(index: int) -> Vector2:
 	var n := ITEMS.size()

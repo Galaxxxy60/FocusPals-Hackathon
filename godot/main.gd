@@ -292,13 +292,11 @@ var _pending_leave_wall: bool = false      # Queue leave-wall after reverse wall
 
 # (Post-animation delta removed — using get_process_delta_time() directly)
 
-# ─── Mouse Dodge (hide when hovered + mini window on taskbar) ───
+# ─── Mouse Dodge (teleport to taskbar when hovered) ───
 const DODGE_HOVER_RADIUS: float = 120.0    # Distance (px) from Tama center to trigger dodge
-const DODGE_RETURN_RADIUS: float = 250.0   # Distance (px) to return (from Tama's spot)
 const DODGE_COOLDOWN: float = 0.5          # Seconds before she can dodge/return again
-var _dodge_active: bool = false             # True when Tama is hiding
+var _dodge_active: bool = false             # True when Tama is on the taskbar
 var _dodge_cooldown_timer: float = 0.0     # Prevents rapid flickering
-var _dodge_mini_window: Window = null       # Tiny floating window on taskbar
 
 func _ready() -> void:
 	_position_window()
@@ -473,7 +471,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				radial_menu.close()
 			else:
 				if _dodge_active:
-					_dodge_show()
+					_dodge_return()
 				print("🎛️ [DEBUG] F1 → Ouverture du radial menu")
 				radial_menu.open()
 	# F2 = hidden debug tweaks panel
@@ -876,12 +874,10 @@ func _get_tama_screen_center() -> Vector2i:
 	"""Approximate screen position of Tama's body center."""
 	var win_pos := DisplayServer.window_get_position()
 	var win_size := DisplayServer.window_get_size()
-	# Tama is roughly center-X, 55% down in the window
 	return Vector2i(win_pos.x + win_size.x / 2, win_pos.y + int(win_size.y * 0.55))
 
 func _update_mouse_dodge(delta: float) -> void:
-	"""Check if mouse is hovering Tama. If so, hide her + show mini on taskbar."""
-	# Don't dodge during UI interaction, quit sequence, or glitch teleport
+	"""Teleport Tama to taskbar when mouse hovers her."""
 	if _glitch_quitting or _glitch_teleporting:
 		return
 	if _quit_layer:
@@ -891,90 +887,44 @@ func _update_mouse_dodge(delta: float) -> void:
 	if debug_tweaks and debug_tweaks.is_open:
 		return
 
-	# Cooldown to prevent flickering
 	if _dodge_cooldown_timer > 0:
 		_dodge_cooldown_timer -= delta
 		return
 
 	var mouse := DisplayServer.mouse_get_position()
-	var tama_center := _get_tama_screen_center()
 
 	if not _dodge_active:
-		# Check if mouse is near Tama
+		var tama_center := _get_tama_screen_center()
 		var dist := Vector2(mouse - tama_center).length()
 		if dist < DODGE_HOVER_RADIUS:
-			_dodge_hide()
+			_dodge_to_taskbar()
 	else:
-		# Check if mouse moved away from Tama's position
+		# Return when mouse is far from dodge position
+		var tama_center := _get_tama_screen_center()
 		var dist := Vector2(mouse - tama_center).length()
-		if dist > DODGE_RETURN_RADIUS:
-			_dodge_show()
+		if dist > DODGE_HOVER_RADIUS * 2.0:
+			_dodge_return()
 
-func _dodge_hide() -> void:
-	"""Hide Tama + spawn mini emoji on taskbar."""
+func _dodge_to_taskbar() -> void:
+	"""Teleport Tama's window to the taskbar (bottom-left)."""
 	_dodge_active = true
 	_dodge_cooldown_timer = DODGE_COOLDOWN
-
-	# Hide the 3D model
-	var tama = get_node_or_null("Tama")
-	if tama:
-		tama.visible = false
-
-	# Glitch flash
 	_glitch_intensity = 2.5
 
-	# Spawn mini Tama on the taskbar
-	if _dodge_mini_window and is_instance_valid(_dodge_mini_window):
-		_dodge_mini_window.queue_free()
-
 	var usable := DisplayServer.screen_get_usable_rect()
-	_dodge_mini_window = Window.new()
-	_dodge_mini_window.title = "TamaMini"
-	_dodge_mini_window.size = Vector2i(60, 60)
-	# Bottom-left, sitting on the taskbar
-	_dodge_mini_window.position = Vector2i(usable.position.x + 80, usable.position.y + usable.size.y - 50)
-	_dodge_mini_window.borderless = true
-	_dodge_mini_window.transparent_bg = true
-	_dodge_mini_window.always_on_top = true
-	_dodge_mini_window.unfocusable = true
-	_dodge_mini_window.transparent = true
-	_dodge_mini_window.gui_embed_subwindows = false
-	_dodge_mini_window.visible = false
+	var win_size := DisplayServer.window_get_size()
+	var x := usable.position.x + 20
+	var y := usable.position.y + usable.size.y - win_size.y
+	DisplayServer.window_set_position(Vector2i(x, y))
+	print("⚡ Dodge! Tama teleported to taskbar")
 
-	var label := Label.new()
-	label.text = "🐱"
-	label.add_theme_font_size_override("font_size", 36)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_dodge_mini_window.add_child(label)
-	add_child(_dodge_mini_window)
-
-	# Show after 2 frames (transparency needs time)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if _dodge_mini_window and is_instance_valid(_dodge_mini_window):
-		_dodge_mini_window.visible = true
-	print("⚡ Dodge! Tama hidden (mouse too close)")
-
-func _dodge_show() -> void:
-	"""Show Tama again + destroy mini window."""
+func _dodge_return() -> void:
+	"""Return Tama to her normal bottom-right position."""
 	_dodge_active = false
 	_dodge_cooldown_timer = DODGE_COOLDOWN
-
-	# Show the 3D model
-	var tama = get_node_or_null("Tama")
-	if tama:
-		tama.visible = true
-
-	# Glitch flash
 	_glitch_intensity = 1.5
-
-	# Destroy mini window
-	if _dodge_mini_window and is_instance_valid(_dodge_mini_window):
-		_dodge_mini_window.queue_free()
-		_dodge_mini_window = null
-	print("⚡ Return! Tama visible again")
+	_reposition_bottom_right()
+	print("⚡ Return! Tama back to normal position")
 
 func _apply_camera_zoom() -> void:
 	## Live preview: zoom camera while slider is dragged (CanvasLayers unaffected)
@@ -1223,6 +1173,8 @@ func _handle_message(raw: String) -> void:
 	elif command == "SHOW_RADIAL":
 		if settings_panel and settings_panel.is_open:
 			settings_panel.close()
+		if _dodge_active:
+			_dodge_return()
 		if radial_menu:
 			radial_menu.open()
 		return
