@@ -473,7 +473,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				radial_menu.close()
 			else:
 				if _dodge_active:
-					_dodge_return()
+					_dodge_show()
 				print("🎛️ [DEBUG] F1 → Ouverture du radial menu")
 				radial_menu.open()
 	# F2 = hidden debug tweaks panel
