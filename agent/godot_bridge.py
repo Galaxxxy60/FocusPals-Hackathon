@@ -420,6 +420,10 @@ async def ws_handler(websocket):
                             state["_confidence"] = val
                         _save_tweaks()
                         print(f"🔧 TWEAK {key} = {val}")
+                elif cmd == "FORCE_RECONNECT":
+                    reason = data.get("reason", "manual")
+                    state["_force_reconnect"] = True
+                    print(f"🔄 FORCE_RECONNECT requested: {reason}")
                 elif cmd == "STRIKE_FIRE":
                     # Godot handles the visual hand animation (multi-window)
                     # Python just closes the tab/window

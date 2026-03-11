@@ -9,6 +9,7 @@ var is_open := false
 var _bg: ColorRect = null      # Full-screen click catcher (blocks OS passthrough on layered windows)
 var _panel: PanelContainer = null
 var _sliders := {}   # key → {slider: HSlider, label: Label}
+var _toggles := {}   # key → {checkbox: CheckBox}
 
 # Each tweak: {key, label, min, max, step, default, suffix}
 const TWEAKS := [
@@ -17,6 +18,13 @@ const TWEAKS := [
 	{"key": "confidence", "label": "🛡️ Confidence (C)", "min": 0.1, "max": 1.0, "step": 0.05, "default": 1.0, "suffix": ""},
 	{"key": "mood_decay_secs", "label": "🎭 Mood Decay", "min": 5.0, "max": 60.0, "step": 5.0, "default": 20.0, "suffix": "s"},
 	{"key": "pulse_delay_mult", "label": "📡 Pulse Delay", "min": 0.5, "max": 3.0, "step": 0.25, "default": 1.0, "suffix": "x"},
+]
+
+# Stability toggles — these require reconnection to take effect
+const STABILITY_TOGGLES := [
+	{"key": "affective_dialog", "label": "🎭 Affective Dialog", "default": true},
+	{"key": "proactive_audio", "label": "🗣️ Proactive Audio", "default": true},
+	{"key": "thinking", "label": "🧠 Thinking Budget", "default": true},
 ]
 
 func _ready() -> void:
@@ -54,6 +62,7 @@ func _close() -> void:
 		_panel.queue_free()
 		_panel = null
 	_sliders.clear()
+	_toggles.clear()
 	visible = false
 	# Tell Python to re-enable Win32 click-through
 	var main_node = get_parent()
@@ -64,7 +73,7 @@ func _close() -> void:
 		main_node._safe_restore_passthrough()
 
 func update_values(values: Dictionary) -> void:
-	## Called when Python sends TWEAKS_DATA — update slider positions.
+	## Called when Python sends TWEAKS_DATA — update slider positions and toggle states.
 	for key in values:
 		if _sliders.has(key):
 			var info: Dictionary = _sliders[key]
@@ -73,6 +82,10 @@ func update_values(values: Dictionary) -> void:
 			var tweak: Dictionary = info["tweak"]
 			slider.set_value_no_signal(values[key])
 			label.text = _format_val(values[key], tweak)
+		if _toggles.has(key):
+			var checkbox: CheckBox = _toggles[key]
+			checkbox.set_pressed_no_signal(values[key] >= 0.5)
+			checkbox.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if values[key] >= 0.5 else Color(1.0, 0.4, 0.4))
 
 func _build_ui() -> void:
 	if _bg:
@@ -149,6 +162,25 @@ func _build_ui() -> void:
 	# Sliders
 	for tweak in TWEAKS:
 		_add_slider(vbox, tweak)
+
+	# ── Stability Toggles ──
+	var sep2 := HSeparator.new()
+	var sep2_style := StyleBoxFlat.new()
+	sep2_style.bg_color = Color(0.4, 0.2, 0.2, 0.3)
+	sep2_style.set_content_margin_all(0)
+	sep2_style.content_margin_top = 6
+	sep2_style.content_margin_bottom = 3
+	sep2.add_theme_stylebox_override("separator", sep2_style)
+	vbox.add_child(sep2)
+
+	var toggle_title := Label.new()
+	toggle_title.text = "⚠️  Stability (reconnects)"
+	toggle_title.add_theme_font_size_override("font_size", 10)
+	toggle_title.add_theme_color_override("font_color", Color(1.0, 0.5, 0.3))
+	vbox.add_child(toggle_title)
+
+	for toggle in STABILITY_TOGGLES:
+		_add_toggle(vbox, toggle)
 
 	# Reset button
 	var reset_btn := Button.new()
@@ -244,6 +276,38 @@ func _on_slider_changed(val: float, key: String, tweak: Dictionary) -> void:
 			"value": val,
 		}))
 
+func _add_toggle(parent: VBoxContainer, toggle: Dictionary) -> void:
+	var key: String = toggle["key"]
+	var checkbox := CheckBox.new()
+	checkbox.text = toggle["label"]
+	checkbox.button_pressed = toggle["default"]
+	checkbox.add_theme_font_size_override("font_size", 11)
+	checkbox.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if toggle["default"] else Color(1.0, 0.4, 0.4))
+	checkbox.toggled.connect(_on_toggle_changed.bind(key))
+	parent.add_child(checkbox)
+	_toggles[key] = checkbox
+
+func _on_toggle_changed(pressed: bool, key: String) -> void:
+	var val := 1.0 if pressed else 0.0
+	# Update checkbox color
+	if _toggles.has(key):
+		var cb: CheckBox = _toggles[key]
+		cb.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if pressed else Color(1.0, 0.4, 0.4))
+	# Send to Python
+	tweak_changed.emit(key, val)
+	var main_node = get_parent()
+	if main_node and main_node.ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		main_node.ws.send_text(JSON.stringify({
+			"command": "SET_TWEAK",
+			"key": key,
+			"value": val,
+		}))
+		# Stability toggles require reconnection — tell Python to reconnect
+		main_node.ws.send_text(JSON.stringify({
+			"command": "FORCE_RECONNECT",
+			"reason": key + " toggled " + ("ON" if pressed else "OFF"),
+		}))
+
 func _on_reset_all() -> void:
 	for tweak in TWEAKS:
 		var key: String = tweak["key"]
@@ -258,4 +322,29 @@ func _on_reset_all() -> void:
 				"command": "SET_TWEAK",
 				"key": key,
 				"value": tweak["default"],
+			}))
+	# Reset toggles too
+	var needs_reconnect := false
+	for toggle in STABILITY_TOGGLES:
+		var key: String = toggle["key"]
+		if _toggles.has(key):
+			var cb: CheckBox = _toggles[key]
+			var was_on: bool = cb.button_pressed
+			cb.set_pressed_no_signal(toggle["default"])
+			cb.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if toggle["default"] else Color(1.0, 0.4, 0.4))
+			if was_on != toggle["default"]:
+				needs_reconnect = true
+		var main_node = get_parent()
+		if main_node and main_node.ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			main_node.ws.send_text(JSON.stringify({
+				"command": "SET_TWEAK",
+				"key": key,
+				"value": 1.0 if toggle["default"] else 0.0,
+			}))
+	if needs_reconnect:
+		var main_node = get_parent()
+		if main_node and main_node.ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			main_node.ws.send_text(JSON.stringify({
+				"command": "FORCE_RECONNECT",
+				"reason": "Reset all toggles",
 			}))

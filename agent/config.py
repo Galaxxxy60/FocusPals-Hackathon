@@ -165,6 +165,10 @@ tweaks = {
     "confidence": 1.0,            # Direct override for C (0.1–1.0), synced to state["_confidence"]
     "mood_decay_secs": 20.0,      # Seconds for mood to fade back to calm
     "pulse_delay_mult": 1.0,      # Multiplier on pulse interval (higher = less frequent scans)
+    # ── Stability toggles (ON/OFF for crash isolation) ──
+    "affective_dialog": 1.0,      # 1.0 = ON, 0.0 = OFF — expressive voice (suspected 1011 trigger)
+    "proactive_audio": 1.0,       # 1.0 = ON, 0.0 = OFF — Tama speaks spontaneously
+    "thinking": 1.0,              # 1.0 = ON, 0.0 = OFF — thinking budget for Deep Work
 }
 
 

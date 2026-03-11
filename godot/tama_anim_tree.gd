@@ -327,6 +327,36 @@ func walk_in() -> void:
 	print("🎬 → walk_in() — entering screen")
 
 
+func teleport_in() -> void:
+	"""OFF_SCREEN → idle instantly (teleportation arrival).
+	Tama materializes standing (idle), ready to interact.
+	The visual credibility is handled by main.gd's glitch effect
+	(high → 0 fade) rather than a walk animation."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.OFF_SCREEN:
+		print("🎬 teleport_in() ignored — not off screen (state: %s)" % State.keys()[current_state])
+		return
+	# Jump directly to idle (standing) pose
+	_playback.start("idle")
+	_tree.advance(0)  # Force skeleton to evaluate idle pose NOW
+	_set_state(State.STANDING)
+	_current_standing = "idle"
+	if _tama_node:
+		_tama_node.set_deferred("visible", true)
+	print("🎬 → teleport_in() — materialized standing (idle)")
+	# Process any queued mood/strike that triggered the teleport
+	if _queued_standing != "":
+		var q := _queued_standing
+		_queued_standing = ""
+		if q == "strike":
+			play_strike()
+		elif q == "go_away":
+			go_away()
+		else:
+			set_standing_anim(q)
+
+
 func go_away() -> void:
 	"""Any state → GoAway → OFF_SCREEN. Leaves wall first if needed."""
 	if not _ready_ok or not _playback:
@@ -382,9 +412,9 @@ func set_standing_anim(key: String) -> void:
 		return
 
 	if current_state == State.OFF_SCREEN:
-		# Need to walk in first — queue the mood
+		# Need to arrive first — teleport in (primary) + queue the mood
 		_queued_standing = key
-		walk_in()
+		teleport_in()
 		return
 
 	if current_state == State.ON_WALL:
@@ -457,7 +487,7 @@ func play_strike() -> void:
 		print("🎬 play_strike() queued — currently %s, ensuring standing first" % State.keys()[current_state])
 		_queued_standing = "strike"
 		if current_state == State.OFF_SCREEN:
-			walk_in()
+			teleport_in()
 		elif current_state == State.ON_WALL or current_state == State.WALL_TALK:
 			leave_wall()
 		# Si en cours de LEAVING_WALL ou RETURNING_WALL, la file d'attente s'en chargera

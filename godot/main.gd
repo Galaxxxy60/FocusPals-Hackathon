@@ -235,6 +235,11 @@ var _glitch_quitting: bool = false        # True during quit glitch sequence
 const GLITCH_QUIT_MAX: float = 8.0        # Max intensity before closing
 const GLITCH_QUIT_RAMP: float = 4.0       # Ramp speed (accelerates)
 
+# ─── Teleport Arrival Glitch ───
+const GLITCH_TELEPORT_START: float = 5.0     # Starting intensity (very high)
+const GLITCH_TELEPORT_FADE_SPEED: float = 3.5  # How fast it fades to 0 (~1.4s)
+var _glitch_teleporting: bool = false        # True during teleport-in sequence
+
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
 var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
@@ -293,8 +298,7 @@ const SCAN_GLANCE_MAX_CD: float = 15.0    # Max seconds between glances
 var _suspicion_staring: bool = false       # True when staring at screen due to suspicion
 var _pending_leave_wall: bool = false      # Queue leave-wall after reverse wall_talk
 
-# ─── Post-animation delta (for deferred gaze/spring bones) ──
-var _last_delta: float = 0.0
+# (Post-animation delta removed — using get_process_delta_time() directly)
 
 func _ready() -> void:
 	_position_window()
@@ -610,7 +614,7 @@ func _spawn_hand_window() -> void:
 	else:
 		aim = mouse
 	var target_pos := Vector2i(aim.x - 60, aim.y - 60)
-	var tween := create_tween()
+	var tween := create_tween().bind_node(_hand_window)
 	tween.set_ease(Tween.EASE_IN_OUT)
 	tween.set_trans(Tween.TRANS_CUBIC)
 	tween.tween_property(_hand_window, "position", target_pos, 0.7)
@@ -703,7 +707,7 @@ func _spawn_jarvis_hand(target: Vector2i, action: String) -> void:
 
 	# ── Animate: smooth glide to target (softer than Strike) ──
 	var target_pos := Vector2i(target.x - 50, target.y - 50)
-	var tween := create_tween()
+	var tween := create_tween().bind_node(_jarvis_hand)
 	tween.set_ease(Tween.EASE_OUT)
 	tween.set_trans(Tween.TRANS_BACK)  # Slight overshoot — feels natural
 	tween.tween_property(_jarvis_hand, "position", target_pos, 0.5)
@@ -775,13 +779,7 @@ func _on_radial_hide() -> void:
 	# Otherwise the edge monitor thinks radial is still open and won't re-trigger it.
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
-	# Only restore click-through if no other panel needs clicks
-	if settings_panel and settings_panel.is_open:
-		return
-	if debug_tweaks and debug_tweaks.is_open:
-		return
-	if _quit_layer:
-		return
+	# _safe_restore_passthrough() already checks all panel states internally
 	_safe_restore_passthrough()
 
 var _quit_layer: CanvasLayer = null
@@ -1100,16 +1098,13 @@ func _process(delta: float) -> void:
 	# ─── Strike Fire ──────────────────────────────────────────
 	# Handled by AnimTree module (strike_fire_point signal → _on_tree_strike_fire)
 
-	# Gaze + Spring bones delta stored for post-animation processing
-	_last_delta = delta
-
 
 func _notification(what: int) -> void:
 	# INTERNAL_PROCESS: only eye follow (blend shapes — no bone conflict).
 	# Gaze bone rotation + spring bones are now in gaze_modifier.gd (SkeletonModifier3D)
 	# which processes AFTER AnimationPlayer automatically.
 	if what == NOTIFICATION_INTERNAL_PROCESS:
-		var delta = _last_delta
+		var delta = get_process_delta_time()
 
 		# Eye follow — blend shape based eye movement
 		if _debug_eye_follow and _eye_follow_active:
@@ -1181,7 +1176,7 @@ func _update_eye_follow(delta: float) -> void:
 
 func _handle_message(raw: String) -> void:
 	var data = JSON.parse_string(raw)
-	if data == null:
+	if typeof(data) != TYPE_DICTIONARY:
 		return
 
 	# ── Commandes depuis Python ──
@@ -1195,18 +1190,18 @@ func _handle_message(raw: String) -> void:
 			session_active = true
 			conversation_active = false  # Session overrides conversation
 			print("🚀 Session Deep Work lancée !")
-			# Tama walks in when session starts
+			# Tama teleports in when session starts (primary arrival)
 			if _anim_tree_module and _anim_tree_module.is_off_screen():
-				_anim_tree_module.walk_in()
+				_teleport_glitch_in()
 		return
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
 			_convo_engagement = 0  # Reset engagement counter
 			print("💬 Mode conversation — Tama arrive !")
-			# Tama walks in for conversation
+			# Tama teleports in for conversation (primary arrival)
 			if _anim_tree_module and _anim_tree_module.is_off_screen():
-				_anim_tree_module.walk_in()
+				_teleport_glitch_in()
 		return
 	elif command == "END_CONVERSATION":
 		if conversation_active:
@@ -1349,7 +1344,8 @@ func _handle_message(raw: String) -> void:
 		if mood_name == "suspicious" and mood_intensity >= 0.7:
 			eye_key = "E1"  # Plissés fort instead of léger
 		_set_eyes(eye_key)
-		if not _is_speaking:  # Don't override lip sync
+		_current_mouth_slot = mouth_key  # Always memorize mood mouth (even while speaking)
+		if not _is_speaking:  # Only apply visually if not lip-syncing
 			_set_mouth(mouth_key)
 		_set_eyebrows(mood_name)
 		return
@@ -1784,10 +1780,12 @@ const PUPIL_HIDE_AMOUNT = {
 
 func _set_eyes(slot: String) -> void:
 	_current_eye_slot = slot
-	_apply_eye_offset(slot)
-	# Set pupil visibility based on how much the expression covers them
-	var hide_val: float = PUPIL_HIDE_AMOUNT.get(slot, 0.0)
-	_set_pupil_hide(hide_val)
+	if _blink_phase == 0:  # Don't interrupt a blink in progress
+		_apply_eye_offset(slot)
+		# Set pupil visibility based on how much the expression covers them
+		var hide_val: float = PUPIL_HIDE_AMOUNT.get(slot, 0.0)
+		_set_pupil_hide(hide_val)
+	# If blinking, _update_blink() will restore _current_eye_slot when blink ends
 
 # Apply UV offset without changing _current_eye_slot (used by blink)
 func _apply_eye_offset(slot: String) -> void:
@@ -1797,8 +1795,8 @@ func _apply_eye_offset(slot: String) -> void:
 		_eyes_material.uv1_offset = EYE_OFFSETS[slot]
 
 func _set_mouth(slot: String) -> void:
-	if not _is_speaking:
-		_current_mouth_slot = slot  # Remember mood-based mouth for when lip sync stops
+	# _current_mouth_slot is now set directly by TAMA_MOOD handler
+	# This function only applies the UV offset visually
 	if not _expressions_painted:
 		return
 	if _mouth_material and MOUTH_OFFSETS.has(slot):
@@ -1965,6 +1963,8 @@ func _setup_glitch_effect() -> void:
 func _set_glitch_active(active: bool) -> void:
 	if _glitch_quitting:
 		return  # Don't interrupt quit sequence
+	if _glitch_teleporting:
+		return  # Don't interrupt teleport arrival sequence
 	_glitch_target = 1.0 if active else 0.0
 	if active and _glitch_quad:
 		_glitch_quad.visible = true
@@ -1995,6 +1995,17 @@ func _update_glitch(delta: float) -> void:
 		if _glitch_intensity >= GLITCH_QUIT_MAX - 0.01:
 			print("👋 Glitch max — fermeture.")
 			get_tree().quit()
+	elif _glitch_teleporting:
+		# Teleport arrival: fade from high intensity → 0 (materialization)
+		_glitch_intensity = maxf(_glitch_intensity - GLITCH_TELEPORT_FADE_SPEED * delta, 0.0)
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		if _glitch_intensity < 0.001:
+			_glitch_teleporting = false
+			_glitch_intensity = 0.0
+			_glitch_target = 0.0
+			if _glitch_quad:
+				_glitch_quad.visible = false
+			print("📺 Teleport glitch complete — Tama materialized")
 	else:
 		# Normal glitch fade in/out
 		if _glitch_intensity < _glitch_target:
@@ -2005,6 +2016,27 @@ func _update_glitch(delta: float) -> void:
 		# Hide quad entirely when fully faded out (saves GPU)
 		if _glitch_intensity < 0.001 and _glitch_quad:
 			_glitch_quad.visible = false
+
+
+func _teleport_glitch_in() -> void:
+	"""Primary arrival: Tama materializes with a glitch effect.
+	The glitch starts at high intensity and fades to 0 as she appears."""
+	if not _anim_tree_module:
+		return
+	if not _anim_tree_module.is_off_screen():
+		return
+
+	# Start glitch at max intensity BEFORE showing Tama
+	if _glitch_material and _glitch_quad:
+		_glitch_teleporting = true
+		_glitch_intensity = GLITCH_TELEPORT_START
+		_glitch_target = 0.0  # Will fade to 0
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		_glitch_quad.visible = true
+
+	# Teleport Tama in (instant — idle_wall, no walk animation)
+	_anim_tree_module.teleport_in()
+	print("📺 Teleport glitch IN — Tama materializing (intensity: %.1f → 0)" % GLITCH_TELEPORT_START)
 
 # ─── User Speaking Acknowledgment ───────────────────
 func _setup_ack_audio() -> void:

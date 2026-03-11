@@ -37,7 +37,8 @@ Return ONLY a JSON object with these exact fields:
 {{
   "category": "SANTE" | "ZONE_GRISE" | "FLUX" | "BANNIE" | "PROCRASTINATION_PRODUCTIVE",
   "alignment": 1.0 | 0.5 | 0.0,
-  "reason": "<brief reason in 5 words max>"
+  "reason": "<brief reason in 5 words max>",
+  "description": "<describe SPECIFICALLY what is on screen — include video titles, article headlines, song names, website content, code project name, chat app name, game title, or whatever is visually prominent. Be specific, not generic. Example: 'YouTube: How to play drums in 10 minutes' NOT 'watching a video'. Max 20 words.>"
 }}
 
 Categories:
@@ -89,7 +90,7 @@ async def pre_classify(jpeg_bytes: bytes, active_window: str,
             ],
             config=types.GenerateContentConfig(
                 temperature=0.1,  # Deterministic classification
-                max_output_tokens=100,
+                max_output_tokens=200,
                 response_mime_type="application/json",  # Force valid JSON output
             ),
         )

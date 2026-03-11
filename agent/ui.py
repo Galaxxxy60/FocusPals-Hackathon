@@ -206,6 +206,11 @@ def update_tray(tama_state: TamaState):
 def update_display(tama_state: TamaState, message: str = ""):
     state["current_tama_state"] = tama_state
     update_tray(tama_state)
+    # Skip the full screen clear during stealth reconnects — preserve console history
+    if state.get("_is_stealth_reconnect"):
+        if message:
+            print(f"  💬 \"{message}\"")
+        return
     clear_screen()
     print("=" * 42)
     print("  FocusPals — Tama Agent 🥷 (LIVE API) 📡")
