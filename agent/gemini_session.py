@@ -98,14 +98,12 @@ def get_cached_window_by_title(target_title: str):
 
 def capture_all_screens() -> bytes:
     """Capture ALL connected monitors, merge them, and output a lightweight JPEG.
-    Uses a thread-local mss instance: GDI Device Contexts are thread-affine on Windows,
-    so the instance must be created in the same thread that calls grab()."""
-    if not hasattr(_thread_local, 'sct'):
-        _thread_local.sct = mss.mss()  # One instance per thread, reused across calls
-    sct = _thread_local.sct
-    monitor = sct.monitors[0]
-    screenshot = sct.grab(monitor)
-    img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+    Uses a fresh mss context manager each time for maximum reliability
+    (GDI Device Contexts can become stale in long-running processes)."""
+    with mss.mss() as sct:
+        monitor = sct.monitors[0]
+        screenshot = sct.grab(monitor)
+        img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
 
     img.thumbnail((1024, 512), Image.Resampling.BILINEAR)
 
@@ -1163,10 +1161,12 @@ async def run_gemini_loop(pya):
                             jpeg_bytes = await asyncio.to_thread(capture_all_screens)
                             lite_result = await asyncio.wait_for(
                                 pre_classify(jpeg_bytes, active_title, open_win_titles, state.get("current_task")),
-                                timeout=3.0
+                                timeout=8.0
                             )
-                        except (asyncio.TimeoutError, Exception):
-                            pass  # Flash-Lite failed — use cached state
+                        except asyncio.TimeoutError:
+                            print("  ⚠️ Flash-Lite timeout (>8s) — using cached state.")
+                        except Exception as e:
+                            print(f"  ⚠️ Flash-Lite error: {e}")
 
                         # ── Apply classification to state (moved from classify_screen handler) ──
                         if lite_result:
@@ -2142,7 +2142,7 @@ async def run_gemini_loop(pya):
                         jpeg_bytes = await asyncio.to_thread(capture_all_screens)
                         lite_result = await asyncio.wait_for(
                             pre_classify(jpeg_bytes, active_title, open_win_titles, state.get("current_task")),
-                            timeout=3.0
+                            timeout=8.0
                         )
                         if lite_result:
                             ali = float(lite_result.get("alignment", 1.0))
@@ -2162,8 +2162,10 @@ async def run_gemini_loop(pya):
                                     # Send strike to Godot
                                     strike_msg = json.dumps({"command": "STRIKE_TARGET", "x": result.get("target_x", 960), "y": result.get("target_y", 540)})
                                     broadcast_to_godot(strike_msg)
+                    except asyncio.TimeoutError:
+                        print("  🛞⚠️ Spare tire Flash-Lite timeout (>8s)")
                     except Exception as e:
-                        pass  # Flash-Lite failed — no big deal, we're just the spare tire
+                        print(f"  🛞⚠️ Spare tire error: {e}")
                     await asyncio.sleep(3.0)
             else:
                 await asyncio.sleep(retry_delay)
