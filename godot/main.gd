@@ -200,7 +200,8 @@ const EYE_SACCADE_INTERVAL: float = 0.08  # Snap every ~80ms (like real saccades
 const EYE_SACCADE_THRESHOLD: float = 0.03 # Dead zone: ignore tiny changes
 const EYE_RETURN_SPEED: float = 8.0       # Speed to return to center when deactivated
 
-# ─── Radial + Settings Menu ─────────────────────────────────
+# ─── UI Window + Menus ───────────────────────────────────────
+var _ui_window: Window = null           # Dedicated window for all UI menus
 var radial_menu = null
 const RadialMenuScript = preload("res://settings_radial.gd")
 var settings_panel = null
@@ -228,8 +229,8 @@ const GLITCH_QUIT_MAX: float = 8.0        # Max intensity before closing
 const GLITCH_QUIT_RAMP: float = 4.0       # Ramp speed (accelerates)
 
 # ─── Teleport Arrival Glitch ───
-const GLITCH_TELEPORT_START: float = 5.0     # Starting intensity (very high)
-const GLITCH_TELEPORT_FADE_SPEED: float = 3.5  # How fast it fades to 0 (~1.4s)
+const GLITCH_TELEPORT_START: float = 2.5      # Starting intensity (snappy, not heavy)
+const GLITCH_TELEPORT_FADE_SPEED: float = 8.0  # Fast fade to 0 (~0.3s — DBZ instant transmission)
 var _glitch_teleporting: bool = false        # True during teleport-in sequence
 
 # ─── User Speaking Acknowledgment ───
@@ -292,13 +293,25 @@ var _pending_leave_wall: bool = false      # Queue leave-wall after reverse wall
 
 # (Post-animation delta removed — using get_process_delta_time() directly)
 
-# ─── Mouse Dodge (teleport to taskbar when hovered) ───
-const DODGE_HOVER_RADIUS: float = 120.0    # Distance (px) from Tama center to trigger dodge
+# ─── Mouse Dodge (move tama window when hovered) ───
+const DODGE_HOVER_RADIUS: float = 200.0    # Distance (px) from Tama center to trigger dodge
 const DODGE_COOLDOWN: float = 0.5          # Seconds before she can dodge/return again
-var _dodge_active: bool = false             # True when Tama is on the taskbar
-var _dodge_cooldown_timer: float = 0.0     # Prevents rapid flickering
+var _dodge_active: bool = false             # True when Tama window is at dodge position
+var _dodge_cooldown_timer: float = 3.0     # Start with grace period so Tama doesn't dodge on launch
+var _dodge_departing: bool = false          # True during departure animation (glitch playing)
+
+# ─── Tama Window (separate rendering window) ───
+var _tama_window: Window = null
+var _tama_subviewport: SubViewport = null
+var _tama_cam: Camera3D = null              # Clone camera inside _tama_subviewport
+const TAMA_LAYER_BIT: int = 2              # Render layer 2 bitmask
 
 func _ready() -> void:
+	# Prevent V-Sync stacking across multiple windows (kills FPS otherwise)
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	Engine.max_fps = 60
+	_setup_tama_layers()   # Set Tama meshes to layer 2 (before anything visual)
+	_setup_window_pool()   # Pre-create tama + UI + hand windows
 	_position_window()
 	_connect_ws()
 	_setup_radial_menu()
@@ -308,6 +321,7 @@ func _ready() -> void:
 	_setup_ack_audio()
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_glitch_effect")  # After _setup_gaze (needs _camera)
+	call_deferred("_sync_tama_camera")    # After _setup_gaze finds _camera
 	call_deferred("_setup_gaze_debug")
 	call_deferred("_setup_spring_bones_module")
 	call_deferred("_setup_anim_tree")
@@ -319,6 +333,139 @@ func _ready() -> void:
 	process_priority = 100
 	set_process_internal(true)
 	print("🥷 FocusPals Godot — En attente de connexion...")
+
+# ─── Window Pool Setup ─────────────────────────────────────
+func _setup_window_pool() -> void:
+	"""Pre-create all floating windows at startup."""
+	_setup_tama_window()
+	_setup_ui_window()
+	_hand_window = _init_pooled_emoji_window("TamaHand_Strike")
+	_jarvis_hand = _init_pooled_emoji_window("TamaHand_Jarvis")
+	print("🎱 Window pool ready: tama + ui + hand + jarvis")
+
+func _setup_ui_window() -> void:
+	"""Create a dedicated window for all UI menus (radial, settings, quit).
+	Hidden when no UI active = 0 GPU cost."""
+	_ui_window = Window.new()
+	_ui_window.title = "TamaUI"
+	_ui_window.size = _BASE_WIN_SIZE
+	_ui_window.borderless = true
+	_ui_window.transparent_bg = true
+	_ui_window.transparent = true
+	_ui_window.always_on_top = true
+	_ui_window.unfocusable = false  # Must accept input for settings typing
+	_ui_window.gui_embed_subwindows = false
+	# Forward input so F1/F2 work even when UI window has focus
+	_ui_window.window_input.connect(func(event: InputEvent):
+		_unhandled_input(event)
+	)
+	add_child(_ui_window)
+	_ui_window.visible = false
+	print("🧱 UI Window created (hidden)")
+
+func _init_pooled_emoji_window(win_title: String) -> Window:
+	"""Create a pooled transparent emoji window, parked off-screen."""
+	var win := Window.new()
+	win.title = win_title
+	win.borderless = true
+	win.transparent_bg = true
+	win.always_on_top = true
+	win.unfocusable = true
+	win.transparent = true
+	win.gui_embed_subwindows = false
+
+	var label := Label.new()
+	label.name = "EmojiLabel"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	win.add_child(label)
+
+	add_child(win)
+	win.visible = false  # Hidden until needed (saves DWM compositing cost)
+	return win
+
+func _setup_tama_window() -> void:
+	"""Create Tama's dedicated rendering window with SubViewport.
+	Tama stays in the main scene tree (no reparent = no broken paths).
+	The SubViewport shares the same world_3d and a clone camera renders Tama."""
+	# ── Window ──
+	_tama_window = Window.new()
+	_tama_window.title = "TamaMain"
+	_tama_window.size = _BASE_WIN_SIZE
+	_tama_window.borderless = true
+	_tama_window.transparent_bg = true
+	_tama_window.transparent = true
+	_tama_window.always_on_top = true
+	_tama_window.unfocusable = true
+	_tama_window.gui_embed_subwindows = false
+
+	# ── SubViewportContainer (fills window) ──
+	var container := SubViewportContainer.new()
+	container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	container.stretch = true
+	_tama_window.add_child(container)
+
+	# ── SubViewport (shares the same 3D world) ──
+	_tama_subviewport = SubViewport.new()
+	_tama_subviewport.transparent_bg = true
+	_tama_subviewport.size = Vector2i(_BASE_WIN_SIZE)
+	# Share the main world immediately so Tama is visible
+	if get_viewport():
+		_tama_subviewport.world_3d = get_viewport().world_3d
+	_tama_subviewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	container.add_child(_tama_subviewport)
+
+	# ── Camera clone (settings synced later via _sync_tama_camera) ──
+	_tama_cam = Camera3D.new()
+	_tama_cam.cull_mask = TAMA_LAYER_BIT  # Only see Tama (layer 2)
+	_tama_subviewport.add_child(_tama_cam)
+
+	add_child(_tama_window)
+
+	# Position at bottom-right BEFORE showing (avoid flash at 0,0)
+	var usable := DisplayServer.screen_get_usable_rect()
+	var x := usable.position.x + usable.size.x - _BASE_WIN_SIZE.x
+	var y := usable.position.y + usable.size.y - _BASE_WIN_SIZE.y
+	_tama_window.position = Vector2i(x, y)
+	_tama_window.visible = true  # Always visible (Tama lives here)
+
+	# Hide main window — Tama renders in _tama_window now
+	# Main window stays alive for script processing but is invisible
+	DisplayServer.window_set_size(Vector2i(1, 1))
+	DisplayServer.window_set_position(Vector2i(-100, -100))
+	print("🪟 Tama window created (always visible) — main window hidden")
+
+func _sync_tama_camera() -> void:
+	"""Sync tama camera with main camera settings. Called deferred after _setup_gaze."""
+	if not _camera or not _tama_cam:
+		return
+	_tama_cam.projection = _camera.projection
+	_tama_cam.size = _camera.size
+	_tama_cam.position = _camera.position
+	_tama_cam.rotation = _camera.rotation
+	_tama_cam.near = _camera.near
+	_tama_cam.far = _camera.far
+	# Also hide Tama from the main camera (she's only in _tama_window)
+	_camera.cull_mask &= ~TAMA_LAYER_BIT
+	print("🎥 Tama camera synced (projection=%d, size=%.2f)" % [_camera.projection, _camera.size])
+
+func _setup_tama_layers() -> void:
+	"""Set all Tama MeshInstance3D nodes to render layer 2 only.
+	This allows the main camera to hide/show Tama via cull_mask toggle."""
+	var tama_node = get_node_or_null("Tama")
+	if not tama_node:
+		push_warning("⚠️ Tama layers: Tama node not found")
+		return
+	_set_layers_recursive(tama_node, TAMA_LAYER_BIT)
+	print("🎭 Tama render layers → layer 2 only")
+
+func _set_layers_recursive(node: Node, layer_mask: int) -> void:
+	"""Recursively set VisualInstance3D.layers on a node tree."""
+	if node is VisualInstance3D:
+		node.layers = layer_mask
+	for child in node.get_children():
+		_set_layers_recursive(child, layer_mask)
 
 func _start_idle_wall() -> void:
 	_ensure_anim_player()
@@ -438,14 +585,16 @@ func _on_tree_off_wall_done() -> void:
 	print("🎬 Off wall complete — Tama is now standing")
 
 func _setup_radial_menu() -> void:
+	# All UI menus are children of _ui_window (not main window)
+	var ui_parent: Node = _ui_window if _ui_window else self
 	radial_menu = CanvasLayer.new()
 	radial_menu.set_script(RadialMenuScript)
-	add_child(radial_menu)
+	ui_parent.add_child(radial_menu)
 	radial_menu.action_triggered.connect(_on_radial_action)
 	radial_menu.request_hide.connect(_on_radial_hide)
 	settings_panel = CanvasLayer.new()
 	settings_panel.set_script(SettingsPanelScript)
-	add_child(settings_panel)
+	ui_parent.add_child(settings_panel)
 	settings_panel.mic_selected.connect(_on_mic_selected)
 	settings_panel.panel_closed.connect(_on_settings_panel_closed)
 	settings_panel.api_key_submitted.connect(_on_api_key_submitted)
@@ -458,8 +607,8 @@ func _setup_radial_menu() -> void:
 	# Debug tweaks (hidden, F2)
 	debug_tweaks = CanvasLayer.new()
 	debug_tweaks.set_script(DebugTweaksScript)
-	add_child(debug_tweaks)
-	print("🎛️ Radial menu + Settings panel + Debug Tweaks OK")
+	ui_parent.add_child(debug_tweaks)
+	print("🎛️ Menus attachés à %s" % ui_parent.name)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -470,15 +619,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				print("🎛️ [DEBUG] F1 → Fermeture du radial menu")
 				radial_menu.close()
 			else:
-				if _dodge_active:
-					_dodge_return()
 				print("🎛️ [DEBUG] F1 → Ouverture du radial menu")
+				_sync_and_show_ui()
 				radial_menu.open()
+				_safe_restore_passthrough()
 	# F2 = hidden debug tweaks panel
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F2:
 		if debug_tweaks:
+			if not debug_tweaks.is_open:
+				_sync_and_show_ui()
 			debug_tweaks.toggle()
 			print("🔧 [DEBUG] F2 → Tweaks %s" % ("OPEN" if debug_tweaks.is_open else "CLOSED"))
+			_safe_restore_passthrough()
 	# F3 = debug gaze: Tama follows mouse cursor + visual debug
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F3:
 		_debug_gaze_mouse = !_debug_gaze_mouse
@@ -518,71 +670,59 @@ func _unhandled_input(event: InputEvent) -> void:
 			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
 			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
-	# F7 = Debug Strike: trigger strike via AnimTree + hand window →# ─── Multi-Window Hand Animation ───────────────────────────
+	# F7 = Debug Strike: trigger strike via AnimTree + hand window →
+# ─── Multi-Window Hand Animation (Pooled) ──────────────────
 var _hand_window: Window = null
 
 func _get_hand_bone_screen_pos() -> Vector2i:
 	"""Get Tama's hand bone projected to screen coords, or center fallback."""
-	var win_pos := DisplayServer.window_get_position()
-	var win_size := DisplayServer.window_get_size()
+	if not _tama_window or not is_instance_valid(_tama_window):
+		return Vector2i.ZERO
+	var win_pos: Vector2i = _tama_window.position
+	var win_size: Vector2i = _tama_window.size
+	var active_cam: Camera3D = _tama_cam if _tama_cam else _camera
 	var sx: int = win_pos.x + int(win_size.x * 0.5)
 	var sy: int = win_pos.y + int(win_size.y * 0.45)
-	if _strike_hand_bone_idx >= 0 and _skeleton != null and _camera != null:
+	if _strike_hand_bone_idx >= 0 and _skeleton != null and active_cam != null:
 		var bone_global := _skeleton.global_transform * _skeleton.get_bone_global_pose(_strike_hand_bone_idx)
-		var screen_pos := _camera.unproject_position(bone_global.origin)
+		var screen_pos := active_cam.unproject_position(bone_global.origin)
 		sx = int(screen_pos.x) + win_pos.x
 		sy = int(screen_pos.y) + win_pos.y
 	return Vector2i(sx, sy)
 
-func _create_floating_hand(win_ref: String, target_pos: Vector2i, start_emoji: String,
+func _animate_pooled_window(win: Window, target_pos: Vector2i, start_emoji: String,
 		end_emoji: String, win_size: int, font_size: int,
-		ease: Tween.EaseType, trans: Tween.TransitionType,
+		ease_type: Tween.EaseType, trans_type: Tween.TransitionType,
 		duration: float, on_done: Callable) -> void:
-	"""Generic factory for floating emoji windows (strike hand + jarvis hand)."""
-	# Clean up existing
-	var existing: Window = get(win_ref)
-	if existing and is_instance_valid(existing):
-		existing.queue_free()
-		set(win_ref, null)
+	"""Animate a pre-created pooled window. No Window.new() or queue_free()!"""
+	if not is_instance_valid(win):
+		return
+
+	# Kill any running animation on this window
+	if win.has_meta("tween"):
+		var old_tween = win.get_meta("tween") as Tween
+		if is_instance_valid(old_tween) and old_tween.is_running():
+			old_tween.kill()
 
 	var start := _get_hand_bone_screen_pos()
 	var half := win_size / 2
 
-	# Create transparent window
-	var win := Window.new()
-	win.title = "TamaHand"
+	# Position + show (window already pre-created, minimal DWM cost)
 	win.size = Vector2i(win_size, win_size)
 	win.position = Vector2i(start.x - half, start.y - half)
-	win.borderless = true
-	win.transparent_bg = true
-	win.always_on_top = true
-	win.unfocusable = true
-	win.transparent = true
-	win.gui_embed_subwindows = false
-	win.visible = false
-
-	var label := Label.new()
-	label.text = start_emoji
-	label.add_theme_font_size_override("font_size", font_size)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	win.add_child(label)
-	add_child(win)
-	set(win_ref, win)
-
-	# Wait 2 frames for transparency, then show
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if not is_instance_valid(win):
-		return
 	win.visible = true
 
-	# Animate
+	var label := win.get_node("EmojiLabel") as Label
+	if label:
+		label.text = start_emoji
+		label.add_theme_font_size_override("font_size", font_size)
+
+	# Animate toward target
 	var dest := Vector2i(target_pos.x - half, target_pos.y - half)
 	var tween := create_tween().bind_node(win)
-	tween.set_ease(ease)
-	tween.set_trans(trans)
+	win.set_meta("tween", tween)
+	tween.set_ease(ease_type)
+	tween.set_trans(trans_type)
 	tween.tween_property(win, "position", dest, duration)
 	tween.tween_callback(func():
 		if is_instance_valid(label):
@@ -590,21 +730,16 @@ func _create_floating_hand(win_ref: String, target_pos: Vector2i, start_emoji: S
 	)
 	tween.tween_interval(0.5)
 	tween.tween_callback(func():
-		var w: Window = get(win_ref)
-		if w and is_instance_valid(w):
-			w.queue_free()
-			set(win_ref, null)
+		# Hide instead of queue_free() (pooled window)
+		if is_instance_valid(win):
+			win.visible = false
 		on_done.call()
 	)
 
 func _spawn_hand_window() -> void:
-	"""Strike hand: aggressive punch toward target."""
-	var aim: Vector2i
-	if _strike_target.x >= 0:
-		aim = _strike_target
-	else:
-		aim = DisplayServer.mouse_get_position()
-	_create_floating_hand("_hand_window", aim, "🖐️", "👆", 120, 64,
+	"""Strike hand: aggressive punch toward target (pooled window)."""
+	var aim: Vector2i = _strike_target if _strike_target.x >= 0 else DisplayServer.mouse_get_position()
+	_animate_pooled_window(_hand_window, aim, "🖐️", "👆", 120, 64,
 		Tween.EASE_IN_OUT, Tween.TRANS_CUBIC, 0.7, func():
 			_deactivate_imba()
 			_strike_target = Vector2i(-1, -1)
@@ -631,9 +766,9 @@ const JARVIS_EMOJIS = {
 }
 
 func _spawn_jarvis_hand(target: Vector2i, action: String) -> void:
-	"""Jarvis: gentle tap toward target."""
+	"""Jarvis: gentle tap toward target (pooled window)."""
 	var emoji: String = JARVIS_EMOJIS.get(action, "☝️")
-	_create_floating_hand("_jarvis_hand", target, emoji, "✨", 100, 48,
+	_animate_pooled_window(_jarvis_hand, target, emoji, "✨", 100, 48,
 		Tween.EASE_OUT, Tween.TRANS_BACK, 0.5, func():
 			if _gaze_modifier:
 				_gaze_modifier.arm_ik_blend_target = 0.0
@@ -706,7 +841,9 @@ func _show_quit_confirmation() -> void:
 
 	_quit_layer = CanvasLayer.new()
 	_quit_layer.layer = 200
-	add_child(_quit_layer)
+	var quit_parent: Node = _ui_window if _ui_window else self
+	_sync_and_show_ui()
+	quit_parent.add_child(_quit_layer)
 
 	# Full-screen click catcher (clicking outside = cancel)
 	var bg := ColorRect.new()
@@ -734,8 +871,8 @@ func _show_quit_confirmation() -> void:
 	panel.custom_minimum_size = Vector2(220, 0)
 	_quit_layer.add_child(panel)
 
-	var vp := get_viewport().get_visible_rect().size
-	panel.position = Vector2(vp.x / 2 - 110, vp.y / 2 - 50)
+	var vp_size := _ui_window.size if _ui_window else Vector2i(get_viewport().get_visible_rect().size)
+	panel.position = Vector2(vp_size.x / 2 - 110, vp_size.y / 2 - 50)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 14)
@@ -848,37 +985,60 @@ func _on_mic_toggled(enabled: bool) -> void:
 		ws.send_text(JSON.stringify({"command": "SET_MIC_ALLOWED", "enabled": enabled}))
 
 func _safe_restore_passthrough() -> void:
-	if radial_menu and radial_menu.is_open:
-		return
-	if settings_panel and settings_panel.is_open:
-		return
-	if debug_tweaks and debug_tweaks.is_open:
-		return
-	if _quit_layer:
-		return
+	"""Smart UI visibility: show _ui_window when any UI is open, hide when all closed."""
+	var is_ui_active := false
+	if radial_menu and radial_menu.is_open: is_ui_active = true
+	if settings_panel and settings_panel.is_open: is_ui_active = true
+	if debug_tweaks and debug_tweaks.is_open: is_ui_active = true
+	if _quit_layer: is_ui_active = true
+
+	if is_ui_active:
+		if _ui_window and not _ui_window.visible:
+			_sync_and_show_ui()
+	else:
+		if _ui_window and _ui_window.visible:
+			_ui_window.visible = false  # Hide UI window = 0 GPU cost
+
+	# Main window (Tama 3D) always lets clicks through
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
+
+func _sync_and_show_ui() -> void:
+	"""Position the UI window at home (bottom-right) and show it.
+	UI stays fixed — it does NOT follow Tama when she dodges."""
+	if _ui_window:
+		var usable := DisplayServer.screen_get_usable_rect()
+		var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
+		var x := usable.position.x + usable.size.x - win_size.x
+		var y := usable.position.y + usable.size.y - win_size.y
+		_ui_window.size = win_size
+		_ui_window.position = Vector2i(x, y)
+		_ui_window.visible = true
 
 func _position_window() -> void:
 	_reposition_bottom_right()
 	call_deferred("_apply_passthrough")
 
 func _reposition_bottom_right() -> void:
-	## Anchor window to bottom-right of usable screen area (excludes taskbar)
+	## Anchor Tama window to bottom-right of usable screen area (excludes taskbar)
+	if not _tama_window or not is_instance_valid(_tama_window):
+		return
 	var usable := DisplayServer.screen_get_usable_rect()
-	var win_size := DisplayServer.window_get_size()
+	var win_size := _tama_window.size
 	var x := usable.position.x + usable.size.x - win_size.x
 	var y := usable.position.y + usable.size.y - win_size.y
-	DisplayServer.window_set_position(Vector2i(x, y))
+	_tama_window.position = Vector2i(x, y)
 
 func _get_tama_screen_center() -> Vector2i:
 	"""Approximate screen position of Tama's body center."""
-	var win_pos := DisplayServer.window_get_position()
-	var win_size := DisplayServer.window_get_size()
+	if not _tama_window or not is_instance_valid(_tama_window):
+		return Vector2i.ZERO
+	var win_pos := _tama_window.position
+	var win_size := _tama_window.size
 	return Vector2i(win_pos.x + win_size.x / 2, win_pos.y + int(win_size.y * 0.55))
 
 func _update_mouse_dodge(delta: float) -> void:
-	"""Teleport Tama to taskbar when mouse hovers her."""
-	if _glitch_quitting or _glitch_teleporting:
+	"""Move Tama's window when mouse hovers her."""
+	if _glitch_quitting or _glitch_teleporting or _dodge_departing:
 		return
 	if _quit_layer:
 		return
@@ -892,39 +1052,93 @@ func _update_mouse_dodge(delta: float) -> void:
 		return
 
 	var mouse := DisplayServer.mouse_get_position()
+	var tama_center := _get_tama_screen_center()
+	var dist := Vector2(mouse - tama_center).length()
 
 	if not _dodge_active:
-		var tama_center := _get_tama_screen_center()
-		var dist := Vector2(mouse - tama_center).length()
+		# Mouse near Tama → dodge to taskbar area
 		if dist < DODGE_HOVER_RADIUS:
-			_dodge_to_taskbar()
+			_start_dodge_departure()
 	else:
-		# Return when mouse is far from dodge position
-		var tama_center := _get_tama_screen_center()
-		var dist := Vector2(mouse - tama_center).length()
-		if dist > DODGE_HOVER_RADIUS * 2.0:
-			_dodge_return()
+		# Mouse near Tama at dodge position → return home
+		if dist < DODGE_HOVER_RADIUS:
+			_start_dodge_return()
+
+func _start_dodge_departure() -> void:
+	"""Glitch dissolve → delay → move window → arrival glitch at new position."""
+	_dodge_departing = true
+	# Departure glitch: Tama dissolves at current position
+	_glitch_intensity = GLITCH_TELEPORT_START
+	_glitch_target = GLITCH_TELEPORT_START
+	if _glitch_quad:
+		_glitch_quad.visible = true
+	if _glitch_material:
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+	# Wait 300ms so user sees the dissolve, then teleport
+	var tw := create_tween()
+	tw.tween_interval(0.15)
+	tw.tween_callback(func():
+		_dodge_departing = false
+		_dodge_to_taskbar()
+	)
+
+func _start_dodge_return() -> void:
+	"""Glitch dissolve → delay → move window → arrival glitch at home."""
+	_dodge_departing = true
+	# Departure glitch at dodge position
+	_glitch_intensity = GLITCH_TELEPORT_START
+	_glitch_target = GLITCH_TELEPORT_START
+	if _glitch_quad:
+		_glitch_quad.visible = true
+	if _glitch_material:
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+	var tw := create_tween()
+	tw.tween_interval(0.15)
+	tw.tween_callback(func():
+		_dodge_departing = false
+		_dodge_return()
+	)
 
 func _dodge_to_taskbar() -> void:
-	"""Teleport Tama's window to the taskbar (bottom-left)."""
+	"""Move Tama's window to taskbar area (bottom-left) + arrival glitch."""
 	_dodge_active = true
 	_dodge_cooldown_timer = DODGE_COOLDOWN
-	_glitch_intensity = 2.5
+
+	if not _tama_window or not is_instance_valid(_tama_window):
+		return
 
 	var usable := DisplayServer.screen_get_usable_rect()
-	var win_size := DisplayServer.window_get_size()
+	var win_size := _tama_window.size
 	var x := usable.position.x + 20
 	var y := usable.position.y + usable.size.y - win_size.y
-	DisplayServer.window_set_position(Vector2i(x, y))
-	print("⚡ Dodge! Tama teleported to taskbar")
+	_tama_window.position = Vector2i(x, y)
+
+	# Arrival glitch: fade from high intensity → 0 (materialization)
+	_glitch_teleporting = true
+	_glitch_intensity = GLITCH_TELEPORT_START
+	_glitch_target = 0.0
+	if _glitch_quad:
+		_glitch_quad.visible = true
+	if _glitch_material:
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+	print("⚡ Dodge! Tama window → (%d, %d)" % [x, y])
 
 func _dodge_return() -> void:
-	"""Return Tama to her normal bottom-right position."""
+	"""Move Tama's window back to home (bottom-right) + arrival glitch."""
 	_dodge_active = false
 	_dodge_cooldown_timer = DODGE_COOLDOWN
-	_glitch_intensity = 1.5
+
 	_reposition_bottom_right()
-	print("⚡ Return! Tama back to normal position")
+
+	# Arrival glitch: fade from high intensity → 0 (materialization)
+	_glitch_teleporting = true
+	_glitch_intensity = GLITCH_TELEPORT_START
+	_glitch_target = 0.0
+	if _glitch_quad:
+		_glitch_quad.visible = true
+	if _glitch_material:
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+	print("⚡ Return! Tama window → home")
 
 func _apply_camera_zoom() -> void:
 	## Live preview: zoom camera while slider is dragged (CanvasLayers unaffected)
@@ -936,6 +1150,9 @@ func _apply_camera_zoom() -> void:
 		_camera.size = _base_cam_size
 		_camera.position.y = _base_cam_y
 		_camera.position.x = _base_cam_x
+		if _tama_cam:
+			_tama_cam.size = _camera.size
+			_tama_cam.position = _camera.position
 		return
 	# Below 100%: zoom out camera for live preview
 	var new_size := _base_cam_size / factor
@@ -945,6 +1162,10 @@ func _apply_camera_zoom() -> void:
 	var aspect := float(_BASE_WIN_SIZE.x) / float(_BASE_WIN_SIZE.y)
 	var base_right := _base_cam_x + _base_cam_size / 2.0 * aspect
 	_camera.position.x = base_right - new_size / 2.0 * aspect
+	# Sync clone camera for live preview
+	if _tama_cam:
+		_tama_cam.size = _camera.size
+		_tama_cam.position = _camera.position
 
 func _apply_tama_scale_full() -> void:
 	## Apply final scale: camera zoom for ≤100%, window resize for >100%
@@ -955,12 +1176,19 @@ func _apply_tama_scale_full() -> void:
 		# Bigger Tama: enlarge window, reset camera to default
 		var new_w := int(_BASE_WIN_SIZE.x * factor)
 		var new_h := int(_BASE_WIN_SIZE.y * factor)
-		DisplayServer.window_set_size(Vector2i(new_w, new_h))
+		var new_size := Vector2i(new_w, new_h)
+		if _tama_window and is_instance_valid(_tama_window):
+			_tama_window.size = new_size
+		if _tama_subviewport:
+			_tama_subviewport.size = new_size
 		_camera.size = _base_cam_size
 		_camera.position.y = _base_cam_y
 	else:
 		# Smaller/default Tama: window stays 400×500, camera zoomed out
-		DisplayServer.window_set_size(_BASE_WIN_SIZE)
+		if _tama_window and is_instance_valid(_tama_window):
+			_tama_window.size = _BASE_WIN_SIZE
+		if _tama_subviewport:
+			_tama_subviewport.size = _BASE_WIN_SIZE
 		if factor < 1.0:
 			var new_size := _base_cam_size / factor
 			_camera.size = new_size
@@ -973,6 +1201,10 @@ func _apply_tama_scale_full() -> void:
 			_camera.size = _base_cam_size
 			_camera.position.y = _base_cam_y
 			_camera.position.x = _base_cam_x
+	# Sync clone camera with updated settings
+	if _tama_cam:
+		_tama_cam.size = _camera.size
+		_tama_cam.position = _camera.position
 	call_deferred("_reposition_bottom_right")
 
 func _apply_passthrough() -> void:
@@ -1087,8 +1319,8 @@ func _notification(what: int) -> void:
 # ─── Eye Follow (saccadic blend-shape eye movement) ──────
 func _set_eye_target_from_screen(screen_x: float, screen_y: float) -> void:
 	"""Convert screen mouse position to eye target direction (-1..+1)."""
-	var win_pos := DisplayServer.window_get_position()
-	var win_size := DisplayServer.window_get_size()
+	var win_pos := _tama_window.position if _tama_window else Vector2i.ZERO
+	var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
 	# Tama's eye center on screen (approximate: center-top of Godot window)
 	var eye_sx: float = float(win_pos.x) + float(win_size.x) * 0.5
 	var eye_sy: float = float(win_pos.y) + float(win_size.y) * 0.35
@@ -1173,14 +1405,15 @@ func _handle_message(raw: String) -> void:
 	elif command == "SHOW_RADIAL":
 		if settings_panel and settings_panel.is_open:
 			settings_panel.close()
-		if _dodge_active:
-			_dodge_return()
 		if radial_menu:
+			_sync_and_show_ui()
 			radial_menu.open()
+			_safe_restore_passthrough()
 		return
 	elif command == "HIDE_RADIAL":
 		if radial_menu:
 			radial_menu.close()
+		_safe_restore_passthrough()
 		return
 	elif command == "SETTINGS_DATA":
 		var mics = data.get("mics", [])
@@ -1201,7 +1434,9 @@ func _handle_message(raw: String) -> void:
 				radial_menu.close()
 			if radial_menu and radial_menu.has_method("set_lang"):
 				radial_menu.set_lang(lang)
+			_sync_and_show_ui()
 			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on, tama_scale, key_hint)
+			_safe_restore_passthrough()
 		return
 	elif command == "API_KEY_UPDATED":
 		var valid = data.get("valid", false)
@@ -1821,9 +2056,10 @@ func _set_headphones_visible(show: bool) -> void:
 
 # ─── Glitch Effect (API disconnection visual) ───────────────
 func _setup_glitch_effect() -> void:
-	# Need the camera to attach the quad — _setup_gaze finds it
-	if _camera == null:
-		push_warning("⚠️ Glitch: Camera not found — glitch effect disabled")
+	# Need a camera to attach the quad — prefer _tama_cam (visible window)
+	var target_cam: Camera3D = _tama_cam if _tama_cam else _camera
+	if target_cam == null:
+		push_warning("⚠️ Glitch: No camera found — glitch effect disabled")
 		return
 
 	# Create a full-screen quad as child of camera (moves with it)
@@ -1854,10 +2090,12 @@ func _setup_glitch_effect() -> void:
 	else:
 		push_warning("⚠️ glitch_effect.gdshader not found")
 
-	_camera.add_child(_glitch_quad)
+	# Glitch quad must be on layer 2 so _tama_cam (cull_mask=2) can see it
+	_glitch_quad.layers = TAMA_LAYER_BIT
+	target_cam.add_child(_glitch_quad)
 	# Start hidden — no GPU cost when inactive
 	_glitch_quad.visible = false
-	print("📺 Glitch effect ready (hidden)")
+	print("📺 Glitch effect ready on %s (hidden)" % target_cam.name)
 
 func _set_glitch_active(active: bool) -> void:
 	if _glitch_quitting:
@@ -1935,6 +2173,8 @@ func _teleport_glitch_in() -> void:
 
 	# Teleport Tama in (instant — idle_wall, no walk animation)
 	_anim_tree_module.teleport_in()
+	# Grace period: don't dodge immediately (user's mouse is probably near the edge)
+	_dodge_cooldown_timer = 3.0
 	print("📺 Teleport glitch IN — Tama materializing (intensity: %.1f → 0)" % GLITCH_TELEPORT_START)
 
 # ─── User Speaking Acknowledgment ───────────────────
@@ -2137,8 +2377,8 @@ func set_gaze(target: GazeTarget, speed: float = 5.0) -> void:
 func _screen_to_world(screen_x: float, screen_y: float) -> Vector3:
 	"""Convert desktop screen pixel coordinates to a 3D world point.
 	Uses the orthographic camera's linear projection extended to the full screen."""
-	var win_pos := DisplayServer.window_get_position()
-	var win_size := DisplayServer.window_get_size()
+	var win_pos := _tama_window.position if _tama_window else Vector2i.ZERO
+	var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
 	# Convert global screen coords to viewport-local coords
 	# (can be negative or > viewport — that's fine for ortho projection!)
 	var vp_x: float = screen_x - float(win_pos.x)
@@ -2167,8 +2407,8 @@ func _screen_to_arm_target(screen_x: float, screen_y: float) -> Vector3:
 	"""Convert screen coords to a 3D target for arm IK.
 	Uses a simple direction approach: compute the direction on screen from
 	Tama's center to the target, then map it to a 3D offset from the arm."""
-	var win_pos := DisplayServer.window_get_position()
-	var win_size := DisplayServer.window_get_size()
+	var win_pos := _tama_window.position if _tama_window else Vector2i.ZERO
+	var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
 
 	# Use the arm bone's projected screen position as origin (not window center!)
 	# This way "same level" = pointing horizontal, not upward

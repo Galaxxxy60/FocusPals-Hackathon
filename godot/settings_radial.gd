@@ -45,18 +45,11 @@ func _ready() -> void:
 	add_child(_canvas)
 
 func _arc_center() -> Vector2:
-	# Use absolute screen coordinates so radial ALWAYS appears bottom-right
-	# regardless of where the main window is (e.g. during dodge teleport)
-	var usable := DisplayServer.screen_get_usable_rect()
-	var win_pos := DisplayServer.window_get_position()
-	# Target: right edge of usable screen, 70% down
-	var win_size := DisplayServer.window_get_size()
-	var screen_x := float(usable.position.x + usable.size.x)
-	# Y = bottom of usable area minus 30% of window height
-	# This matches the original vp.y * 0.7 when window is at bottom-right
-	var screen_y := float(usable.position.y + usable.size.y) - float(win_size.y) * 0.3
-	# Convert screen coords to local window coords
-	return Vector2(screen_x - float(win_pos.x), screen_y - float(win_pos.y))
+	# Anchor to the right edge of our parent window (works wherever Tama is)
+	var parent_win := get_window()
+	var win_size := parent_win.size if parent_win else Vector2i(400, 500)
+	# Right edge of window, 70% down
+	return Vector2(float(win_size.x), float(win_size.y) * 0.7)
 
 func _item_pos(index: int) -> Vector2:
 	var n := ITEMS.size()
