@@ -52,6 +52,7 @@ const WANTED = {
 	"idle_ground": "Idle_ground",
 	"idle_ground_talk": "Idle_ground_talk",
 	"idle_ground_standup": "Idle_ground_StandUp",
+	"hello": "Hello",
 }
 
 # Which animations should loop
@@ -170,6 +171,8 @@ func _build_tree() -> void:
 		"idle_ground_talk_return": Vector2(800, -150),
 		"idle_ground_standup": Vector2(600, 0),
 		"sit_ground": Vector2(600, 250),  # reverse standup
+		# Hello (startup greeting)
+		"hello": Vector2(-400, 0),
 	}
 
 	for key in _names:
@@ -228,6 +231,11 @@ func _build_tree() -> void:
 		_add_trans(sm, "walk_in", "idle", XFADE_MOOD, true)  # auto-advance after WalkIn ends
 		_add_trans(sm, "walk_in", "idle_wall", XFADE_TRANSITION)
 		_add_trans(sm, "idle", "walk_in", XFADE_MOOD)
+
+	# Hello (startup greeting → auto-advance to idle)
+	if _names.has("hello"):
+		_add_trans(sm, "hello", "idle", XFADE_MOOD, true)  # auto-advance after Hello ends
+		_add_trans(sm, "hello", "idle_wall", XFADE_TRANSITION)
 
 	# GoAway (exit — standing → GoAway → off-screen)
 	if _names.has("go_away"):
@@ -349,27 +357,30 @@ func leave_wall() -> void:
 
 
 func walk_in() -> void:
-	"""OFF_SCREEN → WalkIn → idle → idle_wall. Entrance animation."""
+	"""OFF_SCREEN → Hello → idle → idle_wall. Entrance animation."""
 	if not _ready_ok or not _playback:
 		return
 	if current_state != State.OFF_SCREEN:
 		print("🎬 walk_in() ignored — not off screen (state: %s)" % State.keys()[current_state])
 		return
-	if not _names.has("walk_in"):
+
+	# Prefer Hello as startup animation
+	var start_anim := "hello" if _names.has("hello") else "walk_in"
+	if not _names.has(start_anim):
 		# Fallback: just go to idle_wall directly
 		if _tama_node:
 			_tama_node.visible = true
 		_playback.travel("idle_wall")
 		_set_state(State.ON_WALL)
-		print("🎬 → walk_in() fallback (no WalkIn anim)")
+		print("🎬 → walk_in() fallback (no Hello or WalkIn anim)")
 		return
-	_set_state(State.LEAVING_WALL)  # Reuse LEAVING_WALL for walk-in transition
-	_playback.start("walk_in")  # start() = hard jump to walk_in node
-	_tree.advance(0)  # Force AnimTree to evaluate walk_in pose NOW
+	_set_state(State.LEAVING_WALL)  # Reuse LEAVING_WALL for entrance transition
+	_playback.start(start_anim)  # start() = hard jump
+	_tree.advance(0)  # Force AnimTree to evaluate pose NOW
 	# Defer visibility to next frame — skeleton needs 1 process tick to update
 	if _tama_node:
 		_tama_node.set_deferred("visible", true)
-	print("🎬 → walk_in() — entering screen")
+	print("🎬 → walk_in() — playing '%s'" % start_anim)
 
 
 func teleport_in() -> void:
@@ -709,8 +720,8 @@ func _process(delta: float) -> void:
 
 func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 	"""Called when the StateMachine transitions to a different node."""
-	# walk_in just ended → advance to idle (then idle_wall)
-	if from_node == "walk_in" and to_node == "idle":
+	# walk_in or hello just ended → advance to idle (then idle_wall)
+	if from_node in ["walk_in", "hello"] and to_node == "idle":
 		_set_state(State.STANDING)
 		_current_standing = "idle"
 		off_wall_complete.emit()

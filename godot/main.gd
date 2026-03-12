@@ -459,10 +459,11 @@ func _set_layers_recursive(node: Node, layer_mask: int) -> void:
 
 func _start_idle_wall() -> void:
 	_ensure_anim_player()
-	# AnimTree handles idle_wall via its StateMachine
+	# AnimTree handles entrance via Hello → idle → idle_wall
 	if _anim_tree_module and _anim_tree_module._ready_ok:
 		_started = true
-		print("🧱 Tama démarre en Idle_wall (via AnimTree)")
+		_anim_tree_module.walk_in()  # Plays Hello (or WalkIn) → idle → idle_wall
+		print("🧱 Tama entrance started (via AnimTree)")
 		return
 	# Fallback: direct AnimationPlayer (should rarely happen)
 	if _anim_player:
