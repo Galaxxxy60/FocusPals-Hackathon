@@ -429,7 +429,14 @@ func go_away() -> void:
 		leave_wall()
 		print("🎬 → go_away() — leaving wall first, then GoAway")
 		return
-	if current_state == State.LEAVING_WALL or current_state == State.RETURNING_WALL:
+	# If on ground, need to stand first → queue go_away
+	if current_state == State.ON_GROUND or current_state == State.GROUND_TALK:
+		_queued_standing = "go_away"
+		stand_from_ground()
+		print("🎬 → go_away() — standing from ground first, then GoAway")
+		return
+	if current_state == State.LEAVING_WALL or current_state == State.RETURNING_WALL \
+		or current_state == State.LEAVING_GROUND or current_state == State.SITTING_GROUND:
 		_queued_standing = "go_away"
 		print("🎬 → go_away() queued — waiting for transition")
 		return
@@ -441,10 +448,23 @@ func go_away() -> void:
 
 func return_to_wall() -> void:
 	"""STANDING/STRIKING → reverse OffThewall → ON_WALL.
-	WALL_TALK → reverse Idle_wall_Talk → ON_WALL."""
+	WALL_TALK → reverse Idle_wall_Talk → ON_WALL.
+	Ground states → gracefully ignored (already resting)."""
 	if not _ready_ok or not _playback:
 		return
 	if current_state == State.ON_WALL or current_state == State.RETURNING_WALL:
+		return
+	# Ground states: she's already resting — nothing to "return" to
+	if current_state == State.ON_GROUND or current_state == State.SITTING_GROUND:
+		print("🎬 return_to_wall() ignored — already on ground (state: %s)" % State.keys()[current_state])
+		return
+	if current_state == State.GROUND_TALK:
+		# End ground talk, stay sitting
+		end_ground_talk()
+		print("🎬 return_to_wall() → end_ground_talk() (ground equivalent)")
+		return
+	if current_state == State.LEAVING_GROUND:
+		print("🎬 return_to_wall() ignored — currently leaving ground")
 		return
 	# If in wall talk pose, play reverse of Idle_wall_Talk (not OffThewall)
 	if current_state == State.WALL_TALK:
@@ -479,8 +499,19 @@ func set_standing_anim(key: String) -> void:
 		leave_wall()
 		return
 
-	if current_state == State.LEAVING_WALL:
+	if current_state == State.ON_GROUND or current_state == State.GROUND_TALK:
+		# Need to stand from ground first — queue the mood
+		_queued_standing = key
+		stand_from_ground()
+		return
+
+	if current_state == State.LEAVING_WALL or current_state == State.LEAVING_GROUND:
 		# Still transitioning — queue it
+		_queued_standing = key
+		return
+
+	if current_state == State.SITTING_GROUND:
+		# Sitting down animation in progress — queue it
 		_queued_standing = key
 		return
 
@@ -600,7 +631,9 @@ func play_strike() -> void:
 			teleport_in()
 		elif current_state == State.ON_WALL or current_state == State.WALL_TALK:
 			leave_wall()
-		# Si en cours de LEAVING_WALL ou RETURNING_WALL, la file d'attente s'en chargera
+		elif current_state == State.ON_GROUND or current_state == State.GROUND_TALK:
+			stand_from_ground()
+		# Si en cours de LEAVING_WALL/LEAVING_GROUND/etc, la file d'attente s'en chargera
 		return
 
 	_set_state(State.STRIKING)
@@ -822,7 +855,14 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 	# sit_ground just ended → on ground
 	elif from_node == "sit_ground" and to_node == "idle_ground":
 		_set_state(State.ON_GROUND)
-		print("🎬 Sitting on ground")
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike": play_strike()
+			elif q == "go_away": go_away()
+			else: set_standing_anim(q)
+		else:
+			print("🎬 Sitting on ground")
 
 	# idle_ground_talk started
 	elif to_node == "idle_ground_talk":

@@ -324,8 +324,9 @@ func _ready() -> void:
 	call_deferred("_setup_gaze_debug")
 	call_deferred("_setup_spring_bones_module")
 	call_deferred("_setup_anim_tree")
-	# Start in Idle_wall — Tama is always visible
-	call_deferred("_start_idle_wall")
+	# Tama stays hidden at launch — _start_idle_wall() is called
+	# only when Python sends START_SESSION or START_CONVERSATION
+	# call_deferred("_start_idle_wall")
 	# Enable internal processing for eye follow blend shapes (not bone mods — those use SkeletonModifier3D)
 	# process_priority=100: run AFTER AnimTree (default 0) so our blend shape writes override animation data.
 	# Without this, AnimTree overwrites BS_LookLeft/Right every frame and eye follow is invisible.
@@ -418,7 +419,7 @@ func _setup_tama_window() -> void:
 	var y := usable.position.y + usable.size.y - _BASE_WIN_SIZE.y
 	_tama_window.position = Vector2i(x, y)
 	_tama_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)  # Clicks go through to desktop
-	_tama_window.visible = true  # Always visible (Tama lives here)
+	_tama_window.visible = false  # Hidden at launch — revealed by START_SESSION/START_CONVERSATION
 
 	# Hide main window — Tama renders in _tama_window now
 	# Main window stays alive for script processing but is invisible
@@ -541,6 +542,32 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 		_scan_eye_active = false
 		_set_eye_look(0.0, 0.0)
 		set_gaze(GazeTarget.NEUTRAL, 2.0)
+	# ── Ground sitting equivalents ──
+	elif new_state == "GROUND_TALK":
+		if _suspicion_staring:
+			# Suspicion-triggered ground_talk — stare at screen
+			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
+			_set_eye_look(-1.0, -0.3)
+			_scan_eye_active = true
+		elif conversation_active:
+			set_gaze(GazeTarget.USER, 4.0)
+		else:
+			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
+	elif new_state == "ON_GROUND" and old_state == "SITTING_GROUND":
+		# Just sat down OR returned from ground_talk (end_ground_talk → SITTING_GROUND → ON_GROUND)
+		# Check if we need to stand up (anger queued during ground_talk)
+		if _pending_leave_wall:
+			_pending_leave_wall = false
+			_suspicion_staring = false
+			var tier := _get_tier()
+			if tier >= 2:
+				_anim_tree_module.set_standing_anim("angry")
+			# If tier dropped below 2, just stay sitting
+		else:
+			_suspicion_staring = false
+			_scan_eye_active = false
+			_set_eye_look(0.0, 0.0)
+			set_gaze(GazeTarget.NEUTRAL, 2.0)
 	elif new_state == "OFF_SCREEN":
 		# Tama left the screen — reset all gaze
 		_suspicion_staring = false
@@ -576,9 +603,18 @@ func _on_tree_off_wall_done() -> void:
 	print("🎬 Off wall/ground complete — Tama is now standing")
 	if not _anim_tree_module or not _anim_tree_module.is_standing():
 		return
+	# If there's a queued action (go_away, strike, mood), DON'T override it
+	# The queue will be processed by _on_sm_node_changed right after this signal
+	if _anim_tree_module._queued_standing != "":
+		print("🎬 Queued action '%s' — not overriding" % _anim_tree_module._queued_standing)
+		return
 	if _dodge_active:
-		# Dodged → sit on ground
-		_anim_tree_module.sit_ground()
+		# Dodged → sit on ground UNLESS she stood up because angry/suspicious
+		var mood = _anim_tree_module._current_standing
+		if mood in ["angry", "suspicious"]:
+			print("🎬 Dodge + %s → staying standing" % mood)
+		else:
+			_anim_tree_module.sit_ground()
 	else:
 		# Home → return to wall
 		_anim_tree_module.return_to_wall()
@@ -1106,11 +1142,27 @@ func _dodge_to_taskbar() -> void:
 	if not _tama_window or not is_instance_valid(_tama_window):
 		return
 
-	# FORCE idle_ground pose BEFORE moving window (glitch is covering her)
-	if _anim_tree_module and _anim_tree_module._playback and _anim_tree_module._names.has("idle_ground"):
-		_anim_tree_module._playback.start("idle_ground")
-		_anim_tree_module._tree.advance(0)  # Force skeleton to evaluate new pose NOW
-		_anim_tree_module._set_state(_anim_tree_module.State.ON_GROUND)
+	# FORCE pose BEFORE moving window (glitch is covering her)
+	if _anim_tree_module and _anim_tree_module._playback:
+		var is_angry_or_sus := false
+		if _anim_tree_module.is_standing():
+			# Check current mood or queued mood
+			var mood = _anim_tree_module._current_standing
+			var queued = _anim_tree_module._queued_standing
+			if mood in ["angry", "suspicious"] or queued in ["angry", "suspicious"]:
+				is_angry_or_sus = true
+				# Process queued standing immediately before TP
+				if queued != "":
+					_anim_tree_module._queued_standing = ""
+					_anim_tree_module._playback.start(queued)
+					_anim_tree_module._tree.advance(0)
+					_anim_tree_module._current_standing = queued
+					_anim_tree_module._set_state(_anim_tree_module.State.STANDING)
+		if not is_angry_or_sus:
+			if _anim_tree_module._names.has("idle_ground"):
+				_anim_tree_module._playback.start("idle_ground")
+				_anim_tree_module._tree.advance(0)
+				_anim_tree_module._set_state(_anim_tree_module.State.ON_GROUND)
 
 	var usable := DisplayServer.screen_get_usable_rect()
 	var win_size := _tama_window.size
@@ -1133,11 +1185,15 @@ func _dodge_return() -> void:
 	_dodge_active = false
 	_dodge_cooldown_timer = DODGE_COOLDOWN
 
-	# FORCE idle_wall pose BEFORE moving window (glitch is covering her)
-	if _anim_tree_module and _anim_tree_module._playback and _anim_tree_module._names.has("idle_wall"):
-		_anim_tree_module._playback.start("idle_wall")
-		_anim_tree_module._tree.advance(0)  # Force skeleton to evaluate new pose NOW
-		_anim_tree_module._set_state(_anim_tree_module.State.ON_WALL)
+	# FORCE pose BEFORE moving window (glitch is covering her)
+	if _anim_tree_module and _anim_tree_module._playback:
+		if _anim_tree_module.is_standing():
+			# Already standing (angry/suspicious) — keep standing pose
+			pass
+		elif _anim_tree_module._names.has("idle_wall"):
+			_anim_tree_module._playback.start("idle_wall")
+			_anim_tree_module._tree.advance(0)
+			_anim_tree_module._set_state(_anim_tree_module.State.ON_WALL)
 
 	_reposition_bottom_right()
 
@@ -1391,26 +1447,46 @@ func _handle_message(raw: String) -> void:
 			session_active = true
 			conversation_active = false  # Session overrides conversation
 			print("🚀 Session Deep Work lancée !")
+			# Reveal Tama window (hidden at launch)
+			if _tama_window:
+				_tama_window.visible = true
 			# Tama teleports in when session starts (primary arrival)
 			if _anim_tree_module and _anim_tree_module.is_off_screen():
 				_teleport_glitch_in()
+			else:
+				_start_idle_wall()  # Fallback if AnimTree not ready
 		return
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
 			_convo_engagement = 0  # Reset engagement counter
 			print("💬 Mode conversation — Tama arrive !")
+			# Reveal Tama window (hidden at launch)
+			if _tama_window:
+				_tama_window.visible = true
 			# Tama teleports in for conversation (primary arrival)
 			if _anim_tree_module and _anim_tree_module.is_off_screen():
 				_teleport_glitch_in()
+			else:
+				_start_idle_wall()  # Fallback if AnimTree not ready
 		return
 	elif command == "END_CONVERSATION":
 		if conversation_active:
 			conversation_active = false
-			set_gaze(GazeTarget.NEUTRAL, 2.0)  # Stop looking at user
-			print("💬 Fin de conversation — Tama s'en va")
+			set_gaze(GazeTarget.NEUTRAL, 2.0)
+			print("💬 Fin de conversation")
 			if _anim_tree_module:
-				_anim_tree_module.go_away()
+				if _anim_tree_module.is_on_ground():
+					if _anim_tree_module.current_state == 8:  # GROUND_TALK
+						_anim_tree_module.end_ground_talk()
+				elif _anim_tree_module.current_state == 2:  # WALL_TALK
+					_anim_tree_module.end_wall_talk()
+				elif _anim_tree_module.is_standing():
+					if _dodge_active:
+						_anim_tree_module.sit_ground()
+					else:
+						_anim_tree_module.return_to_wall()
+				# else already on wall/ground — nothing to do
 		return
 	elif command == "SHOW_RADIAL":
 		if settings_panel and settings_panel.is_open:
@@ -1513,13 +1589,36 @@ func _handle_message(raw: String) -> void:
 	elif command == "TAMA_ANIM":
 		var anim_name = data.get("anim", "")
 		_last_anim_command_time = Time.get_unix_time_from_system()
-		print("🎬 [ANIM CMD] " + anim_name)
+		print("🎬 [ANIM CMD] %s (state=%s dodge=%s)" % [anim_name, _anim_tree_module.get_current_anim_key() if _anim_tree_module else "?", str(_dodge_active)])
 		if _anim_tree_module:
 			var key: String = str(anim_name).to_lower()
 			if key in ["go_away", "bye"]:
-				_anim_tree_module.go_away()
+				# go_away anim never plays — return to rest position instead
+				if _anim_tree_module.is_on_ground():
+					if _anim_tree_module.current_state == 8:  # GROUND_TALK
+						_anim_tree_module.end_ground_talk()
+				elif _anim_tree_module.current_state == 2:  # WALL_TALK
+					_anim_tree_module.end_wall_talk()
+				elif _anim_tree_module.is_standing():
+					if _dodge_active:
+						if _anim_tree_module._current_standing not in ["angry", "suspicious"]:
+							_anim_tree_module.sit_ground()
+					else:
+						_anim_tree_module.return_to_wall()
 			elif key in ["idle_wall"]:
-				_anim_tree_module.return_to_wall()
+				# "Go back to rest" — wall if home, ground if dodged
+				if _anim_tree_module.is_on_ground():
+					# Already on ground — end talk if active, stay sitting
+					if _anim_tree_module.current_state == 8:  # GROUND_TALK
+						_anim_tree_module.end_ground_talk()
+					# else already idle_ground — nothing to do
+				elif _dodge_active:
+					# Standing while dodged — only sit if not angry/suspicious
+					if _anim_tree_module.is_standing() and _anim_tree_module._current_standing not in ["angry", "suspicious"]:
+						_anim_tree_module.sit_ground()
+					# else angry/suspicious or transitioning — leave it
+				else:
+					_anim_tree_module.return_to_wall()
 			elif key in ["walk_in"]:
 				_anim_tree_module.walk_in()
 			elif key in ["strike", "strike_base"]:
@@ -1528,15 +1627,34 @@ func _handle_message(raw: String) -> void:
 			elif key in ["idle_wall_talk"]:
 				if _anim_tree_module.is_on_wall():
 					_anim_tree_module.play_wall_talk()
+				elif _anim_tree_module.is_on_ground():
+					# Ground equivalent: lean in and talk while sitting
+					_anim_tree_module.play_ground_talk()
+				elif _dodge_active and _anim_tree_module.is_standing():
+					# Standing in dodge mode — only sit if not angry/suspicious
+					if _anim_tree_module._current_standing not in ["angry", "suspicious"]:
+						_anim_tree_module.sit_ground()
 				else:
-					# Already standing — can't wall_talk, fallback to idle
-					_anim_tree_module.set_standing_anim("idle")
+					# Already standing at home — stay idle
+					pass
 			elif key == "suspicious":
-				_anim_tree_module.set_standing_anim("suspicious")
+				if _anim_tree_module.is_on_ground():
+					# On ground: lean in and talk (don't stand up for suspicious)
+					_anim_tree_module.play_ground_talk()
+				elif _anim_tree_module.is_on_wall():
+					_anim_tree_module.play_wall_talk()
+				else:
+					_anim_tree_module.set_standing_anim("suspicious")
 			elif key == "angry":
 				_anim_tree_module.set_standing_anim("angry")
 			else:
-				_anim_tree_module.set_standing_anim("idle")
+				# Unknown anim — only stand up if NOT on ground
+				if _anim_tree_module.is_on_ground():
+					_anim_tree_module.play_ground_talk()  # Safe ground fallback
+				elif _anim_tree_module.is_on_wall():
+					_anim_tree_module.play_wall_talk()  # Safe wall fallback
+				else:
+					_anim_tree_module.set_standing_anim("idle")
 		return
 	elif command == "TAMA_MOOD":
 		var mood_name = data.get("mood", "calm")
@@ -1573,8 +1691,8 @@ func _handle_message(raw: String) -> void:
 			if conversation_active:
 				# In conversation: return gaze to book after a short pause
 				_ack_gaze_timer = 2.0  # Look at user 2s more, then back to book
-			elif _anim_tree_module and _anim_tree_module.current_state == 2: # WALL_TALK
-				# En mode WALL_TALK (sur le mur mais parle), elle maintient son regard !
+			elif _anim_tree_module and (_anim_tree_module.current_state == 2 or _anim_tree_module.current_state == 8): # WALL_TALK or GROUND_TALK
+				# En mode WALL_TALK ou GROUND_TALK, elle maintient son regard !
 				# Ne pas relâcher le regard dans le vide entre chaque mot de la phrase.
 				pass
 			else:
@@ -1714,6 +1832,37 @@ func _update_suspicion_anim() -> void:
 	if tier == _prev_suspicion_tier:
 		return
 	_prev_suspicion_tier = tier
+
+	# ── Ground sitting (dodge mode) — mirror of wall logic ──
+	if _anim_tree_module.is_on_ground():
+		match tier:
+			0:
+				# CALM — stay sitting on ground, end talk if active
+				_suspicion_staring = false
+				if _anim_tree_module.current_state == 8:  # GROUND_TALK
+					_anim_tree_module.end_ground_talk()
+				# Already in idle_ground — nothing to do
+			1:
+				# SUSPICIOUS — lean in and talk from ground (don't stand up)
+				if _anim_tree_module.current_state == 7:  # ON_GROUND
+					_suspicion_staring = true
+					_anim_tree_module.play_ground_talk()
+				# If already GROUND_TALK, just stay there
+			2:
+				# ANGRY — NOW she stands up from ground for real
+				if _anim_tree_module.current_state == 8:  # GROUND_TALK
+					# End ground talk first, then stand up
+					_pending_leave_wall = true  # Reuse flag to queue standup
+					_anim_tree_module.end_ground_talk()
+				else:
+					_suspicion_staring = false
+					# set_standing_anim queues "angry" + stand_from_ground
+					# so _current_standing = "angry" when she's up
+					_anim_tree_module.set_standing_anim("angry")
+					print("🎬 Ground angry → standing up!")
+		return
+
+	# ── Wall sitting (normal home position) ──
 	match tier:
 		0:
 			# CALM — back to book
@@ -1721,20 +1870,32 @@ func _update_suspicion_anim() -> void:
 			_pending_leave_wall = false
 			if _anim_tree_module.current_state == 2:  # WALL_TALK
 				_anim_tree_module.end_wall_talk()
-			else:
-				_anim_tree_module.return_to_wall()
+			elif _anim_tree_module.is_standing():
+				if _dodge_active:
+					_anim_tree_module.sit_ground()  # Go back to sitting on ground
+				else:
+					_anim_tree_module.return_to_wall()
+			elif not _anim_tree_module.is_on_wall():
+				if _dodge_active:
+					pass  # Already sitting or transitioning — leave it
+				else:
+					_anim_tree_module.return_to_wall()
 		1:
 			# SUSPICIOUS — lean in and STARE from wall (don't leave)
 			if _anim_tree_module.current_state == 1:  # ON_WALL
 				_suspicion_staring = true
 				_anim_tree_module.play_wall_talk()
 				# Gaze is set by _on_tree_state_changed when WALL_TALK fires
-			elif _anim_tree_module.current_state == 4:  # STANDING (de-escalating)
+			elif _anim_tree_module.is_standing():
+				# De-escalating from angry
 				_suspicion_staring = false
-				_anim_tree_module.return_to_wall()
+				if _dodge_active:
+					_anim_tree_module.sit_ground()  # Sit back down
+				else:
+					_anim_tree_module.return_to_wall()
 		2:
 			# ANGRY — leave wall for real
-			if _anim_tree_module.current_state == 2:  # WALL_TALK (was staring)
+			if _anim_tree_module.current_state == 2:  # WALL_TALK
 				# Reverse wall_talk first, then leave
 				_pending_leave_wall = true
 				_anim_tree_module.end_wall_talk()

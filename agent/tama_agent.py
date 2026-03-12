@@ -67,15 +67,25 @@ async def run_tama_live():
     state["main_loop"] = asyncio.get_running_loop()
     install_async_exception_handler(asyncio.get_running_loop())
 
-    # Port 8080 cleanup is done in launch_godot_overlay() BEFORE Godot starts,
-    # ensuring the new Godot connects to our WS server (not a stale one).
-
     pya = pyaudio.PyAudio()
 
-    async with websockets.serve(ws_handler, "localhost", 8080):
-        async with asyncio.TaskGroup() as main_tg:
-            main_tg.create_task(broadcast_ws_state())
-            main_tg.create_task(run_gemini_loop(pya))
+    # Retry loop: if port 8080 is still occupied, kill + retry
+    from godot_bridge import _free_port_sync
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with websockets.serve(ws_handler, "localhost", 8080, reuse_address=True):
+                async with asyncio.TaskGroup() as main_tg:
+                    main_tg.create_task(broadcast_ws_state())
+                    main_tg.create_task(run_gemini_loop(pya))
+            break  # Clean exit
+        except OSError as e:
+            if e.errno == 10048 and attempt < max_retries - 1:  # Address already in use
+                print(f"⚠️ Port 8080 occupé (tentative {attempt + 1}/{max_retries}) — nettoyage...")
+                await asyncio.to_thread(_free_port_sync, 8080)
+                await asyncio.sleep(2)
+            else:
+                raise
 
 
 if __name__ == "__main__":
