@@ -302,8 +302,7 @@ var _dodge_departing: bool = false          # True during departure animation (g
 
 # ─── Tama Window (separate rendering window) ───
 var _tama_window: Window = null
-var _tama_subviewport: SubViewport = null
-var _tama_cam: Camera3D = null              # Clone camera inside _tama_subviewport
+var _tama_cam: Camera3D = null              # Clone camera inside _tama_window
 const TAMA_LAYER_BIT: int = 2              # Render layer 2 bitmask
 
 func _ready() -> void:
@@ -345,7 +344,7 @@ func _setup_window_pool() -> void:
 
 func _setup_ui_window() -> void:
 	"""Create a dedicated window for all UI menus (radial, settings, quit).
-	Hidden when no UI active = 0 GPU cost."""
+	Always visible but parked off-screen when inactive (avoids taskbar icon flash)."""
 	_ui_window = Window.new()
 	_ui_window.title = "TamaUI"
 	_ui_window.size = _BASE_WIN_SIZE
@@ -360,8 +359,9 @@ func _setup_ui_window() -> void:
 		_unhandled_input(event)
 	)
 	add_child(_ui_window)
-	_ui_window.visible = false
-	print("🧱 UI Window created (hidden)")
+	# Park off-screen (always visible to avoid taskbar icon flash)
+	_ui_window.position = Vector2i(-5000, -5000)
+	print("🧱 UI Window created (parked off-screen)")
 
 func _init_pooled_emoji_window(win_title: String) -> Window:
 	"""Create a pooled transparent emoji window, parked off-screen."""
@@ -382,6 +382,7 @@ func _init_pooled_emoji_window(win_title: String) -> Window:
 	win.add_child(label)
 
 	add_child(win)
+	win.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)  # Clicks go through to desktop
 	win.visible = false  # Hidden until needed (saves DWM compositing cost)
 	return win
 
@@ -400,26 +401,14 @@ func _setup_tama_window() -> void:
 	_tama_window.unfocusable = true
 	_tama_window.gui_embed_subwindows = false
 
-	# ── SubViewportContainer (fills window) ──
-	var container := SubViewportContainer.new()
-	container.set_anchors_preset(Control.PRESET_FULL_RECT)
-	container.stretch = true
-	_tama_window.add_child(container)
-
-	# ── SubViewport (shares the same 3D world) ──
-	_tama_subviewport = SubViewport.new()
-	_tama_subviewport.transparent_bg = true
-	_tama_subviewport.size = Vector2i(_BASE_WIN_SIZE)
-	# Share the main world immediately so Tama is visible
+	# Window IS a Viewport in Godot 4 — no need for SubViewport!
 	if get_viewport():
-		_tama_subviewport.world_3d = get_viewport().world_3d
-	_tama_subviewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	container.add_child(_tama_subviewport)
+		_tama_window.world_3d = get_viewport().world_3d
 
 	# ── Camera clone (settings synced later via _sync_tama_camera) ──
 	_tama_cam = Camera3D.new()
 	_tama_cam.cull_mask = TAMA_LAYER_BIT  # Only see Tama (layer 2)
-	_tama_subviewport.add_child(_tama_cam)
+	_tama_window.add_child(_tama_cam)
 
 	add_child(_tama_window)
 
@@ -428,6 +417,7 @@ func _setup_tama_window() -> void:
 	var x := usable.position.x + usable.size.x - _BASE_WIN_SIZE.x
 	var y := usable.position.y + usable.size.y - _BASE_WIN_SIZE.y
 	_tama_window.position = Vector2i(x, y)
+	_tama_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)  # Clicks go through to desktop
 	_tama_window.visible = true  # Always visible (Tama lives here)
 
 	# Hide main window — Tama renders in _tama_window now
@@ -582,7 +572,15 @@ func _on_tree_strike_started() -> void:
 
 
 func _on_tree_off_wall_done() -> void:
-	print("🎬 Off wall complete — Tama is now standing")
+	print("🎬 Off wall/ground complete — Tama is now standing")
+	if not _anim_tree_module or not _anim_tree_module.is_standing():
+		return
+	if _dodge_active:
+		# Dodged → sit on ground
+		_anim_tree_module.sit_ground()
+	else:
+		# Home → return to wall
+		_anim_tree_module.return_to_wall()
 
 func _setup_radial_menu() -> void:
 	# All UI menus are children of _ui_window (not main window)
@@ -993,11 +991,11 @@ func _safe_restore_passthrough() -> void:
 	if _quit_layer: is_ui_active = true
 
 	if is_ui_active:
-		if _ui_window and not _ui_window.visible:
+		if _ui_window and _ui_window.position.x < -1000:
 			_sync_and_show_ui()
 	else:
-		if _ui_window and _ui_window.visible:
-			_ui_window.visible = false  # Hide UI window = 0 GPU cost
+		if _ui_window and _ui_window.position.x > -1000:
+			_ui_window.position = Vector2i(-5000, -5000)  # Park off-screen
 
 	# Main window (Tama 3D) always lets clicks through
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
@@ -1107,6 +1105,12 @@ func _dodge_to_taskbar() -> void:
 	if not _tama_window or not is_instance_valid(_tama_window):
 		return
 
+	# FORCE idle_ground pose BEFORE moving window (glitch is covering her)
+	if _anim_tree_module and _anim_tree_module._playback and _anim_tree_module._names.has("idle_ground"):
+		_anim_tree_module._playback.start("idle_ground")
+		_anim_tree_module._tree.advance(0)  # Force skeleton to evaluate new pose NOW
+		_anim_tree_module._set_state(_anim_tree_module.State.ON_GROUND)
+
 	var usable := DisplayServer.screen_get_usable_rect()
 	var win_size := _tama_window.size
 	var x := usable.position.x + 20
@@ -1127,6 +1131,12 @@ func _dodge_return() -> void:
 	"""Move Tama's window back to home (bottom-right) + arrival glitch."""
 	_dodge_active = false
 	_dodge_cooldown_timer = DODGE_COOLDOWN
+
+	# FORCE idle_wall pose BEFORE moving window (glitch is covering her)
+	if _anim_tree_module and _anim_tree_module._playback and _anim_tree_module._names.has("idle_wall"):
+		_anim_tree_module._playback.start("idle_wall")
+		_anim_tree_module._tree.advance(0)  # Force skeleton to evaluate new pose NOW
+		_anim_tree_module._set_state(_anim_tree_module.State.ON_WALL)
 
 	_reposition_bottom_right()
 
@@ -1179,16 +1189,12 @@ func _apply_tama_scale_full() -> void:
 		var new_size := Vector2i(new_w, new_h)
 		if _tama_window and is_instance_valid(_tama_window):
 			_tama_window.size = new_size
-		if _tama_subviewport:
-			_tama_subviewport.size = new_size
 		_camera.size = _base_cam_size
 		_camera.position.y = _base_cam_y
 	else:
 		# Smaller/default Tama: window stays 400×500, camera zoomed out
 		if _tama_window and is_instance_valid(_tama_window):
 			_tama_window.size = _BASE_WIN_SIZE
-		if _tama_subviewport:
-			_tama_subviewport.size = _BASE_WIN_SIZE
 		if factor < 1.0:
 			var new_size := _base_cam_size / factor
 			_camera.size = new_size
@@ -1205,7 +1211,10 @@ func _apply_tama_scale_full() -> void:
 	if _tama_cam:
 		_tama_cam.size = _camera.size
 		_tama_cam.position = _camera.position
-	call_deferred("_reposition_bottom_right")
+	if _dodge_active:
+		call_deferred("_dodge_to_taskbar")
+	else:
+		call_deferred("_reposition_bottom_right")
 
 func _apply_passthrough() -> void:
 	get_viewport().transparent_bg = true

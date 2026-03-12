@@ -22,7 +22,8 @@ signal off_wall_complete()        # OffThewall forward done → now standing
 signal strike_sequence_started()  # Strike sequence just kicked off
 
 # ─── States ───────────────────────────────────────────────────
-enum State { OFF_SCREEN, ON_WALL, WALL_TALK, LEAVING_WALL, STANDING, RETURNING_WALL, STRIKING }
+enum State { OFF_SCREEN, ON_WALL, WALL_TALK, LEAVING_WALL, STANDING, RETURNING_WALL, STRIKING,
+	ON_GROUND, GROUND_TALK, LEAVING_GROUND, SITTING_GROUND }
 var current_state: int = State.OFF_SCREEN
 
 # ─── Internals ────────────────────────────────────────────────
@@ -48,10 +49,13 @@ const WANTED = {
 	"strike_base": "Strike_Base",
 	"walk_in": "WalkIn",
 	"go_away": "GoAway",
+	"idle_ground": "Idle_ground",
+	"idle_ground_talk": "Idle_ground_talk",
+	"idle_ground_standup": "Idle_ground_StandUp",
 }
 
 # Which animations should loop
-const LOOPS = ["idle_wall", "idle"]
+const LOOPS = ["idle_wall", "idle", "idle_ground"]
 
 # ─── Strike Sync (animation-position trigger) ─────────────────────
 # Configure at which SECOND in the animation the hand should fire.
@@ -160,6 +164,12 @@ func _build_tree() -> void:
 		"strike_base": Vector2(600, 100),
 		"walk_in": Vector2(-200, 100),
 		"go_away": Vector2(-200, -100),
+		# Ground sitting (mirror of wall system)
+		"idle_ground": Vector2(800, 100),
+		"idle_ground_talk": Vector2(800, -50),
+		"idle_ground_talk_return": Vector2(800, -150),
+		"idle_ground_standup": Vector2(600, 0),
+		"sit_ground": Vector2(600, 250),  # reverse standup
 	}
 
 	for key in _names:
@@ -249,6 +259,41 @@ func _build_tree() -> void:
 			_add_trans(sm, "idle_wall_hair", "idle_wall_talk", XFADE_WALL_TALK)
 		# Initialize random timer
 		_idle_hair_timer = randf_range(IDLE_HAIR_MIN_CD, IDLE_HAIR_MAX_CD)
+
+	# ── Ground Sitting (mirrors wall system) ──────────────────────
+
+	# Reverse idle_ground_standup for sitting down
+	if _names.has("idle_ground_standup"):
+		var rev_sit := AnimationNodeAnimation.new()
+		rev_sit.animation = _names["idle_ground_standup"]
+		rev_sit.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
+		sm.add_node("sit_ground", rev_sit, positions["sit_ground"])
+
+	# Reverse idle_ground_talk for return from ground talking pose
+	if _names.has("idle_ground_talk"):
+		var rev_gtalk := AnimationNodeAnimation.new()
+		rev_gtalk.animation = _names["idle_ground_talk"]
+		rev_gtalk.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
+		sm.add_node("idle_ground_talk_return", rev_gtalk, positions.get("idle_ground_talk_return", Vector2.ZERO))
+
+	# idle_ground ↔ standup ↔ standing
+	if _names.has("idle_ground_standup"):
+		_add_trans(sm, "idle_ground", "idle_ground_standup", XFADE_TRANSITION)
+		_add_trans(sm, "idle_ground_standup", "idle", XFADE_MOOD, true)  # auto-advance to idle
+		_add_trans(sm, "idle_ground_standup", "suspicious", XFADE_MOOD)
+		_add_trans(sm, "idle_ground_standup", "angry", XFADE_MOOD)
+		# Standing → sit back down
+		for key in ["idle", "suspicious", "angry"]:
+			_add_trans(sm, key, "sit_ground", XFADE_TRANSITION)
+		_add_trans(sm, "sit_ground", "idle_ground", XFADE_TRANSITION, true)  # auto-advance
+
+	# idle_ground_talk — same system as wall talk
+	if _names.has("idle_ground_talk"):
+		_add_trans(sm, "idle_ground", "idle_ground_talk", XFADE_WALL_TALK)
+		_add_trans(sm, "idle_ground_talk", "idle_ground_talk_return", XFADE_WALL_TALK)
+		_add_trans(sm, "idle_ground_talk_return", "idle_ground", XFADE_WALL_TALK, true)
+		# Allow standing up from ground talk
+		_add_trans(sm, "idle_ground_talk", "idle_ground_standup", XFADE_TRANSITION)
 
 	# ── Create AnimationTree node ──
 	_tree = AnimationTree.new()
@@ -469,6 +514,60 @@ func end_wall_talk() -> void:
 	print("🎬 → end_wall_talk()")
 
 
+# ─── Ground Sitting API ───────────────────────────────────────
+
+func sit_ground() -> void:
+	"""STANDING → sit_ground (reverse StandUp) → idle_ground. Auto-advances."""
+	if not _ready_ok or not _playback:
+		return
+	if not _names.has("idle_ground_standup"):
+		return
+	if not is_standing():
+		print("🎬 sit_ground() ignored — not standing (state: %s)" % State.keys()[current_state])
+		return
+	_set_state(State.SITTING_GROUND)
+	_playback.travel("sit_ground")
+	print("🎬 → sit_ground()")
+
+
+func stand_from_ground() -> void:
+	"""ON_GROUND → idle_ground_standup → STANDING. Auto-advances to idle."""
+	if not _ready_ok or not _playback:
+		return
+	if not _names.has("idle_ground_standup"):
+		return
+	if current_state != State.ON_GROUND and current_state != State.GROUND_TALK:
+		print("🎬 stand_from_ground() ignored — not on ground (state: %s)" % State.keys()[current_state])
+		return
+	_set_state(State.LEAVING_GROUND)
+	_playback.travel("idle_ground_standup")
+	print("🎬 → stand_from_ground()")
+
+
+func play_ground_talk() -> void:
+	"""Play Idle_ground_talk — she talks while sitting on the ground."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.ON_GROUND:
+		print("🎬 ground_talk ignored — not on ground (state: %s)" % State.keys()[current_state])
+		return
+	if not _names.has("idle_ground_talk"):
+		return
+	_playback.travel("idle_ground_talk")
+	print("🎬 → play_ground_talk()")
+
+
+func end_ground_talk() -> void:
+	"""End ground talk — plays reverse back to idle_ground."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.GROUND_TALK:
+		return
+	_set_state(State.SITTING_GROUND)
+	_playback.travel("idle_ground_talk_return")
+	print("🎬 → end_ground_talk()")
+
+
 func play_strike() -> void:
 	"""Enter strike sequence. Must be STANDING first."""
 	if not _ready_ok or not _playback:
@@ -505,17 +604,25 @@ func play_strike() -> void:
 func apply_mood(mood: String, intensity: float) -> void:
 	"""Map mood+intensity to a standing animation (replaces _MOOD_ANIM_MAP)."""
 	var key: String
+	var is_sitting := is_on_wall() or is_on_ground()
 	match mood:
 		"calm", "amused", "proud":
-			# If on wall, play wall talk instead of leaving wall
+			# If sitting (wall or ground), play talk instead of leaving
 			if is_on_wall() and _names.has("idle_wall_talk"):
 				play_wall_talk()
 				return
+			if is_on_ground() and _names.has("idle_ground_talk"):
+				play_ground_talk()
+				return
 			key = "idle"
 		"curious":
-			if intensity < 0.4 and is_on_wall() and _names.has("idle_wall_talk"):
-				play_wall_talk()
-				return
+			if intensity < 0.4:
+				if is_on_wall() and _names.has("idle_wall_talk"):
+					play_wall_talk()
+					return
+				if is_on_ground() and _names.has("idle_ground_talk"):
+					play_ground_talk()
+					return
 			key = "suspicious"
 		"suspicious", "sarcastic", "disappointed":
 			key = "angry" if intensity > 0.7 else "suspicious"
@@ -529,6 +636,9 @@ func apply_mood(mood: String, intensity: float) -> void:
 			if is_on_wall() and _names.has("idle_wall_talk"):
 				play_wall_talk()
 				return
+			if is_on_ground() and _names.has("idle_ground_talk"):
+				play_ground_talk()
+				return
 			key = "idle"
 	set_standing_anim(key)
 
@@ -539,6 +649,9 @@ func is_off_screen() -> bool:
 func is_on_wall() -> bool:
 	return current_state == State.ON_WALL or current_state == State.WALL_TALK
 
+func is_on_ground() -> bool:
+	return current_state == State.ON_GROUND or current_state == State.GROUND_TALK
+
 func is_standing() -> bool:
 	return current_state == State.STANDING
 
@@ -546,7 +659,7 @@ func is_striking() -> bool:
 	return current_state == State.STRIKING
 
 func is_transitioning() -> bool:
-	return current_state in [State.LEAVING_WALL, State.RETURNING_WALL]
+	return current_state in [State.LEAVING_WALL, State.RETURNING_WALL, State.LEAVING_GROUND, State.SITTING_GROUND]
 
 func get_current_anim_key() -> String:
 	if not _playback:
@@ -680,6 +793,38 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 		_strike_fired = false
 		_strike_frames = 0
 		_strike_time = 0.0
+
+	# ── Ground Sitting State Detection ──
+
+	# idle_ground_standup just ended → standing
+	elif from_node == "idle_ground_standup" and to_node in ["idle", "suspicious", "angry"]:
+		_set_state(State.STANDING)
+		_current_standing = to_node
+		off_wall_complete.emit()
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike": play_strike()
+			elif q == "go_away": go_away()
+			else: set_standing_anim(q)
+
+	# sit_ground just ended → on ground
+	elif from_node == "sit_ground" and to_node == "idle_ground":
+		_set_state(State.ON_GROUND)
+		print("🎬 Sitting on ground")
+
+	# idle_ground_talk started
+	elif to_node == "idle_ground_talk":
+		_set_state(State.GROUND_TALK)
+
+	# idle_ground_talk_return ended → back to idle_ground
+	elif from_node == "idle_ground_talk_return" and to_node == "idle_ground":
+		_set_state(State.ON_GROUND)
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike": play_strike()
+			else: set_standing_anim(q)
 
 
 func _on_strike_complete() -> void:
