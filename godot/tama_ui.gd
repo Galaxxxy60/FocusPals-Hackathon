@@ -1,15 +1,8 @@
 extends Node
-## Tama UI — Status indicator + Session progress arc + Break overlay
+## Tama UI — Status indicator + Session timer (above head) + Break overlay
 ##
 ## Manages overlay UI elements that are independent of character behavior.
-## Call from main:
-##   setup(parent, render_target)        — once in _ready (render_target = _tama_window)
-##   update(delta)                       — every frame from _process
-##   show_status(text, color)            — show status text
-##   hide_status()                       — hide status text
-##   show_break_overlay(break_dur_min)   — show break countdown overlay
-##   hide_break_overlay()                — hide break overlay
-##   redraw_arc()                        — trigger arc redraw when session is active
+## The session timer floats ABOVE Tama's head using the projected head bone position.
 
 # ─── State ───────────────────────────────────────────────
 var _status_label: Label
@@ -18,8 +11,8 @@ var _status_visible: bool = false
 var _status_dots: int = 0
 var _status_timer: float = 0.0
 
-var _arc_canvas: CanvasLayer
-var _arc_control: Control
+var _session_canvas: CanvasLayer
+var _session_control: Control
 
 # Break overlay
 var _break_canvas: CanvasLayer
@@ -36,21 +29,16 @@ var _render_target: Node = null  # Where to attach CanvasLayers (usually _tama_w
 
 func setup(parent: Node, render_target: Node = null) -> void:
 	_parent = parent
-	# If no render_target specified, fall back to parent
-	# (render_target should be _tama_window so overlays appear on Tama's window)
 	_render_target = render_target if render_target else parent
 	_setup_status_indicator()
-	_setup_arc()
+	_setup_session_display()
 	_setup_break_overlay()
 
 func update(delta: float) -> void:
 	_update_status_indicator(delta)
-	# Session progress arc redraw
-	if _arc_control and _parent and _parent.session_active:
-		_arc_control.queue_redraw()
-	# Also redraw if arc was visible but session ended (to clear it)
-	elif _arc_control and _parent and not _parent.session_active:
-		_arc_control.queue_redraw()
+	# Session timer redraw every frame (follows head bone)
+	if _session_control and _parent:
+		_session_control.queue_redraw()
 	# Break overlay redraw
 	if _break_visible and _break_control:
 		_break_control.queue_redraw()
@@ -107,34 +95,33 @@ func _update_status_indicator(delta: float) -> void:
 		_status_timer = 0.0
 		_status_dots = (_status_dots + 1) % 4
 		var dots = ".".repeat(_status_dots + 1)
-		# Extract base text (before dots)
 		var base_text = _status_label.text
 		var dot_start = base_text.find(".")
 		if dot_start > 0:
 			base_text = base_text.substr(0, dot_start)
 		_status_label.text = base_text + dots
-	# Pulse alpha — gentle breathing effect
 	var alpha = 0.5 + 0.4 * sin(Time.get_ticks_msec() * 0.004)
 	_status_label.modulate = Color(1, 1, 1, alpha)
 
-# ─── Session Progress Arc ────────────────────────────────
+# ─── Session Timer Display (Above Tama's Head) ──────────
+# Uses the projected head bone position from main.gd (head_screen_pos).
+# Draws a compact timer + mini arc that floats above her head.
 
-func _setup_arc() -> void:
-	_arc_canvas = CanvasLayer.new()
-	_arc_canvas.layer = 50  # Behind menus (100+), above 3D
-	_render_target.add_child(_arc_canvas)
-	_arc_control = Control.new()
-	_arc_control.name = "SessionArc"
-	_arc_control.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_arc_control.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_arc_control.connect("draw", _draw_session_arc)
-	_arc_canvas.add_child(_arc_control)
+func _setup_session_display() -> void:
+	_session_canvas = CanvasLayer.new()
+	_session_canvas.layer = 50
+	_render_target.add_child(_session_canvas)
+	_session_control = Control.new()
+	_session_control.name = "SessionDisplay"
+	_session_control.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_session_control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_session_control.connect("draw", _draw_session_display)
+	_session_canvas.add_child(_session_control)
 
-func _draw_session_arc() -> void:
+func _draw_session_display() -> void:
 	if _parent == null or not _parent.session_active or _parent.session_duration_secs <= 0:
 		return
 
-	# Use _render_target's viewport size (the tama_window)
 	var vp_size: Vector2
 	if _render_target and _render_target is Window:
 		vp_size = Vector2(_render_target.size)
@@ -143,64 +130,99 @@ func _draw_session_arc() -> void:
 	else:
 		return
 
-	# Arc on the right edge, 70% down (same reference as radial menu)
-	var center := Vector2(vp_size.x, vp_size.y * 0.7)
-	var radius := 36.0
-	var thickness := 4.0
-	var progress := clampf(float(_parent.session_elapsed_secs) / float(_parent.session_duration_secs), 0.0, 1.0)
-
-	# Semicircle opening LEFT: from bottom to top
-	var segments := 48
-	var start_angle := PI * 0.5
-	var end_angle := PI * 1.5
-	var arc_span := end_angle - start_angle
-
-	# Track (dark, subtle)
-	for i in range(segments):
-		var a1 := start_angle + arc_span * (float(i) / float(segments))
-		var a2 := start_angle + arc_span * (float(i + 1) / float(segments))
-		var p1 := center + Vector2(cos(a1), sin(a1)) * radius
-		var p2 := center + Vector2(cos(a2), sin(a2)) * radius
-		_arc_control.draw_line(p1, p2, Color(0.15, 0.2, 0.3, 0.4), thickness, true)
-
-	# Fill (bright, based on progress)
-	if progress > 0.005:
-		var fill_segments := int(segments * progress)
-		var fill_color := Color(0.3, 0.7, 1.0, 0.85)
-		if progress > 0.9:
-			fill_color = Color(0.3, 1.0, 0.5, 0.9)
-		elif progress > 0.75:
-			fill_color = Color(0.4, 0.85, 0.6, 0.85)
-		for i in range(fill_segments):
-			var a1 := start_angle + arc_span * (float(i) / float(segments))
-			var a2 := start_angle + arc_span * (float(i + 1) / float(segments))
-			var p1 := center + Vector2(cos(a1), sin(a1)) * radius
-			var p2 := center + Vector2(cos(a2), sin(a2)) * radius
-			_arc_control.draw_line(p1, p2, fill_color, thickness + 1.5, true)
-
-		# Glow dot at tip
-		var tip_angle := start_angle + arc_span * progress
-		var tip := center + Vector2(cos(tip_angle), sin(tip_angle)) * radius
-		_arc_control.draw_circle(tip, 3.5, fill_color)
-		_arc_control.draw_circle(tip, 6.0, Color(fill_color.r, fill_color.g, fill_color.b, 0.25))
-
-	# Time remaining text
-	var remaining := maxi(_parent.session_duration_secs - _parent.session_elapsed_secs, 0)
-	var mins := remaining / 60
-	var secs := remaining % 60
-	var time_str := "%d:%02d" % [mins, secs]
+	var elapsed: int = _parent.session_elapsed_secs
+	var total: int = _parent.session_duration_secs
+	var remaining: int = maxi(total - elapsed, 0)
+	var progress := clampf(float(elapsed) / float(total), 0.0, 1.0)
 	var font := ThemeDB.fallback_font
-	var ts := font.get_string_size(time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 10)
-	_arc_control.draw_string(font,
-		Vector2(center.x - radius - ts.x - 6, center.y + ts.y * 0.3),
-		time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 10,
-		Color(0.6, 0.75, 0.9, 0.7))
+
+	# ── Get head position (projected from 3D bone) ──
+	var head_pos: Vector2 = _parent.head_screen_pos
+	var center_x: float
+	var timer_y: float
+
+	if head_pos.x > 0 and head_pos.y > 0:
+		# Head bone found — position ABOVE the head
+		center_x = clampf(head_pos.x, 40.0, vp_size.x - 40.0)
+		timer_y = head_pos.y - 110.0  # 110px above head bone (well above her head)
+		# Clamp so it doesn't go off-screen
+		timer_y = maxf(timer_y, 20.0)
+	else:
+		# Fallback: top-center of window
+		center_x = vp_size.x * 0.5
+		timer_y = 25.0
+
+	# ════════════════════════════════════════════
+	# FLOATING SESSION TIMER
+	# ════════════════════════════════════════════
+
+	# ── Time remaining text ──
+	var r_min: int = remaining / 60
+	var r_sec: int = remaining % 60
+	var time_str: String = "%d:%02d" % [r_min, r_sec]
+	var time_font_size: int = 14
+	var ts := font.get_string_size(time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, time_font_size)
+
+	# Color shifts based on progress
+	var accent_color: Color
+	if progress > 0.9:
+		accent_color = Color(0.3, 1.0, 0.5, 0.9)   # Green — almost done!
+	elif progress > 0.75:
+		accent_color = Color(0.4, 0.85, 0.6, 0.85)  # Teal
+	else:
+		accent_color = Color(0.4, 0.7, 1.0, 0.85)   # Blue
+
+	var text_x: float = center_x - ts.x * 0.5
+	var text_y: float = timer_y
+
+	# ── Pill background (rounded rect behind text) ──
+	var pill_padding_h: float = 12.0
+	var pill_padding_v: float = 5.0
+	var pill_rect := Rect2(
+		text_x - pill_padding_h,
+		text_y - ts.y - pill_padding_v,
+		ts.x + pill_padding_h * 2.0,
+		ts.y + pill_padding_v * 2.0
+	)
+	# Dark semi-transparent background
+	_session_control.draw_rect(pill_rect, Color(0.05, 0.08, 0.14, 0.55), true)
+	# Subtle border
+	_session_control.draw_rect(pill_rect, Color(accent_color.r, accent_color.g, accent_color.b, 0.2), false, 1.0)
+
+	# ── Draw time text ──
+	_session_control.draw_string(font, Vector2(text_x, text_y),
+		time_str, HORIZONTAL_ALIGNMENT_LEFT, -1, time_font_size, accent_color)
+
+	# ── Mini progress bar under the pill ──
+	var bar_w: float = pill_rect.size.x - 8.0
+	var bar_h: float = 2.5
+	var bar_x: float = pill_rect.position.x + 4.0
+	var bar_y: float = pill_rect.position.y + pill_rect.size.y + 3.0
+
+	# Track
+	_session_control.draw_rect(
+		Rect2(bar_x, bar_y, bar_w, bar_h),
+		Color(0.15, 0.2, 0.3, 0.3)
+	)
+	# Fill
+	if progress > 0.005:
+		_session_control.draw_rect(
+			Rect2(bar_x, bar_y, bar_w * progress, bar_h),
+			accent_color
+		)
+		# Tiny glow dot at progress tip
+		var tip_x := bar_x + bar_w * progress
+		_session_control.draw_circle(
+			Vector2(tip_x, bar_y + bar_h * 0.5), 2.0,
+			Color(accent_color.r, accent_color.g, accent_color.b, 0.6)
+		)
+
 
 # ─── Break Overlay ───────────────────────────────────────
 
 func _setup_break_overlay() -> void:
 	_break_canvas = CanvasLayer.new()
-	_break_canvas.layer = 55  # Above session arc (50), below menus (100+)
+	_break_canvas.layer = 55
 	_render_target.add_child(_break_canvas)
 	_break_control = Control.new()
 	_break_control.name = "BreakOverlay"
@@ -229,35 +251,42 @@ func _draw_break_overlay() -> void:
 	# ── Soft background tint ──
 	_break_control.draw_rect(
 		Rect2(Vector2.ZERO, vp_size),
-		Color(0.1, 0.15, 0.25, 0.15)
+		Color(0.1, 0.15, 0.25, 0.12)
 	)
 
-	# ── Break timer text (centered, large) ──
+	# ── Break timer (above head, same position logic) ──
 	var font := ThemeDB.fallback_font
 	var mins := int(remaining) / 60
 	var secs := int(remaining) % 60
 	var time_str := "☕ %d:%02d" % [mins, secs]
 	var font_size := 16
 	var ts := font.get_string_size(time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
-	var text_pos := Vector2(vp_size.x * 0.5 - ts.x * 0.5, vp_size.y * 0.15)
 
-	# Glow background behind text
-	_break_control.draw_rect(
-		Rect2(text_pos.x - 12, text_pos.y - ts.y - 4, ts.x + 24, ts.y + 12),
-		Color(0.1, 0.15, 0.25, 0.5),
-		true, -1.0, true, 6.0
-	)
+	var head_pos: Vector2 = _parent.head_screen_pos if _parent else Vector2(-1, -1)
+	var center_x: float
+	var timer_y: float
+	if head_pos.x > 0 and head_pos.y > 0:
+		center_x = clampf(head_pos.x, 50.0, vp_size.x - 50.0)
+		timer_y = head_pos.y - 75.0  # Higher than session timer
+		timer_y = maxf(timer_y, 20.0)
+	else:
+		center_x = vp_size.x * 0.5
+		timer_y = 20.0
 
-	# Text color: soft blue → green as break progresses
+	var text_x := center_x - ts.x * 0.5
+	var text_y := timer_y
+
+	# Pill background
+	var pill := Rect2(text_x - 14, text_y - ts.y - 6, ts.x + 28, ts.y + 14)
 	var text_color := Color(0.4, 0.7, 1.0, 0.9).lerp(Color(0.3, 1.0, 0.5, 0.9), progress)
-	_break_control.draw_string(font, text_pos, time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, text_color)
+	_break_control.draw_rect(pill, Color(0.08, 0.1, 0.18, 0.65), true)
+	_break_control.draw_rect(pill, Color(text_color.r, text_color.g, text_color.b, 0.25), false, 1.0)
+	_break_control.draw_string(font, Vector2(text_x, text_y), time_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, text_color)
 
-	# ── Small progress bar ──
-	var bar_w := vp_size.x * 0.4
+	# Progress bar under pill
+	var bar_w := pill.size.x - 8.0
 	var bar_h := 3.0
-	var bar_x := vp_size.x * 0.5 - bar_w * 0.5
-	var bar_y := text_pos.y + 8
-	# Track
+	var bar_x := pill.position.x + 4.0
+	var bar_y := pill.position.y + pill.size.y + 3.0
 	_break_control.draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.2, 0.25, 0.35, 0.4))
-	# Fill
 	_break_control.draw_rect(Rect2(bar_x, bar_y, bar_w * progress, bar_h), text_color)

@@ -227,6 +227,7 @@ const DebugTweaksScript = preload("res://debug_tweaks.gd")
 # ─── UI Module (separate script) ───────────────────────
 var _tama_ui: Node = null  # tama_ui.gd instance
 var _gemini_status: String = "disconnected"
+var head_screen_pos: Vector2 = Vector2(-1, -1)  # Head bone projected to 2D (for session timer)
 
 # ─── Headphones (visible when Tama can't hear/respond) ───
 var _headphones_node: Node3D = null
@@ -1377,7 +1378,13 @@ func _process(delta: float) -> void:
 	# Blink system
 	_update_blink(delta)
 
-	# UI overlays (status indicator + session arc)
+	# ── Project head bone to 2D for session timer ──
+	if _skeleton and _head_bone_idx >= 0 and _tama_cam:
+		var bone_global := _skeleton.global_transform * _skeleton.get_bone_global_pose(_head_bone_idx)
+		var screen_pos := _tama_cam.unproject_position(bone_global.origin)
+		head_screen_pos = screen_pos
+
+	# UI overlays (status indicator + session timer)
 	if _tama_ui:
 		_tama_ui.update(delta)
 
