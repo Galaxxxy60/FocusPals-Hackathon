@@ -44,8 +44,54 @@ RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE = 1024
 
 # ─── Suspicion / Break Constants ────────────────────────────
+# Legacy static constants (kept for backward compat, used as fallback)
 BREAK_CHECKPOINTS = [20, 40, 90, 120]   # Minutes before break suggestion
 BREAK_DURATIONS   = [5,  8,  15, 20]    # Break duration per tier (minutes)
+
+# Reminder interval when user refuses a break (minutes)
+BREAK_REFUSE_REMINDER = 15
+
+
+def get_dynamic_break_checkpoints(session_minutes: int = 50) -> tuple:
+    """Compute break checkpoints based on session duration.
+    Returns (checkpoints_list, durations_list).
+    
+    Philosophy: session_duration IS the work interval.
+    User sets 90 min → they work 90 min → THEN Tama suggests a break.
+    If refused, remind every BREAK_REFUSE_REMINDER minutes.
+    
+    Break duration scales with session length:
+    - ≤15 min session: no break (too short)
+    - 16-30 min: 3 min break
+    - 31-60 min: 5 min break
+    - 61-120 min: 10 min break  
+    - >120 min: 15 min break
+    """
+    if session_minutes <= 15:
+        return [], []
+    
+    # Break duration scales with work time
+    if session_minutes <= 30:
+        break_dur = 5
+    elif session_minutes <= 60:
+        break_dur = 10
+    elif session_minutes <= 120:
+        break_dur = 15
+    else:
+        break_dur = 20
+    
+    # First break = at session_duration
+    # If refused, remind every BREAK_REFUSE_REMINDER min
+    # Generate enough reminder slots (up to 3 extra reminders after the first)
+    checkpoints = [session_minutes]
+    durations = [break_dur]
+    
+    for i in range(1, 4):
+        reminder = session_minutes + (BREAK_REFUSE_REMINDER * i)
+        checkpoints.append(reminder)
+        durations.append(break_dur)
+    
+    return checkpoints, durations
 USER_SPEECH_TIMEOUT = 12.0              # Seconds to keep Tama unmuzzled
 CONVERSATION_SILENCE_TIMEOUT = 30.0     # Seconds of silence before ending convo
 CURIOUS_DURATION_THRESHOLD = 90         # Seconds on ambiguous app before Tama can ask
@@ -91,6 +137,7 @@ state = {
     "break_reminder_active": False,
     "is_on_break": False,
     "break_start_time": None,
+    "session_completed": False,         # True when session timer expired → triggers auto-end
 
     # VAD
     "user_spoke_at": 0.0,
@@ -169,6 +216,7 @@ tweaks = {
     "affective_dialog": 1.0,      # 1.0 = ON, 0.0 = OFF — expressive voice (suspected 1011 trigger)
     "proactive_audio": 1.0,       # 1.0 = ON, 0.0 = OFF — Tama speaks spontaneously
     "thinking": 1.0,              # 1.0 = ON, 0.0 = OFF — thinking budget for Deep Work
+    "voice_pitch": 1.0,           # Pitch shift multiplier: 1.0 = normal, 1.2 = kawaii, 0.8 = deeper
 }
 
 

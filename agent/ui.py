@@ -14,7 +14,7 @@ from pystray import MenuItem as item
 from PIL import ImageDraw, Image
 from enum import Enum
 
-from config import state, BREAK_CHECKPOINTS
+from config import state, BREAK_CHECKPOINTS, get_dynamic_break_checkpoints
 
 
 # ─── Tama States ────────────────────────────────────────────
@@ -91,7 +91,12 @@ def start_session(source="UI"):
         state["current_break_index"] = 0
         state["break_reminder_active"] = False
         state["is_on_break"] = False
+        state["session_completed"] = False
         state["just_started_session"] = True
+        # Log dynamic break schedule
+        total_min = state.get("session_duration_minutes", 50)
+        dyn_cp, dyn_dur = get_dynamic_break_checkpoints(total_min)
+        print(f"  📋 Session: {total_min}min | Breaks at: {dyn_cp} | Durations: {dyn_dur}")
         update_display(TamaState.CALM, f"🚀 SESSION COMMENCÉE via {source} !")
         start_msg = json.dumps({"command": "START_SESSION"})
         broadcast_to_godot(start_msg)
@@ -110,9 +115,17 @@ def accept_break_from_tray(icon, item):
 
 def refuse_break_from_tray(icon, item):
     state["break_reminder_active"] = False
-    state["current_break_index"] = min(state["current_break_index"] + 1, len(BREAK_CHECKPOINTS) - 1)
-    next_min = BREAK_CHECKPOINTS[state["current_break_index"]]
-    print(f"💪 Pause refusée. Prochaine suggestion dans {next_min} min.")
+    total_min = state.get("session_duration_minutes", 50)
+    dyn_cp, _ = get_dynamic_break_checkpoints(total_min)
+    if dyn_cp and state["current_break_index"] < len(dyn_cp):
+        state["current_break_index"] = min(state["current_break_index"] + 1, len(dyn_cp) - 1)
+        if state["current_break_index"] < len(dyn_cp):
+            next_min = dyn_cp[state["current_break_index"]]
+            print(f"💪 Pause refusée. Prochaine suggestion à {next_min} min.")
+        else:
+            print("💪 Pause refusée. Plus de pauses prévues.")
+    else:
+        print("💪 Pause refusée.")
 
 
 def open_settings_popup(icon=None, item=None):

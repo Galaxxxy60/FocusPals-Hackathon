@@ -16,7 +16,7 @@ import threading
 
 import websockets
 
-from config import application_path, state, tweaks, BREAK_CHECKPOINTS, BREAK_DURATIONS
+from config import application_path, state, tweaks, BREAK_CHECKPOINTS, BREAK_DURATIONS, get_dynamic_break_checkpoints
 from audio import get_available_mics, refresh_mic_cache, select_mic, resolve_default_mic
 from ui import TamaState, start_session, quit_app, update_display, broadcast_to_godot
 from flash_lite import get_lite_stats, clear_classification_history, generate_session_summary
@@ -476,20 +476,34 @@ async def broadcast_ws_state():
                 if state["session_start_time"]:
                     session_minutes = int((time.time() - state["session_start_time"]) / 60)
 
+                # ── Compute dynamic break checkpoints based on session duration ──
+                # session_duration = work interval before first break
+                # e.g. 90 min → first break at 90 min, reminders at 105, 120, 135
+                total_session_min = state.get("session_duration_minutes", 50)
+                dyn_checkpoints, dyn_durations = get_dynamic_break_checkpoints(total_session_min)
+
+                # Note: session does NOT auto-end when the timer expires.
+                # The timer reaching session_duration just triggers the break suggestion
+                # (handled by the checkpoint system below). The session ends only
+                # when the user explicitly says so (via manage_break(end_session)).
+
                 # Break reminder check
                 if state["is_on_break"] and state["break_start_time"]:
-                    current_break_duration = BREAK_DURATIONS[min(state["current_break_index"], len(BREAK_DURATIONS) - 1)]
+                    brk_idx = min(state["current_break_index"], len(dyn_durations) - 1) if dyn_durations else 0
+                    current_break_duration = dyn_durations[brk_idx] if dyn_durations else 5
                     break_elapsed = (time.time() - state["break_start_time"]) / 60
                     if break_elapsed >= current_break_duration:
                         state["is_on_break"] = False
                         state["break_start_time"] = None
-                        state["current_break_index"] = min(state["current_break_index"] + 1, len(BREAK_CHECKPOINTS) - 1)
+                        state["current_break_index"] = min(state["current_break_index"] + 1, max(len(dyn_checkpoints) - 1, 0))
                         print("⏰ Pause terminée ! On reprend le travail.")
 
-                elif state["session_start_time"] and not state["break_reminder_active"] and state["current_break_index"] < len(BREAK_CHECKPOINTS):
-                    if session_minutes >= BREAK_CHECKPOINTS[state["current_break_index"]]:
-                        state["break_reminder_active"] = True
-                        print(f"☕ Tama suggère une pause ! ({session_minutes} min de travail)")
+                elif state["session_start_time"] and not state["break_reminder_active"] and not state.get("session_completed"):
+                    if dyn_checkpoints and state["current_break_index"] < len(dyn_checkpoints):
+                        if session_minutes >= dyn_checkpoints[state["current_break_index"]]:
+                            state["break_reminder_active"] = True
+                            next_cp = dyn_checkpoints[state["current_break_index"]]
+                            print(f"☕ Tama suggère une pause ! ({session_minutes} min de travail, checkpoint: {next_cp} min)")
 
                 tama_state = state["current_tama_state"]
 
@@ -540,7 +554,7 @@ async def broadcast_ws_state():
                     "session_duration_secs": state.get("session_duration_minutes", 50) * 60,
                     "break_reminder": state["break_reminder_active"],
                     "is_on_break": state["is_on_break"],
-                    "next_break_at": BREAK_CHECKPOINTS[state["current_break_index"]] if state["current_break_index"] < len(BREAK_CHECKPOINTS) else None,
+                    "next_break_at": dyn_checkpoints[state["current_break_index"]] if (dyn_checkpoints and state["current_break_index"] < len(dyn_checkpoints)) else None,
                     "window_ready": state["window_positioned"],
                     "gemini_connected": state["gemini_connected"],
                 }

@@ -9,6 +9,7 @@
     "pulse_delay_mult": 1.0,
     "affective_dialog": 0.0,
     "proactive_audio": 0.0,
-    "thinking": 0.0
+    "thinking": 0.0,
+    "voice_pitch": 1.10
   }
 }

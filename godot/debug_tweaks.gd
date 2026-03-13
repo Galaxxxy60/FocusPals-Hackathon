@@ -18,6 +18,7 @@ const TWEAKS := [
 	{"key": "confidence", "label": "🛡️ Confidence (C)", "min": 0.1, "max": 1.0, "step": 0.05, "default": 1.0, "suffix": ""},
 	{"key": "mood_decay_secs", "label": "🎭 Mood Decay", "min": 5.0, "max": 60.0, "step": 5.0, "default": 20.0, "suffix": "s"},
 	{"key": "pulse_delay_mult", "label": "📡 Pulse Delay", "min": 0.5, "max": 3.0, "step": 0.25, "default": 1.0, "suffix": "x"},
+	{"key": "voice_pitch", "label": "🎀 Voice Pitch", "min": 0.8, "max": 1.4, "step": 0.05, "default": 1.0, "suffix": "x"},
 ]
 
 # Stability toggles — these require reconnection to take effect

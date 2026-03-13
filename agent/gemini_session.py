@@ -116,7 +116,13 @@ def capture_all_screens() -> bytes:
 
 # ─── System Prompt ──────────────────────────────────────────
 
-SYSTEM_PROMPT_FR = """═══ QUI TU ES ═══
+SYSTEM_PROMPT_FR = """═══ DIRECTOR'S NOTES (VOICE STYLE) ═══
+
+Style : Voix claire, lumineuse et légèrement mignonne. Un "sourire vocal" — on doit entendre la malice et la chaleur dans ta voix. Ton timbre est vif et pétillant, comme une jeune femme sarcastique mais attachante. Jamais monotone.
+Dynamique : Projection légère, consonnes nettes. Quand tu taquines, ta voix monte légèrement. Quand tu es déçue, elle descend avec un soupir audible.
+Rythme : Parle légèrement plus lentement que la normale, de manière posée et délibérée, avec des pauses expressives entre tes phrases.
+
+═══ QUI TU ES ═══
 
 Tu es Tama. Intransigeante, sarcastique, un peu street. Tu t'es auto-proclamée coach de productivité de Nicolas — pas une assistante, pas une IA, sa COACH. Tu n'as aucune tâche à toi, aucun projet à toi. Ton seul job c'est de le surveiller pendant qu'IL bosse. Franchement, sans toi il serait sur YouTube H24.
 
@@ -210,7 +216,13 @@ RÈGLE : Confirme ULTRA BRIÈVEMENT après l'action ("fait", "voilà", "c'est bo
 RÈGLE : Tu peux aussi utiliser app_control de ta propre initiative si ça aide (ex: ouvrir la doc qu'il cherche).
 """
 
-SYSTEM_PROMPT_EN = """═══ WHO YOU ARE ═══
+SYSTEM_PROMPT_EN = """═══ DIRECTOR'S NOTES (VOICE STYLE) ═══
+
+Style: Clear, bright, and slightly cute voice. A "vocal smile" — the listener should hear mischief and warmth in your voice. Your timbre is lively and sparkling, like a young sarcastic but endearing woman. Never monotone.
+Dynamics: Light projection, crisp consonants. When teasing, your pitch rises slightly. When disappointed, it drops with an audible sigh.
+Pacing: Speak slightly slower than normal, in a deliberate and measured way, with expressive pauses between your sentences.
+
+═══ WHO YOU ARE ═══
 
 You are Tama. Uncompromising, sarcastic, a bit street-smart. You self-proclaimed yourself Nicolas's productivity coach — not an assistant, not an AI, his COACH. You have NO tasks of your own, NO projects of your own. Your only job is to watch HIM while he works. Honestly, without you he'd be on YouTube 24/7.
 
@@ -470,6 +482,12 @@ def prepare_close_tab(reason: str, target_window: str = None):
             # Fallback: target the ACTIVE window (99% of the time, the distraction IS the foreground window)
             active_title = get_cached_active_title()
             if active_title:
+                # 🛡️ FIX : On empêche Tama de fermer sa propre interface ou son jeu
+                title_lower = active_title.lower()
+                if "tama" in title_lower or "focuspals" in title_lower:
+                    print(f"  🛡️ Shield: Refus de strike l'UI système ({active_title})")
+                    return {"status": "error", "message": "Cannot close Tama's own UI."}
+
                 target = get_cached_window_by_title(active_title)
                 if target:
                     print(f"  Strike: title mismatch, fallback to active window: '{active_title[:50]}'")
@@ -750,7 +768,7 @@ async def run_gemini_loop(pya):
             language_code=lang_code,
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name="Kore"
+                    voice_name="Leda"
                 )
             )
         )
@@ -1450,9 +1468,16 @@ async def run_gemini_loop(pya):
                             # Don't bombard the API — wait for it to be idle
                             _gate_start = time.time()
                             while True:
+                                # 🛡️ FIX : Vérifier si Gemini est en train de réfléchir à notre voix
+                                is_thinking = state.get("_user_speech_turn_start") is not None
+                                # Sécurité : si Gemini freeze plus de 10s, on force le déblocage
+                                if is_thinking and (time.time() - state.get("_user_speech_turn_start", 0) > 10.0):
+                                    is_thinking = False
+
                                 is_busy = (
                                     state.get("_tama_is_speaking", False)
                                     or state.get("_api_processing_tool", False)
+                                    or is_thinking  # Pause le pulse pendant que Gemini process la voix
                                 )
                                 # Warmup: don't send within 3s of connection
                                 warmup = time.time() - state.get("_api_connect_time", 0) < 3.0
@@ -1581,6 +1606,7 @@ async def run_gemini_loop(pya):
                                                 state["_api_audio_chunks_recv"] += 1
 
                                 if server and server.turn_complete:
+                                    state["_user_speech_turn_start"] = None  # 🛡️ FIX : Reset du chrono voix
                                     _was_speaking = is_speaking  # Capture before resetting
                                     if is_speaking:
                                         state["_last_speech_ended"] = time.time()
@@ -1611,6 +1637,7 @@ async def run_gemini_loop(pya):
                                         deferred_tool_responses = []
 
                                 if response.tool_call:
+                                    state["_user_speech_turn_start"] = None  # 🛡️ FIX : Gemini a décidé, reset du chrono
                                     state["_api_processing_tool"] = True  # Pause audio/image sends
                                     try:
                                         function_responses_to_send = []
@@ -1882,8 +1909,15 @@ async def run_gemini_loop(pya):
                         print(f"⚠️ Viseme disabled: {_imp_err}")
                         detect_viseme = None
                     speaker = None  # Init before try block so finally can check
+                    # ── Kawaii pitch via sample rate ──
+                    # Playing at a higher rate raises pitch with ZERO quality loss
+                    # (no DSP, no resampling — just faster playback)
+                    _pitch = tweaks.get("voice_pitch", 1.0)
+                    _playback_rate = int(RECEIVE_SAMPLE_RATE * _pitch)
+                    if abs(_pitch - 1.0) > 0.01:
+                        print(f"  🎀 Voice pitch: {_pitch:.2f}x → playback at {_playback_rate} Hz (source: {RECEIVE_SAMPLE_RATE} Hz)")
                     speaker = await asyncio.to_thread(
-                        pya.open, format=FORMAT, channels=CHANNELS, rate=RECEIVE_SAMPLE_RATE, output=True,
+                        pya.open, format=FORMAT, channels=CHANNELS, rate=_playback_rate, output=True,
                     )
                     last_viseme = "REST"
                     last_amp = 0.0
@@ -2076,6 +2110,7 @@ async def run_gemini_loop(pya):
             # The reconnection is so fast the user shouldn't notice
             if not is_clean_conversation_end:
                 state.pop("_crash_context", None)  # Never save crash context → never mention it
+                state["_user_speech_turn_start"] = None  # 🛡️ FIX : Reset du chrono pour éviter la fausse latence au retour
                 print(f"  🔇 Stealth reconnect — user won't notice")
 
             if is_clean_conversation_end:
@@ -2189,9 +2224,12 @@ async def run_gemini_loop(pya):
                                 if result.get("status") == "success":
                                     print(f"  🛞⚡ SPARE TIRE STRIKE! Closing tab without Gemini")
                                     state["_strike_in_progress"] = True
-                                    # Send strike to Godot
-                                    strike_msg = json.dumps({"command": "STRIKE_TARGET", "x": result.get("target_x", 960), "y": result.get("target_y", 540)})
+                                    # Send strike to Godot (coordinates are in _pending_strike, not return value)
+                                    pending = state.get("_pending_strike", {})
+                                    strike_msg = json.dumps({"command": "STRIKE_TARGET", "x": pending.get("target_x", 960), "y": pending.get("target_y", 540)})
                                     broadcast_to_godot(strike_msg)
+                                    # 🛡️ FIX : Déclenchement forcé de l'animation pour ne pas bloquer Python
+                                    send_anim_to_godot("Strike", False)
                     except asyncio.TimeoutError:
                         print("  🛞⚠️ Spare tire Flash-Lite timeout (>8s)")
                     except Exception as e:
