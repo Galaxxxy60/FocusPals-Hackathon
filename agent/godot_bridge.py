@@ -511,7 +511,7 @@ async def broadcast_ws_state():
                 # After Tama stops speaking, her mood fades gradually back to calm,
                 # like a human's emotions naturally subsiding.
                 # Gemini remains the authority — any new report_mood overrides this.
-                MOOD_GRACE_SECS = 5.0    # Hold the mood for a few seconds after speech
+                MOOD_GRACE_SECS = 3.0    # Brief hold after speech (was 5.0 → too slow)
                 MOOD_DECAY_SECS = tweaks["mood_decay_secs"]  # Total fade duration (tweakable via F2)
                 current_mood = state.get("_current_mood", "calm")
                 if current_mood != "calm" and not state.get("_tama_is_speaking", False):
@@ -523,12 +523,13 @@ async def broadcast_ws_state():
 
                     if elapsed > MOOD_GRACE_SECS:
                         decay_progress = min(1.0, (elapsed - MOOD_GRACE_SECS) / MOOD_DECAY_SECS)
-                        # Smooth ease-out curve (fast at start, slow at end)
-                        decay_factor = 1.0 - (decay_progress * decay_progress)
+                        # Ease-IN curve: fast drop at start, slow at end
+                        # (opposite of previous ease-out which lingered too long)
+                        decay_factor = (1.0 - decay_progress) ** 0.5
                         peak = state.get("_mood_peak_intensity", 0.5)
                         decayed_intensity = peak * decay_factor
 
-                        if decayed_intensity < 0.1:
+                        if decayed_intensity < 0.15:
                             # Fully decayed → return to calm
                             if state.get("_current_mood") != "calm":
                                 state["_current_mood"] = "calm"
@@ -537,7 +538,16 @@ async def broadcast_ws_state():
                                 broadcast_to_godot(mood_msg)
                                 print(f"  🎭 Mood decayed → calm")
                         else:
-                            state["_current_mood_intensity"] = decayed_intensity
+                            # Send intermediate mood updates to Godot so the face
+                            # transitions smoothly during decay (eyes/mouth/brows)
+                            # Only send when intensity crosses a meaningful threshold
+                            prev_intensity = state.get("_current_mood_intensity", 1.0)
+                            if abs(prev_intensity - decayed_intensity) > 0.1:
+                                state["_current_mood_intensity"] = decayed_intensity
+                                mood_msg = json.dumps({"command": "TAMA_MOOD", "mood": current_mood, "intensity": round(decayed_intensity, 2)})
+                                broadcast_to_godot(mood_msg)
+                            else:
+                                state["_current_mood_intensity"] = decayed_intensity
 
                 state_data = {
                     "session_active": True,

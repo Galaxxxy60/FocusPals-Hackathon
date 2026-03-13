@@ -18,6 +18,7 @@ var session_active: bool = false
 var session_elapsed_secs: int = 0
 var session_duration_secs: int = 3000  # 50 min default
 var _break_reminder_was_active: bool = false
+var _was_on_break: bool = false
 
 # ─── Tama Scale (camera zoom + window resize) ─────────
 const _BASE_WIN_SIZE := Vector2i(400, 500)
@@ -140,7 +141,8 @@ const MOUTH_OFFSETS = {
 	"M9": Vector3(0.25, 0.5, 0),      # B3 haut: "A" ouvert moyen
 	"M10": Vector3(0.25, 0.625, 0),   # B3 bas: "A" ouvert petit
 	"M11": Vector3(0.25, 0.75, 0),    # B4 haut: "O" ouvert moyen
-	"M12": Vector3(0.25, 0.875, 0),   # B4 bas: "O" ouvert petit
+	# M12: REMOVED — offset y=0.875 causes UV to wrap past y=1.0 → lands on B1 (body texture) = grey mouth!
+	# If you need a small "O", use M11 + low jaw instead.
 }
 
 # Viseme → mouth slot mapping (lip sync)
@@ -186,6 +188,8 @@ var _current_eye_slot: String = "E0"
 var _current_mouth_slot: String = "M0"
 var _current_mood: String = "calm"
 var _is_speaking: bool = false  # True when visemes are active (lip sync overrides mouth)
+var _last_viseme_time: float = 0.0  # Timestamp of last VISEME received (for safety timeout)
+const VISEME_TIMEOUT: float = 3.0   # Force mouth reset if no VISEME for this long
 
 # ─── Blink System ────────────────────────────────────────
 var _blink_timer: float = 0.0
@@ -1414,6 +1418,15 @@ func _process(delta: float) -> void:
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
 	_sync_gaze_to_modifier()
 
+	# ─── Speaking Safety Timeout ──────────────────────────────
+	# If _is_speaking is stuck (REST viseme never arrived — API crash, etc.),
+	# force-reset the mouth to neutral after VISEME_TIMEOUT seconds.
+	if _is_speaking and (Time.get_unix_time_from_system() - _last_viseme_time) > VISEME_TIMEOUT:
+		print("⚠️ VISEME timeout (%.1fs) — forcing mouth reset" % VISEME_TIMEOUT)
+		_is_speaking = false
+		_set_mouth("M0")
+		_set_jaw_open(0.0)
+
 	# ─── Mouse Dodge ───────────────────────────────────────────
 	_update_mouse_dodge(delta)
 
@@ -1545,6 +1558,9 @@ func _handle_message(raw: String) -> void:
 	elif command == "SESSION_COMPLETE":
 		print("🏁 Session complète — fin de session !")
 		session_active = false
+		_was_on_break = false
+		if _tama_ui:
+			_tama_ui.hide_break_overlay()
 		if _anim_tree_module:
 			if _anim_tree_module.is_standing():
 				if _dodge_active:
@@ -1768,6 +1784,16 @@ func _handle_message(raw: String) -> void:
 		# Suspicious intensity affects which eyes
 		if mood_name == "suspicious" and mood_intensity >= 0.7:
 			eye_key = "E1"  # Plissés fort instead of léger
+		# ── Intensity-based expression fade ──
+		# When mood is decaying (low intensity), fall back to neutral mouth
+		# to prevent "stuck open mouth" bug (M6 Huh, M5 grimace lingering)
+		if mood_intensity < 0.3 and mouth_key != "M0" and mouth_key != "M4":
+			# Low intensity: expressive mouths (grimaces, Huh) → neutral
+			# M4 (smile) is gentle enough to keep at low intensity
+			mouth_key = "M0"
+		# Eyes also soften at low intensity (except calm/curious which are already neutral)
+		if mood_intensity < 0.25 and mood_name not in ["calm", "curious"]:
+			eye_key = "E0"  # Return to neutral eyes during decay
 		_set_eyes(eye_key)
 		_current_mouth_slot = mouth_key  # Always memorize mood mouth (even while speaking)
 		if not _is_speaking:  # Only apply visually if not lip-syncing
@@ -1787,6 +1813,7 @@ func _handle_message(raw: String) -> void:
 		# 🎯 DÉCLENCHEMENT SYNCHRONISÉ AU PREMIER MOT
 		if _waiting_for_voice and shape != "REST":
 			_trigger_entrance()
+		_last_viseme_time = Time.get_unix_time_from_system()  # Reset safety timeout
 		var mouth_slot = VISEME_MAP.get(shape, "M0")
 		# Track Tama speech
 		if shape != "REST":
@@ -1797,7 +1824,13 @@ func _handle_message(raw: String) -> void:
 		if shape == "REST":
 			_is_speaking = false
 			# Return to mood-based mouth expression
-			_set_mouth(_current_mouth_slot)
+			# Safety: some mood mouths are "open" shapes (grimace, Huh, furious)
+			# that look wrong when Tama isn't speaking. Fall back to neutral.
+			var safe_mouth = _current_mouth_slot
+			if safe_mouth in ["M5", "M6", "M8"]:
+				# Open/grimace mouths → neutral when not speaking
+				safe_mouth = "M0"
+			_set_mouth(safe_mouth)
 			_set_jaw_open(0.0)
 			if conversation_active:
 				# In conversation: return gaze to book after a short pause
@@ -1810,27 +1843,25 @@ func _handle_message(raw: String) -> void:
 				set_gaze(GazeTarget.NEUTRAL, 2.0)
 		else:
 			_is_speaking = true
-			# Amplitude-based mouth selection for AH and OH
+			# Amplitude-based mouth selection using painted texture slots
+			# B3 (M9/M10) and B4 (M11) are valid. M12 removed (UV wraps to B1 body = grey)
 			if shape == "AH":
-				if _current_mood in ["angry", "furious", "annoyed"]:
-					mouth_slot = "M6"  # Huh méchant when angry
-				elif amp > 0.6:
-					mouth_slot = "M2"   # A grand ouvert (loud)
+				if amp > 0.6:
+					mouth_slot = "M2"   # D1: A grand ouvert (loud)
 				elif amp > 0.3:
-					mouth_slot = "M9"   # A ouvert moyen
+					mouth_slot = "M9"   # B3 haut: A ouvert moyen
 				else:
-					mouth_slot = "M10"  # A ouvert petit (quiet)
+					mouth_slot = "M10"  # B3 bas: A ouvert petit (quiet)
 			elif shape == "OH":
 				if amp > 0.6:
-					mouth_slot = "M1"   # O grand ouvert (loud)
-				elif amp > 0.3:
-					mouth_slot = "M11"  # O ouvert moyen
+					mouth_slot = "M1"   # C1: O grand ouvert (loud)
 				else:
-					mouth_slot = "M12"  # O ouvert petit (quiet)
+					mouth_slot = "M11"  # B4 haut: O moyen (covers medium+quiet)
+			# EE_TEETH stays M3 (from VISEME_MAP)
 			_set_mouth(mouth_slot)
 			# Jaw open = base amount per viseme × amplitude
 			var base_jaw: float = JAW_OPEN_MAP.get(shape, 0.3)
-			_set_jaw_open(base_jaw * clampf(amp, 0.3, 1.0))
+			_set_jaw_open(base_jaw * clampf(amp, 0.2, 1.0))
 		return
 	elif command == "SCREEN_SCAN":
 		# Tama just analyzed the screen — visually show she's looking
@@ -1944,6 +1975,36 @@ func _handle_message(raw: String) -> void:
 			_session_ding_player.play()
 			print("🔔 Session ding!")
 	_break_reminder_was_active = break_reminder
+
+	# ── Break overlay: show/hide based on is_on_break state ──
+	var on_break: bool = data.get("is_on_break", false)
+	if on_break and not _was_on_break:
+		# Break just started — show overlay with duration from Python
+		var next_break_at = data.get("next_break_at", null)
+		# Compute break duration from session config (5-20 min based on session length)
+		var break_dur_min: float = 5.0  # Default
+		var sess_dur := session_duration_secs / 60
+		if sess_dur <= 30:
+			break_dur_min = 5.0
+		elif sess_dur <= 60:
+			break_dur_min = 10.0
+		elif sess_dur <= 120:
+			break_dur_min = 15.0
+		else:
+			break_dur_min = 20.0
+		if _tama_ui:
+			_tama_ui.show_break_overlay(break_dur_min)
+		if _session_ding_player and _session_ding_player.stream:
+			_session_ding_player.play()
+		print("☕ Break started! (%.0f min)" % break_dur_min)
+	elif not on_break and _was_on_break:
+		# Break ended — hide overlay
+		if _tama_ui:
+			_tama_ui.hide_break_overlay()
+		if _session_ding_player and _session_ding_player.stream:
+			_session_ding_player.play()
+		print("💪 Break ended — back to work!")
+	_was_on_break = on_break
 
 	# Gaze is now driven exclusively by Python's SCREEN_SCAN command
 	# (no more fake cosmetic glances)
@@ -2547,9 +2608,9 @@ func _instant_entrance_with_greeting() -> void:
 		_set_mouth("M2")  # Open mouth ("A" shape for "Salut")
 		# Mouth animation sequence: open → mid → close (simulates speech)
 		var mouth_tween = create_tween()
-		mouth_tween.tween_callback(func(): _set_mouth("M9")).set_delay(0.2)   # A moyen
+		mouth_tween.tween_callback(func(): _set_mouth("M2")).set_delay(0.2)   # A ouvert
 		mouth_tween.tween_callback(func(): _set_mouth("M3")).set_delay(0.15)  # teeth "i"
-		mouth_tween.tween_callback(func(): _set_mouth("M11")).set_delay(0.15) # O moyen
+		mouth_tween.tween_callback(func(): _set_mouth("M1")).set_delay(0.15)  # O rond
 		mouth_tween.tween_callback(func(): _set_mouth("M3")).set_delay(0.15)  # teeth
 		mouth_tween.tween_callback(func(): _set_mouth("M0")).set_delay(0.2)   # close
 		mouth_tween.tween_callback(func():
@@ -2581,6 +2642,9 @@ func _teleport_glitch_in() -> void:
 	# Grace period: don't dodge during Hello anim + disarm
 	_dodge_cooldown_timer = 5.0
 	_dodge_armed = false
+	# Reset spring bone physics to prevent velocity explosion from position discontinuity
+	if _spring_bones_node and _spring_bones_node.has_method("reset_physics"):
+		_spring_bones_node.reset_physics()
 	print("📺 Teleport glitch IN — Tama materializing with Hello anim (intensity: %.1f → 0)" % GLITCH_TELEPORT_START)
 
 # ─── User Speaking Acknowledgment ───────────────────
@@ -3129,7 +3193,9 @@ func _setup_tama_ui() -> void:
 	_tama_ui = TamaUI.new()
 	_tama_ui.name = "TamaUI"
 	add_child(_tama_ui)
-	_tama_ui.setup(self)
+	# Pass _tama_window as render target so CanvasLayers (arc, status, break)
+	# are drawn on Tama's visible window, NOT the hidden main window (1x1 off-screen).
+	_tama_ui.setup(self, _tama_window)
 
 func _show_status_indicator(text: String, color: Color) -> void:
 	if _tama_ui:

@@ -4,21 +4,45 @@ extends Node3D
 ## Handles secondary motion for hair, hoodie strings, etc.
 ## Attach as child of the main scene node, then call:
 ##   setup(skeleton)        — once, after skeleton is ready
-##   update(delta)          — every frame from _process
+##   update(delta)          — every frame (called by GazeModifier post-anim)
 ##   handle_input(event)    — from _unhandled_input for debug controls
+##   reset_physics()        — after teleportation to prevent velocity explosion
 ##
 ## Debug: press F5 to toggle collider visualization, then use numpad to tune.
 
+# ─── Internal Class (fast typed property access) ─────────
+class SpringBone:
+	var idx: int
+	var name: String
+	var base_rot: Quaternion
+	var bone_length: float
+	var bone_local_dir: Vector3
+	var gravity: float
+	var k1: float
+	var k2: float
+	var k3: float
+	var y: Vector3          # Current simulated tail position
+	var yd: Vector3         # Current velocity
+	var xp: Vector3         # Previous target position (for velocity estimate)
+
+class SpringCollider:
+	var type: String        # "sphere" or "capsule"
+	var bone_idx: int
+	var bone_name: String
+	var offset: Vector3
+	var radius: float
+	var half_height: float  # Only used for capsules
+
 # ─── State ───────────────────────────────────────────────
 var _skeleton: Skeleton3D = null
-var _spring_bones: Array = []
-var _spring_colliders: Array = []
+var _spring_bones: Array[SpringBone] = []
+var _spring_colliders: Array[SpringCollider] = []
 var _debug_colliders: bool = false
 var _debug_collider_meshes: Array = []
 var _debug_selected_collider: int = 0
 
 # ─── Collider Configs ────────────────────────────────────
-# [type, bone_name, offset, radius, ...]
+# [type, bone_name, offset, radius, ...] 
 # type "sphere": ["sphere", bone, offset, radius]
 # type "capsule": ["capsule", bone, offset, radius, half_height]
 #   capsule axis = bone local Y, extends ±half_height from offset center
@@ -59,7 +83,7 @@ const BONE_CONFIGS = [
 	["Jnt_R_strings",  3.0, 0.5, 1.0, 6.0],
 	["Jnt_R_strings2", 2.0, 0.4, 1.2, 7.0],
 	["Jnt_R_strings3", 1.5, 0.35, 1.5, 8.0],
-	["Jnt_L_Shoulder4", 1.0, 0.3, 1.8, 9.0],  # Last bone in R string chain
+	["Jnt_R_strings4", 1.0, 0.3, 1.8, 9.0],  # Last bone in R string chain
 ]
 
 # ─── Public API ──────────────────────────────────────────
@@ -75,10 +99,32 @@ func update(delta: float) -> void:
 	if _debug_colliders:
 		_update_debug_collider_meshes()
 
+func reset_physics() -> void:
+	"""Call after teleportation/respawn to prevent velocity explosion.
+	Forces all spring bones to snap to their current rest position
+	with zero velocity, preventing the xd = (x - xp) / dt blowup."""
+	if _skeleton == null:
+		return
+	for sb in _spring_bones:
+		var idx: int = sb.idx
+		var parent_idx: int = _skeleton.get_bone_parent(idx)
+		var parent_global: Transform3D
+		if parent_idx >= 0:
+			parent_global = _skeleton.global_transform * _skeleton.get_bone_global_pose(parent_idx)
+		else:
+			parent_global = _skeleton.global_transform
+		var bone_head: Vector3 = (_skeleton.global_transform * _skeleton.get_bone_global_pose(idx)).origin
+		var rest_dir_world: Vector3 = (parent_global.basis * Basis(sb.base_rot) * sb.bone_local_dir).normalized()
+		var x: Vector3 = bone_head + rest_dir_world * sb.bone_length
+		sb.y = x
+		sb.yd = Vector3.ZERO
+		sb.xp = x
+	print("🌿 Spring bones: physics reset (teleportation safe)")
+
 func handle_input(event: InputEvent) -> void:
 	"""Call from _unhandled_input for F5 debug + numpad tuning."""
-	# F5 = toggle debug collider visualization
-	if event is InputEventKey and event.pressed and event.keycode == KEY_F5:
+	# F5 = toggle debug collider visualization (with echo guard)
+	if event is InputEventKey and event.pressed and not event.is_echo() and event.keycode == KEY_F5:
 		_debug_colliders = !_debug_colliders
 		if _debug_colliders:
 			print("🛡️ [DEBUG] Colliders ON — Numpad controls:")
@@ -96,59 +142,59 @@ func handle_input(event: InputEvent) -> void:
 		var changed := false
 		var sel := _debug_selected_collider
 		if sel >= 0 and sel < _spring_colliders.size():
-			var col = _spring_colliders[sel]
+			var col: SpringCollider = _spring_colliders[sel]
 			# Get bone basis to convert world directions → bone local
-			var bone_idx: int = col["bone_idx"]
+			var bone_idx: int = col.bone_idx
 			var bone_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(bone_idx)
 			var bone_inv_basis: Basis = bone_global.basis.inverse()
 			var step := 0.01
 			match event.keycode:
 				KEY_KP_ADD:  # Num+ = bigger radius
-					col["radius"] += 0.005
+					col.radius += 0.005
 					changed = true
 				KEY_KP_SUBTRACT:  # Num- = smaller radius
-					col["radius"] = maxf(0.01, col["radius"] - 0.005)
+					col.radius = maxf(0.01, col.radius - 0.005)
 					changed = true
 				KEY_KP_8:  # Num8 = world UP
-					col["offset"] += bone_inv_basis * Vector3(0, step, 0)
+					col.offset += bone_inv_basis * Vector3(0, step, 0)
 					changed = true
 				KEY_KP_2:  # Num2 = world DOWN
-					col["offset"] += bone_inv_basis * Vector3(0, -step, 0)
+					col.offset += bone_inv_basis * Vector3(0, -step, 0)
 					changed = true
 				KEY_KP_6:  # Num6 = world RIGHT
-					col["offset"] += bone_inv_basis * Vector3(step, 0, 0)
+					col.offset += bone_inv_basis * Vector3(step, 0, 0)
 					changed = true
 				KEY_KP_4:  # Num4 = world LEFT
-					col["offset"] += bone_inv_basis * Vector3(-step, 0, 0)
+					col.offset += bone_inv_basis * Vector3(-step, 0, 0)
 					changed = true
 				KEY_KP_3:  # Num3 = world FORWARD (Z+)
-					col["offset"] += bone_inv_basis * Vector3(0, 0, step)
+					col.offset += bone_inv_basis * Vector3(0, 0, step)
 					changed = true
 				KEY_KP_1:  # Num1 = world BACKWARD (Z-)
-					col["offset"] += bone_inv_basis * Vector3(0, 0, -step)
+					col.offset += bone_inv_basis * Vector3(0, 0, -step)
 					changed = true
 				KEY_KP_9:  # Num9 = capsule taller
-					if col["type"] == "capsule":
-						col["half_height"] = col.get("half_height", 0.1) + 0.01
+					if col.type == "capsule":
+						col.half_height += 0.01
 						changed = true
 				KEY_KP_7:  # Num7 = capsule shorter
-					if col["type"] == "capsule":
-						col["half_height"] = maxf(0.01, col.get("half_height", 0.1) - 0.01)
+					if col.type == "capsule":
+						col.half_height = maxf(0.01, col.half_height - 0.01)
 						changed = true
 				KEY_KP_0:  # Num0 = switch collider
 					_debug_selected_collider = (_debug_selected_collider + 1) % _spring_colliders.size()
-					var cn = _spring_colliders[_debug_selected_collider]["bone_name"]
-					print("🛡️ Selected: [%d] %s (%s)" % [_debug_selected_collider, cn, _spring_colliders[_debug_selected_collider]["type"]])
+					var cn: String = _spring_colliders[_debug_selected_collider].bone_name
+					print("🛡️ Selected: [%d] %s (%s)" % [_debug_selected_collider, cn, _spring_colliders[_debug_selected_collider].type])
 					_remove_debug_collider_meshes()
 					_create_debug_collider_meshes()
 			if changed:
 				_remove_debug_collider_meshes()
 				_create_debug_collider_meshes()
-				var bn = col["bone_name"]
-				var r = col["radius"]
-				var o = col["offset"]
-				if col["type"] == "capsule":
-					var hh = col.get("half_height", 0.1)
+				var bn: String = col.bone_name
+				var r: float = col.radius
+				var o: Vector3 = col.offset
+				if col.type == "capsule":
+					var hh: float = col.half_height
 					print('🛡️ [%s] capsule r=%.3f hh=%.3f offset=(%.3f, %.3f, %.3f)' % [bn, r, hh, o.x, o.y, o.z])
 				else:
 					print('🛡️ [%s] sphere r=%.3f offset=(%.3f, %.3f, %.3f)' % [bn, r, o.x, o.y, o.z])
@@ -169,7 +215,10 @@ func _setup_spring_bones() -> void:
 			continue
 
 		var parent_idx: int = _skeleton.get_bone_parent(idx)
-		var base_rot: Quaternion = _skeleton.get_bone_pose_rotation(idx)
+		# Use get_bone_rest() for the TRUE rigging rest pose,
+		# not get_bone_pose_rotation() which could be mid-animation
+		var rest_transform: Transform3D = _skeleton.get_bone_rest(idx)
+		var base_rot: Quaternion = rest_transform.basis.get_rotation_quaternion()
 		var bone_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(idx)
 
 		# Determine bone length and local axis by finding child bone
@@ -200,18 +249,20 @@ func _setup_spring_bones() -> void:
 		var k2: float = 1.0 / (w * w)
 		var k3: float = resp * damp / (2.0 * PI * freq)
 
-		_spring_bones.append({
-			"idx": idx,
-			"name": bone_name,
-			"base_rot": base_rot,
-			"bone_length": bone_length,
-			"bone_local_dir": bone_local_dir,
-			"gravity": grav,
-			"k1": k1, "k2": k2, "k3": k3,
-			"y": tail_pos,
-			"yd": Vector3.ZERO,
-			"xp": tail_pos,
-		})
+		var sb := SpringBone.new()
+		sb.idx = idx
+		sb.name = bone_name
+		sb.base_rot = base_rot
+		sb.bone_length = bone_length
+		sb.bone_local_dir = bone_local_dir
+		sb.gravity = grav
+		sb.k1 = k1
+		sb.k2 = k2
+		sb.k3 = k3
+		sb.y = tail_pos
+		sb.yd = Vector3.ZERO
+		sb.xp = tail_pos
+		_spring_bones.append(sb)
 
 	if _spring_bones.size() > 0:
 		print("🌿 Spring bones: %d configured (Second-Order Dynamics)" % _spring_bones.size())
@@ -225,16 +276,14 @@ func _setup_spring_bones() -> void:
 		if col_bone_idx < 0:
 			print("⚠️ Collider bone '%s' not found" % col_bone_name)
 			continue
-		var col_data = {
-			"type": col_type,
-			"bone_idx": col_bone_idx,
-			"bone_name": col_bone_name,
-			"offset": col_cfg[2],
-			"radius": col_cfg[3],
-		}
-		if col_type == "capsule" and col_cfg.size() > 4:
-			col_data["half_height"] = col_cfg[4]
-		_spring_colliders.append(col_data)
+		var col := SpringCollider.new()
+		col.type = col_type
+		col.bone_idx = col_bone_idx
+		col.bone_name = col_bone_name
+		col.offset = col_cfg[2]
+		col.radius = col_cfg[3]
+		col.half_height = col_cfg[4] if col_type == "capsule" and col_cfg.size() > 4 else 0.1
+		_spring_colliders.append(col)
 	if _spring_colliders.size() > 0:
 		print("🛡️ Spring colliders: %d shapes" % _spring_colliders.size())
 
@@ -250,11 +299,11 @@ func _update_spring_bones(delta: float) -> void:
 		return
 
 	for sb in _spring_bones:
-		var idx: int = sb["idx"]
+		var idx: int = sb.idx
 		var parent_idx: int = _skeleton.get_bone_parent(idx)
-		var base_rot: Quaternion = sb["base_rot"]
-		var bone_length: float = sb["bone_length"]
-		var bone_local_dir: Vector3 = sb["bone_local_dir"]
+		var base_rot: Quaternion = sb.base_rot
+		var bone_length: float = sb.bone_length
+		var bone_local_dir: Vector3 = sb.bone_local_dir
 
 		# Parent transform
 		var parent_global: Transform3D
@@ -270,25 +319,33 @@ func _update_spring_bones(delta: float) -> void:
 		var x: Vector3 = bone_head + rest_dir_world * bone_length
 
 		# ─── Second-Order Dynamics ───
-		var k1: float = sb["k1"]
-		var k2: float = sb["k2"]
-		var k3: float = sb["k3"]
-		var y: Vector3 = sb["y"]
-		var yd: Vector3 = sb["yd"]
-		var xp: Vector3 = sb["xp"]
+		var k1: float = sb.k1
+		var k2: float = sb.k2
+		var k3: float = sb.k3
+		var y: Vector3 = sb.y
+		var yd: Vector3 = sb.yd
+		var xp: Vector3 = sb.xp
 
-		# Input velocity estimate
+		# Input velocity estimate (with teleportation safety clamp)
 		var xd: Vector3 = (x - xp) / dt
+		# Teleportation guard: if velocity is absurdly high, snap to rest
+		var xd_len_sq: float = xd.length_squared()
+		if xd_len_sq > 10000.0:  # ~100 m/s — impossible for normal animation
+			sb.y = x
+			sb.yd = Vector3.ZERO
+			sb.xp = x
+			_skeleton.set_bone_pose_rotation(idx, base_rot)
+			continue
 
 		# Stability clamp on k2
 		var k2_stable: float = maxf(k2, maxf(dt * dt / 2.0 + dt * k1 / 2.0, dt * k1))
 
 		# Integrate — gravity is an EXTERNAL ACCELERATION inside the ODE
-		var gravity_accel: Vector3 = Vector3.DOWN * sb["gravity"]
+		var gravity_accel: Vector3 = Vector3.DOWN * sb.gravity
 		y = y + dt * yd
 		yd = yd + dt * ((x + k3 * xd - y - k1 * yd) / k2_stable + gravity_accel)
 
-		sb["xp"] = x
+		sb.xp = x
 
 		# ─── Distance Constraint ───
 		# Project y onto sphere of radius bone_length around bone_head
@@ -306,16 +363,17 @@ func _update_spring_bones(delta: float) -> void:
 
 		# ─── Collider Collision ───
 		var collider_pushed := false
+		var collision_normal: Vector3 = Vector3.ZERO
 		for _iter in range(3):
 			var was_pushed := false
 			for col in _spring_colliders:
-				var col_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(col["bone_idx"])
-				var center: Vector3 = col_global.origin + col_global.basis * col["offset"]
-				var col_radius: float = col["radius"]
+				var col_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(col.bone_idx)
+				var center: Vector3 = col_global.origin + col_global.basis * col.offset
+				var col_radius: float = col.radius
 				var closest_point: Vector3
 
-				if col["type"] == "capsule":
-					var hh: float = col.get("half_height", 0.1)
+				if col.type == "capsule":
+					var hh: float = col.half_height
 					var axis_dir: Vector3 = col_global.basis.y
 					var cap_top: Vector3 = center + axis_dir * hh
 					var cap_bot: Vector3 = center - axis_dir * hh
@@ -332,7 +390,9 @@ func _update_spring_bones(delta: float) -> void:
 				var diff: Vector3 = new_tail - closest_point
 				var dist: float = diff.length()
 				if dist < col_radius and dist > 0.0001:
-					new_tail = closest_point + diff.normalized() * col_radius
+					var push_normal: Vector3 = diff.normalized()
+					new_tail = closest_point + push_normal * col_radius
+					collision_normal = push_normal
 					was_pushed = true
 					collider_pushed = true
 
@@ -344,12 +404,20 @@ func _update_spring_bones(delta: float) -> void:
 				break
 
 		# Update state
-		sb["y"] = new_tail
-		# Only dampen velocity on ACTUAL collider push (not distance constraint)
-		if collider_pushed:
-			sb["yd"] = yd * 0.1
+		sb.y = new_tail
+		if collider_pushed and collision_normal.length_squared() > 0.0001:
+			# Project velocity onto collision surface: kill penetrating component,
+			# preserve tangential velocity for natural sliding (not "sticky" collisions)
+			var normal: Vector3 = collision_normal.normalized()
+			var vel_into_surface: float = yd.dot(normal)
+			if vel_into_surface < 0.0:
+				# Only remove the component going INTO the surface
+				yd = yd - normal * vel_into_surface
+			# Light friction on tangential component (natural deceleration)
+			yd = yd * 0.85
+			sb.yd = yd
 		else:
-			sb["yd"] = yd
+			sb.yd = yd
 
 		# ─── Compute Bone Rotation ───
 		var parent_inv_basis: Basis = parent_global.basis.inverse()
@@ -372,20 +440,20 @@ func _create_debug_collider_meshes() -> void:
 	"""Create translucent meshes to visualize collision volumes."""
 	_remove_debug_collider_meshes()
 	for i in range(_spring_colliders.size()):
-		var col = _spring_colliders[i]
+		var col: SpringCollider = _spring_colliders[i]
 		var mesh: Mesh
 
-		if col["type"] == "capsule":
+		if col.type == "capsule":
 			var cap := CapsuleMesh.new()
-			cap.radius = col["radius"]
-			cap.height = col.get("half_height", 0.1) * 2.0 + col["radius"] * 2.0
+			cap.radius = col.radius
+			cap.height = col.half_height * 2.0 + col.radius * 2.0
 			cap.radial_segments = 16
 			cap.rings = 4
 			mesh = cap
 		else:
 			var sph := SphereMesh.new()
-			sph.radius = col["radius"]
-			sph.height = col["radius"] * 2.0
+			sph.radius = col.radius
+			sph.height = col.radius * 2.0
 			sph.radial_segments = 16
 			sph.rings = 8
 			mesh = sph
@@ -420,11 +488,11 @@ func _update_debug_collider_meshes() -> void:
 	if _skeleton == null:
 		return
 	for i in range(mini(_spring_colliders.size(), _debug_collider_meshes.size())):
-		var col = _spring_colliders[i]
+		var col: SpringCollider = _spring_colliders[i]
 		var node = _debug_collider_meshes[i]
-		var col_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(col["bone_idx"])
-		var center: Vector3 = col_global.origin + col_global.basis * col["offset"]
+		var col_global: Transform3D = _skeleton.global_transform * _skeleton.get_bone_global_pose(col.bone_idx)
+		var center: Vector3 = col_global.origin + col_global.basis * col.offset
 		node.global_position = center
 		# Capsules need to match bone rotation (axis = bone Y)
-		if col["type"] == "capsule":
+		if col.type == "capsule":
 			node.global_transform.basis = col_global.basis

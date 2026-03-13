@@ -29,20 +29,25 @@ WARMUP_DELAY = 15.0              # Don't call Flash-Lite for first 15s (let Live
 
 PRE_CLASSIFY_PROMPT = """You are a screen classification engine. Analyze this screenshot and classify the user's activity.
 
-Active window: {active_window}
-Open windows: {open_windows}
-Current task: {task}
+CRITICAL: Classify based on what you SEE on screen — the actual visible content, not the window title.
+The screenshot shows ALL monitors. Focus on what occupies the MOST screen space and what the user is clearly interacting with.
+A small foreground window does NOT define the user's activity if 80% of the screen shows something else.
+
+Context (secondary hints — use as TIE-BREAKERS, not primary evidence):
+- Active window title: {active_window}
+- Other open windows: {open_windows}
+- Declared task: {task}
 
 Return ONLY a JSON object with these exact fields:
 {{
   "category": "SANTE" | "ZONE_GRISE" | "FLUX" | "BANNIE" | "PROCRASTINATION_PRODUCTIVE",
   "alignment": 1.0 | 0.5 | 0.0,
   "reason": "<brief reason in 5 words max>",
-  "description": "<describe SPECIFICALLY what is on screen — include video titles, article headlines, song names, website content, code project name, chat app name, game title, or whatever is visually prominent. Be specific, not generic. Example: 'YouTube: How to play drums in 10 minutes' NOT 'watching a video'. Max 20 words.>"
+  "description": "<describe SPECIFICALLY what is VISIBLE on screen — include video titles, article headlines, song names, website content, code project name, chat app name, game title, or whatever is visually prominent. Be specific, not generic. Example: 'YouTube: How to play drums in 10 minutes' NOT 'watching a video'. Max 20 words.>"
 }}
 
 Categories:
-- SANTE: Work tools (IDE, terminal, creative software, ChatGPT)
+- SANTE: Work tools (IDE, terminal, creative software, ChatGPT, Blender, Godot)
 - ZONE_GRISE: Communication apps (Messenger, Slack, Discord, WhatsApp)
 - FLUX: Media/music (Spotify, YouTube Music, Deezer, Suno)
 - BANNIE: Entertainment (Netflix, YouTube non-tutorial, Steam, Reddit, social media)
