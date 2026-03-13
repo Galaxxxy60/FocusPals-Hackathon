@@ -17,6 +17,7 @@ var active_duration: int = 0
 var session_active: bool = false
 var session_elapsed_secs: int = 0
 var session_duration_secs: int = 3000  # 50 min default
+var _break_reminder_was_active: bool = false
 
 # ─── Tama Scale (camera zoom + window resize) ─────────
 const _BASE_WIN_SIZE := Vector2i(400, 500)
@@ -33,7 +34,7 @@ var conversation_active: bool = false  # True during casual chat (no deep work)
 var _convo_engagement: int = 0  # Number of speech exchanges — triggers OffTheWall at threshold
 const CONVO_ENGAGE_THRESHOLD: int = 3  # Back-and-forths before Tama gets off the wall
 var _anim_player: AnimationPlayer = null
-var _prev_suspicion_tier: int = -1
+var _prev_suspicion_tier: int = 0  # Start at 0 (CALM) — prevents false tier-change at startup
 var _last_anim_command_time: float = 0.0  # Timestamp of last Python anim command
 const ANIM_COMMAND_COOLDOWN: float = 5.0  # Don't auto-anim if Python sent one recently
 
@@ -70,6 +71,11 @@ var _imba_tween: Tween = null          # For smooth transitions
 
 # Strike target coordinates from Python (tab/window close button position)
 var _strike_target: Vector2i = Vector2i(-1, -1)  # -1 = use mouse fallback
+
+# ─── Dynamic Subject Gaze ───
+# Point of interest set by Python (e.g. a video playing, a browser tab).
+# When >= 0, overrides SCREEN_CENTER gaze to look at this exact pixel.
+var _subject_target: Vector2i = Vector2i(-1, -1)
 
 # ─── Expression System (UV Swap) ─────────────────────────
 var _eyes_material: StandardMaterial3D = null
@@ -118,6 +124,7 @@ const EYE_OFFSETS = {
 	"E6": Vector3(0.75, 0.5, 0),      # D3: Semi-closed (blink frame)
 	"E7": Vector3(0.5, 0.75, 0),      # C4: Plissés léger malicieux
 	"E8": Vector3(0.75, 0.75, 0),     # D4: Furieux
+	"E9": Vector3(0, 0.5, 0),         # A3: Happy Wink (clin d'œil complice)
 }
 
 const MOUTH_OFFSETS = {
@@ -149,11 +156,13 @@ const MOOD_EYES = {
 	"calm": "E0", "curious": "E0", "amused": "E4", "proud": "E7",
 	"suspicious": "E7", "surprised": "E3", "disappointed": "E7", "sarcastic": "E7",
 	"annoyed": "E5", "angry": "E5", "furious": "E8",
+	"happy_wink": "E9",
 }
 const MOOD_MOUTH = {
 	"calm": "M0", "curious": "M0", "amused": "M4", "proud": "M4",
 	"suspicious": "M7", "surprised": "M1", "disappointed": "M5", "sarcastic": "M6",
 	"annoyed": "M5", "angry": "M5", "furious": "M8",
+	"happy_wink": "M4",
 }
 
 # Mood → eyebrow blend shape mapping {blend_shape_name: intensity}
@@ -170,6 +179,7 @@ const MOOD_EYEBROWS = {
 	"annoyed": {"angry": 0.6},
 	"angry": {"angry": 0.8},
 	"furious": {"angry": 1.0},
+	"happy_wink": {},
 }
 
 var _current_eye_slot: String = "E0"
@@ -235,6 +245,7 @@ var _glitch_teleporting: bool = false        # True during teleport-in sequence
 
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
+var _session_ding_player: AudioStreamPlayer = null
 var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
 var _ack_gaze_timer: float = 0.0 # Countdown to restore head gaze after ack
 
@@ -291,6 +302,14 @@ const SCAN_GLANCE_MAX_CD: float = 15.0    # Max seconds between glances
 var _suspicion_staring: bool = false       # True when staring at screen due to suspicion
 var _pending_leave_wall: bool = false      # Queue leave-wall after reverse wall_talk
 
+# ─── Attente synchronisation IA (entrée synchronisée au premier mot) ────
+var _waiting_for_voice: bool = false
+var _voice_timeout_timer: float = 0.0
+
+# ─── Local Greeting Audio (instant "Salut !" fallback) ────
+var _local_greeting_player: AudioStreamPlayer = null
+var _has_local_greeting: bool = false  # True if tama_hello.wav was found
+
 # (Post-animation delta removed — using get_process_delta_time() directly)
 
 # ─── Mouse Dodge (move tama window when hovered) ───
@@ -299,11 +318,13 @@ const DODGE_COOLDOWN: float = 0.5          # Seconds before she can dodge/return
 var _dodge_active: bool = false             # True when Tama window is at dodge position
 var _dodge_cooldown_timer: float = 3.0     # Start with grace period so Tama doesn't dodge on launch
 var _dodge_departing: bool = false          # True during departure animation (glitch playing)
+var _dodge_armed: bool = false             # Must be true before dodge can trigger (armed when mouse LEAVES area)
 
 # ─── Tama Window (separate rendering window) ───
 var _tama_window: Window = null
 var _tama_cam: Camera3D = null              # Clone camera inside _tama_window
 const TAMA_LAYER_BIT: int = 2              # Render layer 2 bitmask
+var _init_done: bool = false                # True after all deferred setups complete
 
 func _ready() -> void:
 	# Prevent V-Sync stacking across multiple windows (kills FPS otherwise)
@@ -318,6 +339,8 @@ func _ready() -> void:
 	_setup_tama_ui()
 	call_deferred("_setup_headphones")
 	_setup_ack_audio()
+	_setup_session_ding()
+	_setup_greeting_audio()
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_glitch_effect")  # After _setup_gaze (needs _camera)
 	call_deferred("_sync_tama_camera")    # After _setup_gaze finds _camera
@@ -327,12 +350,19 @@ func _ready() -> void:
 	# Tama stays hidden at launch — _start_idle_wall() is called
 	# only when Python sends START_SESSION or START_CONVERSATION
 	# call_deferred("_start_idle_wall")
+	# Mark init complete AFTER all deferred setups (prevents race condition
+	# where Python sends START_SESSION before AnimTree is ready)
+	call_deferred("_mark_init_done")
 	# Enable internal processing for eye follow blend shapes (not bone mods — those use SkeletonModifier3D)
 	# process_priority=100: run AFTER AnimTree (default 0) so our blend shape writes override animation data.
 	# Without this, AnimTree overwrites BS_LookLeft/Right every frame and eye follow is invisible.
 	process_priority = 100
 	set_process_internal(true)
 	print("🥷 FocusPals Godot — En attente de connexion...")
+
+func _mark_init_done() -> void:
+	_init_done = true
+	print("✅ Init async terminée — prêt à écouter Python.")
 
 # ─── Window Pool Setup ─────────────────────────────────────
 func _setup_window_pool() -> void:
@@ -464,12 +494,23 @@ func _start_idle_wall() -> void:
 	if _anim_tree_module and _anim_tree_module._ready_ok:
 		_started = true
 		_anim_tree_module.walk_in()  # Plays Hello (or WalkIn) → idle → idle_wall
+		_last_anim_command_time = Time.get_unix_time_from_system()  # Protect Hello from suspicion override
+		_dodge_cooldown_timer = 5.0  # Generous grace period for Hello anim
+		_dodge_armed = false         # Force mouse to leave area first
 		print("🧱 Tama entrance started (via AnimTree)")
 		return
 	# Fallback: direct AnimationPlayer (should rarely happen)
 	if _anim_player:
 		_anim_player.play("Idle_wall", 0.2)
+	# Ensure Tama node is visible (AnimTree normally does this in walk_in/teleport_in
+	# but the legacy fallback skipped it → Tama stayed invisible)
+	var tama_node = get_node_or_null("Tama")
+	if tama_node:
+		tama_node.visible = true
 	_started = true
+	_last_anim_command_time = Time.get_unix_time_from_system()  # Protect from suspicion override
+	_dodge_cooldown_timer = 5.0
+	_dodge_armed = false
 	print("🧱 Tama démarre en Idle_wall (legacy fallback)")
 
 
@@ -515,7 +556,7 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 		if _suspicion_staring:
 			# Suspicion-triggered wall_talk — stare at screen with full side-eye
 			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
-			_set_eye_look(-1.0, -0.3)
+			_look_eyes_at_screen_center()
 			_scan_eye_active = true
 		elif conversation_active:
 			set_gaze(GazeTarget.USER, 4.0)
@@ -535,19 +576,19 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 		else:
 			_suspicion_staring = false
 			_scan_eye_active = false
-			_set_eye_look(0.0, 0.0)
+			_eye_follow_active = false
 			set_gaze(GazeTarget.NEUTRAL, 2.0)
 	elif new_state == "ON_WALL" and old_state == "WALL_TALK":
 		_suspicion_staring = false
 		_scan_eye_active = false
-		_set_eye_look(0.0, 0.0)
+		_eye_follow_active = false
 		set_gaze(GazeTarget.NEUTRAL, 2.0)
 	# ── Ground sitting equivalents ──
 	elif new_state == "GROUND_TALK":
 		if _suspicion_staring:
 			# Suspicion-triggered ground_talk — stare at screen
 			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
-			_set_eye_look(-1.0, -0.3)
+			_look_eyes_at_screen_center()
 			_scan_eye_active = true
 		elif conversation_active:
 			set_gaze(GazeTarget.USER, 4.0)
@@ -566,13 +607,13 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 		else:
 			_suspicion_staring = false
 			_scan_eye_active = false
-			_set_eye_look(0.0, 0.0)
+			_eye_follow_active = false
 			set_gaze(GazeTarget.NEUTRAL, 2.0)
 	elif new_state == "OFF_SCREEN":
 		# Tama left the screen — reset all gaze
 		_suspicion_staring = false
 		_scan_eye_active = false
-		_set_eye_look(0.0, 0.0)
+		_eye_follow_active = false
 		set_gaze(GazeTarget.NEUTRAL, 1.0)
 
 
@@ -1039,7 +1080,10 @@ func _safe_restore_passthrough() -> void:
 
 func _sync_and_show_ui() -> void:
 	"""Position the UI window at home (bottom-right) and show it.
-	UI stays fixed — it does NOT follow Tama when she dodges."""
+	UI stays fixed — it does NOT follow Tama when she dodges.
+	NOTE: We avoid visible=false→true toggling because it forces Windows DWM
+	to destroy and recreate the window surface (causes lag/freeze).
+	We also avoid grab_focus() because it steals focus and creates a taskbar icon."""
 	if _ui_window:
 		var usable := DisplayServer.screen_get_usable_rect()
 		var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
@@ -1047,7 +1091,11 @@ func _sync_and_show_ui() -> void:
 		var y := usable.position.y + usable.size.y - win_size.y
 		_ui_window.size = win_size
 		_ui_window.position = Vector2i(x, y)
-		_ui_window.visible = true
+		# Raise UI window above Tama's rendering window without DWM surface recreation.
+		# move_to_foreground() adjusts z-order without stealing focus or creating taskbar icon.
+		if not _ui_window.visible:
+			_ui_window.visible = true
+		_ui_window.move_to_foreground()
 
 func _position_window() -> void:
 	_reposition_bottom_right()
@@ -1073,6 +1121,9 @@ func _get_tama_screen_center() -> Vector2i:
 
 func _update_mouse_dodge(delta: float) -> void:
 	"""Move Tama's window when mouse hovers her."""
+	# Don't calculate dodge when Tama is invisible (prevents arming while hidden)
+	if not _tama_window or not _tama_window.visible:
+		return
 	if _glitch_quitting or _glitch_teleporting or _dodge_departing:
 		return
 	if _quit_layer:
@@ -1089,6 +1140,13 @@ func _update_mouse_dodge(delta: float) -> void:
 	var mouse := DisplayServer.mouse_get_position()
 	var tama_center := _get_tama_screen_center()
 	var dist := Vector2(mouse - tama_center).length()
+
+	# Arming logic: dodge can only trigger AFTER mouse has left Tama's area once.
+	# Prevents false dodge on entrance (mouse already near Tama) or after radial menu.
+	if not _dodge_armed:
+		if dist >= DODGE_HOVER_RADIUS:
+			_dodge_armed = true
+		return  # Don't dodge until armed
 
 	if not _dodge_active:
 		# Mouse near Tama → dodge to taskbar area
@@ -1183,6 +1241,7 @@ func _dodge_to_taskbar() -> void:
 func _dodge_return() -> void:
 	"""Move Tama's window back to home (bottom-right) + arrival glitch."""
 	_dodge_active = false
+	_dodge_armed = false  # Require mouse to leave area again before re-dodge
 	_dodge_cooldown_timer = DODGE_COOLDOWN
 
 	# FORCE pose BEFORE moving window (glitch is covering her)
@@ -1285,6 +1344,11 @@ func _connect_ws() -> void:
 		print("🔌 Connexion à ws://localhost:8080...")
 
 func _process(delta: float) -> void:
+	# Don't process WebSocket until all deferred setups are complete
+	# (prevents race condition: Python sends START_SESSION before AnimTree is ready)
+	if not _init_done:
+		return
+
 	ws.poll()
 	match ws.get_ready_state():
 		WebSocketPeer.STATE_OPEN:
@@ -1343,8 +1407,15 @@ func _process(delta: float) -> void:
 		if _scan_glance_timer <= 0 and not _suspicion_staring:
 			# Glance over — smoothly return to book + eyes to center
 			set_gaze(GazeTarget.NEUTRAL, 2.0)
-			_set_eye_look(0.0, 0.0)
+			_eye_follow_active = false
 			_scan_eye_active = false
+
+	# ─── Voice-Sync Entrance Timeout ──────────────────────────
+	if _waiting_for_voice:
+		_voice_timeout_timer -= delta
+		if _voice_timeout_timer <= 0.0:
+			print("⏳ Timeout vocal (10s) : Tama entre silencieusement.")
+			_trigger_entrance()
 
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
 	_sync_gaze_to_modifier()
@@ -1384,7 +1455,8 @@ func _notification(what: int) -> void:
 
 # ─── Eye Follow (saccadic blend-shape eye movement) ──────
 func _set_eye_target_from_screen(screen_x: float, screen_y: float) -> void:
-	"""Convert screen mouse position to eye target direction (-1..+1)."""
+	"""Convert screen pixel position to eye target direction (-1..+1).
+	Multi-monitor aware: uses the screen Tama is currently on."""
 	var win_pos := _tama_window.position if _tama_window else Vector2i.ZERO
 	var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
 	# Tama's eye center on screen (approximate: center-top of Godot window)
@@ -1392,7 +1464,11 @@ func _set_eye_target_from_screen(screen_x: float, screen_y: float) -> void:
 	var eye_sy: float = float(win_pos.y) + float(win_size.y) * 0.35
 	var dx: float = screen_x - eye_sx
 	var dy: float = screen_y - eye_sy
-	var screen_w: float = float(DisplayServer.screen_get_size().x)
+	# Use the correct screen (important for multi-monitors)
+	var screen_idx = DisplayServer.window_get_current_screen()
+	if _tama_window and is_instance_valid(_tama_window):
+		screen_idx = DisplayServer.window_get_current_screen(_tama_window.get_window_id())
+	var screen_w: float = float(DisplayServer.screen_get_size(screen_idx).x)
 	var ref: float = screen_w * 0.4
 	_eye_target_h = clampf(dx / ref, -1.0, 1.0)
 	_eye_target_v = clampf(dy / ref, -1.0, 1.0)
@@ -1446,29 +1522,41 @@ func _handle_message(raw: String) -> void:
 		if not session_active:
 			session_active = true
 			conversation_active = false  # Session overrides conversation
-			print("🚀 Session Deep Work lancée !")
-			# Reveal Tama window (hidden at launch)
-			if _tama_window:
-				_tama_window.visible = true
-			# Tama teleports in when session starts (primary arrival)
-			if _anim_tree_module and _anim_tree_module.is_off_screen():
-				_teleport_glitch_in()
+			if _has_local_greeting:
+				# ⚡ Instant entrance with local greeting audio (0ms latency)
+				print("🚀 Session lancée ! (Greeting local)")
+				_instant_entrance_with_greeting()
 			else:
-				_start_idle_wall()  # Fallback if AnimTree not ready
+				# Fallback: wait for Gemini's first audio
+				print("🚀 Session lancée ! (Attente de la voix...)")
+				_waiting_for_voice = true
+				_voice_timeout_timer = 15.0
+				_show_status_indicator("Connexion neuronale...", Color(0.5, 0.2, 0.8, 0.9))
 		return
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
 			_convo_engagement = 0  # Reset engagement counter
-			print("💬 Mode conversation — Tama arrive !")
-			# Reveal Tama window (hidden at launch)
-			if _tama_window:
-				_tama_window.visible = true
-			# Tama teleports in for conversation (primary arrival)
-			if _anim_tree_module and _anim_tree_module.is_off_screen():
-				_teleport_glitch_in()
+			if _has_local_greeting:
+				# ⚡ Instant entrance with local greeting audio (0ms latency)
+				print("💬 Mode conversation ! (Greeting local)")
+				_instant_entrance_with_greeting()
 			else:
-				_start_idle_wall()  # Fallback if AnimTree not ready
+				# Fallback: wait for Gemini's first audio
+				print("💬 Mode conversation ! (Attente de la voix...)")
+				_waiting_for_voice = true
+				_voice_timeout_timer = 15.0
+				_show_status_indicator("Appel de Tama...", Color(0.5, 0.7, 1.0, 0.9))
+		return
+	elif command == "SESSION_COMPLETE":
+		print("🏁 Session complète — fin de session !")
+		session_active = false
+		if _anim_tree_module:
+			if _anim_tree_module.is_standing():
+				if _dodge_active:
+					_anim_tree_module.sit_ground()
+				else:
+					_anim_tree_module.return_to_wall()
 		return
 	elif command == "END_CONVERSATION":
 		if conversation_active:
@@ -1543,13 +1631,31 @@ func _handle_message(raw: String) -> void:
 			print("👀 User speaking — engagement #%d" % _convo_engagement)
 		_on_user_speaking_ack()  # Always ack (conversation + deep work)
 		return
+	elif command == "SET_SUBJECT":
+		# Python registers a point of interest (e.g. video, browser tab)
+		# Future gaze events (SCREEN_SCAN, GAZE_AT screen_center) will fixate here
+		if data.has("x") and data.has("y"):
+			_subject_target = Vector2i(int(data["x"]), int(data["y"]))
+			print("🎯 Subject target set: (%d, %d)" % [_subject_target.x, _subject_target.y])
+		else:
+			_subject_target = Vector2i(-1, -1)
+			print("🎯 Subject target cleared")
+		return
 	elif command == "GAZE_AT":
 		# Python tells Tama where to look
 		# Supports: {x, y} screen pixels OR {target: "user"/"screen"/"book"/etc}
 		var spd = data.get("speed", 3.0)
 		if data.has("x") and data.has("y"):
 			# Screen pixel coordinates
-			set_gaze_at_screen_point(float(data["x"]), float(data["y"]), spd)
+			var px = float(data["x"])
+			var py = float(data["y"])
+			set_gaze_at_screen_point(px, py, spd)
+			_look_eyes_at_screen_point(px, py)  # Force eyes to look at this pixel
+			_scan_eye_active = true
+			if data.has("duration"):
+				_scan_glance_timer = float(data["duration"])
+			else:
+				_scan_glance_timer = 2.0
 		elif data.has("target"):
 			var t = str(data["target"]).to_lower()
 			match t:
@@ -1585,6 +1691,7 @@ func _handle_message(raw: String) -> void:
 				_gaze_modifier.arm_ik_blend_target = 0.7  # Softer than Strike (which uses 1.0)
 			# Brief gaze toward the target
 			set_gaze_at_screen_point(float(jtx), float(jty), 4.0)
+			_look_eyes_at_screen_point(float(jtx), float(jty))  # Eyes follow the tap
 		return
 	elif command == "TAMA_ANIM":
 		var anim_name = data.get("anim", "")
@@ -1673,9 +1780,19 @@ func _handle_message(raw: String) -> void:
 			_set_mouth(mouth_key)
 		_set_eyebrows(mood_name)
 		return
+	elif command == "TAMA_VOICE_READY":
+		# 🎯 Primary entrance trigger: Gemini received first audio chunk
+		# Arrives ~200ms before first VISEME (before audio playback starts)
+		if _waiting_for_voice:
+			print("🎙️ TAMA_VOICE_READY reçu — déclenchement entrée !")
+			_trigger_entrance()
+		return
 	elif command == "VISEME":
 		var shape = data.get("shape", "REST")
 		var amp: float = data.get("amp", 0.5)
+		# 🎯 DÉCLENCHEMENT SYNCHRONISÉ AU PREMIER MOT
+		if _waiting_for_voice and shape != "REST":
+			_trigger_entrance()
 		var mouth_slot = VISEME_MAP.get(shape, "M0")
 		# Track Tama speech
 		if shape != "REST":
@@ -1753,9 +1870,24 @@ func _handle_message(raw: String) -> void:
 				look_duration = 2.8
 				head_speed = 4.0
 			# Head turn (subtle to full)
-			set_gaze_subtle(GazeTarget.SCREEN_CENTER, head_speed, head_blend)
-			# Eyes ALWAYS at full intensity toward screen
-			_set_eye_look(-1.0, -0.3)
+			# Use focus point from Python if available (active window center),
+			# otherwise fall back to screen center (which may use _subject_target)
+			if data.has("focus_x") and data.has("focus_y"):
+				var fx: float = float(data["focus_x"])
+				var fy: float = float(data["focus_y"])
+				# Head: look at the actual suspicious content
+				var target_3d = _screen_to_world(fx, fy)
+				_gaze_world_target = target_3d
+				if _gaze_active:
+					_gaze_lerp_speed = head_speed
+					_look_at_world_point(target_3d, head_speed, head_blend)
+					_sync_gaze_to_modifier()
+				# Eyes: follow the same spot
+				_look_eyes_at_screen_point(fx, fy)
+			else:
+				set_gaze_subtle(GazeTarget.SCREEN_CENTER, head_speed, head_blend)
+				# Eyes look dynamically toward screen center (or Python subject)
+				_look_eyes_at_screen_center()
 			_scan_eye_active = true
 			_scan_glance_timer = look_duration
 			# Reset cooldown so periodic glance doesn't fight
@@ -1779,7 +1911,10 @@ func _handle_message(raw: String) -> void:
 			_set_headphones_visible(true)
 			_set_glitch_active(true)   # API lost — glitch Tama!
 		elif conn_status == "connected":
-			_hide_status_indicator()
+			if _waiting_for_voice:
+				_show_status_indicator("Agent prêt, réflexion...", Color(0.2, 0.8, 0.4, 0.9))
+			else:
+				_hide_status_indicator()
 			_set_headphones_visible(false)
 			_set_glitch_active(false)  # Reconnected — clear glitch
 		return
@@ -1807,6 +1942,14 @@ func _handle_message(raw: String) -> void:
 	active_duration = data.get("active_duration", 0)
 	session_elapsed_secs = data.get("session_elapsed_secs", 0)
 	session_duration_secs = data.get("session_duration_secs", 3000)
+
+	# ── Session ding: play chime when break reminder first activates ──
+	var break_reminder: bool = data.get("break_reminder", false)
+	if break_reminder and not _break_reminder_was_active:
+		if _session_ding_player and _session_ding_player.stream:
+			_session_ding_player.play()
+			print("🔔 Session ding!")
+	_break_reminder_was_active = break_reminder
 
 	# Gaze is now driven exclusively by Python's SCREEN_SCAN command
 	# (no more fake cosmetic glances)
@@ -2080,6 +2223,7 @@ const PUPIL_HIDE_AMOUNT = {
 	"E4": 1.0,   # Happy ^^^ — fully hidden
 	"E6": 1.0,   # Semi-closed (blink) — fully hidden
 	"E7": 0.5,   # Plissés léger — half hidden
+	"E9": 0.5,   # Happy Wink — one eye closed, half hidden
 	# E0, E3, E5, E8: pupils fully visible (not listed = 0.0)
 }
 
@@ -2326,8 +2470,91 @@ func _update_glitch(delta: float) -> void:
 			_glitch_quad.visible = false
 
 
+func _trigger_entrance() -> void:
+	"""Voice-synced entrance: called when first VISEME arrives or timeout expires.
+	Makes Tama visible and triggers her entrance animation."""
+	if not _waiting_for_voice:
+		return
+	_waiting_for_voice = false
+	_hide_status_indicator()
+
+	# 1. Force window visible + position
+	if _tama_window:
+		_tama_window.visible = true
+		if not _dodge_active:
+			_reposition_bottom_right()
+	# 2. Force 3D model visible (safety net)
+	var tama_node = get_node_or_null("Tama")
+	if tama_node:
+		tama_node.visible = true
+	# 3. Animate arrival
+	if _anim_tree_module and _anim_tree_module.is_off_screen():
+		_teleport_glitch_in()
+	elif not _started:
+		_start_idle_wall()
+	print("✨ Entrée synchronisée ! Tama apparaît avec sa voix.")
+
+
+func _setup_greeting_audio() -> void:
+	"""Load local greeting audio (tama_hello.wav or .mp3). If found, instant entrance is used."""
+	_local_greeting_player = AudioStreamPlayer.new()
+	var audio_file = load("res://tama_hello.wav")
+	var file_name = "tama_hello.wav"
+	if not audio_file:
+		audio_file = load("res://tama_hello.mp3")
+		file_name = "tama_hello.mp3"
+	if audio_file:
+		_local_greeting_player.stream = audio_file
+		_local_greeting_player.volume_db = -6.0  # Clear but not overwhelming
+		_has_local_greeting = true
+		print("🔊 Greeting local chargé (%s)" % file_name)
+	else:
+		_has_local_greeting = false
+		print("🔇 Pas de tama_hello.wav/mp3 — fallback sur voix IA")
+	add_child(_local_greeting_player)
+
+
+func _instant_entrance_with_greeting() -> void:
+	"""Instant entrance with local greeting audio. No waiting for Gemini.
+	Used when tama_hello.wav is available for 0ms latency."""
+	_waiting_for_voice = false  # Don't wait for AI voice
+	_hide_status_indicator()
+
+	# 1. Force window visible + position
+	if _tama_window:
+		_tama_window.visible = true
+		if not _dodge_active:
+			_reposition_bottom_right()
+	# 2. Force 3D model visible
+	var tama_node = get_node_or_null("Tama")
+	if tama_node:
+		tama_node.visible = true
+	# 3. Animate arrival
+	if _anim_tree_module and _anim_tree_module.is_off_screen():
+		_teleport_glitch_in()
+	elif not _started:
+		_start_idle_wall()
+
+	# 4. Play local greeting + animate mouth
+	if _local_greeting_player and _local_greeting_player.stream:
+		_local_greeting_player.play()
+		_is_speaking = true
+		_set_mouth("M2")  # Open mouth ("A" shape for "Salut")
+		# Mouth animation sequence: open → mid → close (simulates speech)
+		var mouth_tween = create_tween()
+		mouth_tween.tween_callback(func(): _set_mouth("M9")).set_delay(0.2)   # A moyen
+		mouth_tween.tween_callback(func(): _set_mouth("M3")).set_delay(0.15)  # teeth "i"
+		mouth_tween.tween_callback(func(): _set_mouth("M11")).set_delay(0.15) # O moyen
+		mouth_tween.tween_callback(func(): _set_mouth("M3")).set_delay(0.15)  # teeth
+		mouth_tween.tween_callback(func(): _set_mouth("M0")).set_delay(0.2)   # close
+		mouth_tween.tween_callback(func():
+			_is_speaking = false
+			_set_mouth(_current_mouth_slot)  # Return to mood face
+		).set_delay(0.3)
+	print("⚡ Entrée instantanée avec greeting local !")
+
 func _teleport_glitch_in() -> void:
-	"""Primary arrival: Tama materializes with a glitch effect.
+	"""Primary arrival: Tama materializes with a glitch effect + Hello animation.
 	The glitch starts at high intensity and fades to 0 as she appears."""
 	if not _anim_tree_module:
 		return
@@ -2342,11 +2569,14 @@ func _teleport_glitch_in() -> void:
 		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
 		_glitch_quad.visible = true
 
-	# Teleport Tama in (instant — idle_wall, no walk animation)
-	_anim_tree_module.teleport_in()
-	# Grace period: don't dodge immediately (user's mouse is probably near the edge)
-	_dodge_cooldown_timer = 3.0
-	print("📺 Teleport glitch IN — Tama materializing (intensity: %.1f → 0)" % GLITCH_TELEPORT_START)
+	# Play Hello entrance animation (walk_in prefers Hello anim if available)
+	_anim_tree_module.walk_in()
+	_started = true
+	_last_anim_command_time = Time.get_unix_time_from_system()  # Protect Hello from suspicion override
+	# Grace period: don't dodge during Hello anim + disarm
+	_dodge_cooldown_timer = 5.0
+	_dodge_armed = false
+	print("📺 Teleport glitch IN — Tama materializing with Hello anim (intensity: %.1f → 0)" % GLITCH_TELEPORT_START)
 
 # ─── User Speaking Acknowledgment ───────────────────
 func _setup_ack_audio() -> void:
@@ -2359,6 +2589,16 @@ func _setup_ack_audio() -> void:
 		push_warning("\u26a0\ufe0f hmm_acknowledge.wav not found")
 	add_child(_ack_audio_player)
 
+func _setup_session_ding() -> void:
+	_session_ding_player = AudioStreamPlayer.new()
+	var audio_file = load("res://session_ding.wav")
+	if audio_file:
+		_session_ding_player.stream = audio_file
+		_session_ding_player.volume_db = -6.0  # Noticeable but not jarring
+	else:
+		push_warning("⚠️ session_ding.wav not found")
+	add_child(_session_ding_player)
+
 func _on_user_speaking_ack() -> void:
 	# Only block the ack SOUND when Tama is speaking (avoid audio clash)
 	# But ALWAYS set the gaze — user must see Tama react even during barge-in
@@ -2367,8 +2607,8 @@ func _on_user_speaking_ack() -> void:
 	# Change eyes to curious/attentive (E0 = wide eyes)
 	_set_expression_slot("eyes", "E0")
 	_ack_eye_timer = 2.5  # Restore eyes after 2.5 seconds
-	# Stage 1: Eyes look toward user via blend shapes
-	_set_eye_look(-0.5, -0.1)  # Look left + slightly up
+	# Stage 1: Eyes look toward user via blend shapes (dynamic webcam position)
+	_look_eyes_at_webcam()
 	# Stage 1b: Subtle head glance toward user (bone-based)
 	set_gaze_subtle(GazeTarget.USER, 5.0, 0.5)
 	_ack_gaze_timer = 2.5  # Return head to reading pose after 2.5s
@@ -2383,6 +2623,14 @@ func set_gaze_subtle(target: GazeTarget, speed: float = 3.0, max_blend: float = 
 		_gaze_target_head = Quaternion.IDENTITY
 		_gaze_target_neck = Quaternion.IDENTITY
 		_gaze_blend_target = 0.0
+	elif target in [GazeTarget.SCREEN_CENTER, GazeTarget.SCREEN_TOP, GazeTarget.SCREEN_BOTTOM, GazeTarget.OTHER_MONITOR]:
+		# Dynamic: compute actual screen pixel, then convert to 3D world point
+		var pt = _get_dynamic_target_point(target)
+		if target == GazeTarget.SCREEN_CENTER and _subject_target.x >= 0:
+			pt = Vector2(float(_subject_target.x), float(_subject_target.y))
+		var target_3d = _screen_to_world(pt.x, pt.y)
+		_gaze_world_target = target_3d
+		_look_at_world_point(target_3d, speed, max_blend)
 	else:
 		var head_pos = _get_head_world_pos()
 		var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
@@ -2516,18 +2764,68 @@ const GAZE_PITCH_OFFSET_DEG: float = -20.0
 
 # Preset targets → 3D world offsets from head (X=right, Y=up, Z=toward camera)
 # These are relative to the head bone position
+# Used ONLY for targets that don't map to a screen point (USER, BOOK, AWAY)
 var GAZE_PRESET_OFFSETS = {
 	GazeTarget.USER: Vector3(0, 1.5, 2.0),            # Up toward user (4th wall — head is down in Idle_wall)
-	GazeTarget.SCREEN_CENTER: Vector3(-1.5, 0, 2.0),   # Left toward screen center
-	GazeTarget.SCREEN_TOP: Vector3(-1.5, 0.8, 2.0),    # Left + up
-	GazeTarget.SCREEN_BOTTOM: Vector3(-1.5, -0.5, 2.0),# Left + down
-	GazeTarget.OTHER_MONITOR: Vector3(3.0, 0, 2.0),    # Far right (second monitor)
 	GazeTarget.BOOK: Vector3(-0.3, -0.8, 0.5),         # Down in front
 	GazeTarget.AWAY: Vector3(2.0, 0.2, -0.5),          # Behind to the right
 }
 
+# ─── Dynamic Subject Gaze Helpers ───────────────────────────
+func _get_dynamic_target_point(target: GazeTarget) -> Vector2:
+	"""Compute the screen pixel for a gaze target based on Tama's actual screen."""
+	var screen_idx = DisplayServer.window_get_current_screen()
+	if _tama_window and is_instance_valid(_tama_window):
+		screen_idx = DisplayServer.window_get_current_screen(_tama_window.get_window_id())
+	var usable = DisplayServer.screen_get_usable_rect(screen_idx)
+	var cx = float(usable.position.x) + float(usable.size.x) / 2.0
+	var cy = float(usable.position.y) + float(usable.size.y) / 2.0
+
+	match target:
+		GazeTarget.SCREEN_CENTER:
+			return Vector2(cx, cy)
+		GazeTarget.SCREEN_TOP:
+			return Vector2(cx, float(usable.position.y) + float(usable.size.y) * 0.25)
+		GazeTarget.SCREEN_BOTTOM:
+			return Vector2(cx, float(usable.position.y) + float(usable.size.y) * 0.75)
+		GazeTarget.OTHER_MONITOR:
+			var screens = DisplayServer.get_screen_count()
+			if screens > 1:
+				var other_idx = (screen_idx + 1) % screens
+				var o_usable = DisplayServer.screen_get_usable_rect(other_idx)
+				return Vector2(float(o_usable.position.x) + float(o_usable.size.x) / 2.0, float(o_usable.position.y) + float(o_usable.size.y) / 2.0)
+			else:
+				# Fake other monitor: look off the edge of the screen
+				var my_x = float(_tama_window.position.x) if _tama_window else cx
+				if my_x > cx:
+					return Vector2(float(usable.position.x) - float(usable.size.x) / 2.0, cy)
+				else:
+					return Vector2(float(usable.position.x) + float(usable.size.x) * 1.5, cy)
+		_:
+			return Vector2(cx, cy)
+
+func _look_eyes_at_screen_point(px: float, py: float) -> void:
+	"""Orient pupils toward the given screen pixel and accentuate lateral movement."""
+	_set_eye_target_from_screen(px, py)
+	_eye_target_h = signf(_eye_target_h) * minf(absf(_eye_target_h) * 1.5, 1.0)
+	_eye_follow_active = true
+
+func _look_eyes_at_screen_center() -> void:
+	"""Look at the dynamic screen center OR the Python-defined subject."""
+	var pt = _get_dynamic_target_point(GazeTarget.SCREEN_CENTER)
+	if _subject_target.x >= 0:
+		pt = Vector2(float(_subject_target.x), float(_subject_target.y))
+	_look_eyes_at_screen_point(pt.x, pt.y)
+
+func _look_eyes_at_webcam() -> void:
+	"""Look toward the webcam (top center of screen)."""
+	var pt = _get_dynamic_target_point(GazeTarget.SCREEN_TOP)
+	_look_eyes_at_screen_point(pt.x, pt.y)
+
 func set_gaze(target: GazeTarget, speed: float = 5.0) -> void:
-	"""Look at a named preset target. NEUTRAL = fade gaze out (pure animation)."""
+	"""Look at a named preset target. NEUTRAL = fade gaze out (pure animation).
+	Screen-based targets (SCREEN_CENTER, TOP, BOTTOM, OTHER_MONITOR) are computed
+	dynamically from actual screen resolution — no hardcoded offsets."""
 	if not _gaze_active:
 		return
 	_gaze_lerp_speed = speed
@@ -2535,7 +2833,17 @@ func set_gaze(target: GazeTarget, speed: float = 5.0) -> void:
 		_gaze_target_head = Quaternion.IDENTITY
 		_gaze_target_neck = Quaternion.IDENTITY
 		_gaze_blend_target = 0.0
+	elif target in [GazeTarget.SCREEN_CENTER, GazeTarget.SCREEN_TOP, GazeTarget.SCREEN_BOTTOM, GazeTarget.OTHER_MONITOR]:
+		# Dynamic: compute actual screen pixel, then convert to 3D world point
+		var pt = _get_dynamic_target_point(target)
+		# Override with Python subject when looking at screen center
+		if target == GazeTarget.SCREEN_CENTER and _subject_target.x >= 0:
+			pt = Vector2(float(_subject_target.x), float(_subject_target.y))
+		var target_3d = _screen_to_world(pt.x, pt.y)
+		_gaze_world_target = target_3d
+		_look_at_world_point(target_3d, speed)
 	else:
+		# Offset-based targets (USER, BOOK, AWAY)
 		var head_pos = _get_head_world_pos()
 		var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
 		var target_point = head_pos + offset
