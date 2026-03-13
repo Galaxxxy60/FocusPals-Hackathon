@@ -19,6 +19,8 @@ var session_elapsed_secs: int = 0
 var session_duration_secs: int = 3000  # 50 min default
 var _break_reminder_was_active: bool = false
 var _was_on_break: bool = false
+var _break_popup_container: Control = null  # Break decision popup (in _ui_window)
+var _break_popup_visible: bool = false
 
 # ─── Tama Scale (camera zoom + window resize) ─────────
 const _BASE_WIN_SIZE := Vector2i(400, 500)
@@ -1977,12 +1979,17 @@ func _handle_message(raw: String) -> void:
 	session_elapsed_secs = data.get("session_elapsed_secs", 0)
 	session_duration_secs = data.get("session_duration_secs", 3000)
 
-	# ── Session ding: play chime when break reminder first activates ──
+	# ── Session ding + break popup when timer hits zero ──
 	var break_reminder: bool = data.get("break_reminder", false)
 	if break_reminder and not _break_reminder_was_active:
 		if _session_ding_player and _session_ding_player.stream:
 			_session_ding_player.play()
 			print("🔔 Session ding!")
+		# Show break decision popup
+		_show_break_popup()
+	elif not break_reminder and _break_reminder_was_active:
+		# Break reminder cleared (user accepted/refused via tray or popup)
+		_hide_break_popup()
 	_break_reminder_was_active = break_reminder
 
 	# ── Break overlay: show/hide based on is_on_break state ──
@@ -3213,3 +3220,163 @@ func _show_status_indicator(text: String, color: Color) -> void:
 func _hide_status_indicator() -> void:
 	if _tama_ui:
 		_tama_ui.hide_status()
+
+# ─── Break Decision Popup ─────────────────────────────────────
+# Shown on _ui_window when break_reminder activates (timer hits zero).
+# Two buttons: Accept break / Continue working.
+
+func _show_break_popup() -> void:
+	if _break_popup_visible:
+		return
+	_break_popup_visible = true
+
+	# Create popup container if needed
+	if _break_popup_container and is_instance_valid(_break_popup_container):
+		_break_popup_container.visible = true
+		_sync_and_show_ui()
+		_safe_restore_passthrough()
+		print("☕ Break popup shown (reused)")
+		return
+
+	var ui_parent: Node = _ui_window if _ui_window else self
+
+	# ── Container (centered panel) ──
+	var canvas := CanvasLayer.new()
+	canvas.layer = 200  # Above everything
+	ui_parent.add_child(canvas)
+
+	_break_popup_container = Control.new()
+	_break_popup_container.name = "BreakPopup"
+	_break_popup_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	canvas.add_child(_break_popup_container)
+
+	# ── Semi-transparent backdrop ──
+	var backdrop := ColorRect.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.color = Color(0.0, 0.0, 0.0, 0.3)
+	_break_popup_container.add_child(backdrop)
+
+	# ── Centered panel ──
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.custom_minimum_size = Vector2(280, 150)
+	panel.position = Vector2(-140, -75)  # Center offset
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.08, 0.1, 0.16, 0.92)
+	panel_style.corner_radius_top_left = 12
+	panel_style.corner_radius_top_right = 12
+	panel_style.corner_radius_bottom_left = 12
+	panel_style.corner_radius_bottom_right = 12
+	panel_style.border_color = Color(0.3, 0.6, 1.0, 0.3)
+	panel_style.border_width_top = 1
+	panel_style.border_width_bottom = 1
+	panel_style.border_width_left = 1
+	panel_style.border_width_right = 1
+	panel_style.content_margin_top = 20
+	panel_style.content_margin_bottom = 20
+	panel_style.content_margin_left = 20
+	panel_style.content_margin_right = 20
+	panel.add_theme_stylebox_override("panel", panel_style)
+	_break_popup_container.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 14)
+	panel.add_child(vbox)
+
+	# ── Title ──
+	var title := Label.new()
+	title.text = "⏰ Temps écoulé !"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))
+	vbox.add_child(title)
+
+	# ── Subtitle ──
+	var subtitle := Label.new()
+	subtitle.text = "Tu veux faire une pause ?"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 12)
+	subtitle.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
+	vbox.add_child(subtitle)
+
+	# ── Buttons row ──
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(btn_row)
+
+	# Accept button
+	var btn_accept := Button.new()
+	btn_accept.text = "☕ Pause"
+	btn_accept.custom_minimum_size = Vector2(110, 36)
+	var accept_style := StyleBoxFlat.new()
+	accept_style.bg_color = Color(0.15, 0.45, 0.3, 0.9)
+	accept_style.corner_radius_top_left = 8
+	accept_style.corner_radius_top_right = 8
+	accept_style.corner_radius_bottom_left = 8
+	accept_style.corner_radius_bottom_right = 8
+	btn_accept.add_theme_stylebox_override("normal", accept_style)
+	var accept_hover := StyleBoxFlat.new()
+	accept_hover.bg_color = Color(0.2, 0.55, 0.35, 0.95)
+	accept_hover.corner_radius_top_left = 8
+	accept_hover.corner_radius_top_right = 8
+	accept_hover.corner_radius_bottom_left = 8
+	accept_hover.corner_radius_bottom_right = 8
+	btn_accept.add_theme_stylebox_override("hover", accept_hover)
+	btn_accept.add_theme_font_size_override("font_size", 13)
+	btn_accept.add_theme_color_override("font_color", Color(0.85, 1.0, 0.9))
+	btn_accept.pressed.connect(_on_break_accept)
+	btn_row.add_child(btn_accept)
+
+	# Refuse button
+	var btn_refuse := Button.new()
+	btn_refuse.text = "💪 Continuer"
+	btn_refuse.custom_minimum_size = Vector2(110, 36)
+	var refuse_style := StyleBoxFlat.new()
+	refuse_style.bg_color = Color(0.3, 0.2, 0.15, 0.9)
+	refuse_style.corner_radius_top_left = 8
+	refuse_style.corner_radius_top_right = 8
+	refuse_style.corner_radius_bottom_left = 8
+	refuse_style.corner_radius_bottom_right = 8
+	btn_refuse.add_theme_stylebox_override("normal", refuse_style)
+	var refuse_hover := StyleBoxFlat.new()
+	refuse_hover.bg_color = Color(0.4, 0.28, 0.2, 0.95)
+	refuse_hover.corner_radius_top_left = 8
+	refuse_hover.corner_radius_top_right = 8
+	refuse_hover.corner_radius_bottom_left = 8
+	refuse_hover.corner_radius_bottom_right = 8
+	btn_refuse.add_theme_stylebox_override("hover", refuse_hover)
+	btn_refuse.add_theme_font_size_override("font_size", 13)
+	btn_refuse.add_theme_color_override("font_color", Color(1.0, 0.9, 0.8))
+	btn_refuse.pressed.connect(_on_break_refuse)
+	btn_row.add_child(btn_refuse)
+
+	# Show UI window
+	_sync_and_show_ui()
+	_safe_restore_passthrough()
+	print("☕ Break popup created and shown")
+
+
+func _hide_break_popup() -> void:
+	if not _break_popup_visible:
+		return
+	_break_popup_visible = false
+	if _break_popup_container and is_instance_valid(_break_popup_container):
+		_break_popup_container.visible = false
+	_safe_restore_passthrough()
+	print("☕ Break popup hidden")
+
+
+func _on_break_accept() -> void:
+	print("☕ Break accepted!")
+	_hide_break_popup()
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "ACCEPT_BREAK"}))
+
+
+func _on_break_refuse() -> void:
+	print("💪 Break refused — keep working!")
+	_hide_break_popup()
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "REFUSE_BREAK"}))

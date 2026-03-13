@@ -423,6 +423,12 @@ async def ws_handler(websocket):
                             state["_confidence"] = val
                         _save_tweaks()
                         print(f"🔧 TWEAK {key} = {val}")
+                elif cmd == "ACCEPT_BREAK":
+                    from ui import accept_break_from_tray
+                    accept_break_from_tray(None, None)
+                elif cmd == "REFUSE_BREAK":
+                    from ui import refuse_break_from_tray
+                    refuse_break_from_tray(None, None)
                 elif cmd == "FORCE_RECONNECT":
                     reason = data.get("reason", "manual")
                     state["_force_reconnect"] = True
