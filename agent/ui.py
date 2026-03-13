@@ -192,6 +192,12 @@ def setup_tray():
     if saved_lang in ("en", "fr", "ja", "zh"):
         state["language"] = saved_lang
         print(f"🌐 Langue restaurée depuis les préférences : {saved_lang.upper()}")
+
+    # Restore saved session duration
+    saved_duration = prefs.get("session_duration", 0)
+    if isinstance(saved_duration, (int, float)) and 5 <= saved_duration <= 180:
+        state["session_duration_minutes"] = int(saved_duration)
+        print(f"⏱️ Durée de session restaurée : {state['session_duration_minutes']} min")
     
     image = create_tray_image(TamaState.CALM)
     menu = (

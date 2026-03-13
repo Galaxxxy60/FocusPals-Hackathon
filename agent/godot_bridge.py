@@ -379,7 +379,10 @@ async def ws_handler(websocket):
                 elif cmd == "SET_SESSION_DURATION":
                     duration = int(data.get("duration", 50))
                     state["session_duration_minutes"] = max(5, min(180, duration))
-                    print(f"⏱️ Durée de session réglée sur : {state['session_duration_minutes']} min")
+                    # Persist to user_prefs.json so it survives restarts
+                    from audio import _save_prefs
+                    _save_prefs({"session_duration": state["session_duration_minutes"]})
+                    print(f"⏱️ Durée de session réglée sur : {state['session_duration_minutes']} min (sauvegardée)")
                 elif cmd == "SET_SCREEN_SHARE":
                     enabled = bool(data.get("enabled", True))
                     state["screen_share_allowed"] = enabled
