@@ -375,7 +375,8 @@ func _setup_window_pool() -> void:
 
 func _setup_ui_window() -> void:
 	"""Create a dedicated window for all UI menus (radial, settings, quit).
-	Always visible but parked off-screen when inactive (avoids taskbar icon flash)."""
+	Always visible but parked off-screen when no UI is open.
+	Moving position is free (no DWM lag). Visible toggle only at entrance for z-order."""
 	_ui_window = Window.new()
 	_ui_window.title = "TamaUI"
 	_ui_window.size = _BASE_WIN_SIZE
@@ -390,7 +391,7 @@ func _setup_ui_window() -> void:
 		_unhandled_input(event)
 	)
 	add_child(_ui_window)
-	# Park off-screen (always visible to avoid taskbar icon flash)
+	# Park off-screen (window stays visible to avoid DWM recreation on show)
 	_ui_window.position = Vector2i(-5000, -5000)
 	print("🧱 UI Window created (parked off-screen)")
 
@@ -455,7 +456,7 @@ func _setup_tama_window() -> void:
 	# Main window stays alive for script processing but is invisible
 	DisplayServer.window_set_size(Vector2i(1, 1))
 	DisplayServer.window_set_position(Vector2i(-100, -100))
-	print("🪟 Tama window created (always visible) — main window hidden")
+	print("🪟 Tama window created — main window hidden")
 
 func _sync_tama_camera() -> void:
 	"""Sync tama camera with main camera settings. Called deferred after _setup_gaze."""
@@ -661,7 +662,7 @@ func _on_tree_off_wall_done() -> void:
 		_anim_tree_module.return_to_wall()
 
 func _setup_radial_menu() -> void:
-	# All UI menus are children of _ui_window (not main window)
+	# All UI menus are children of _ui_window
 	var ui_parent: Node = _ui_window if _ui_window else self
 	radial_menu = CanvasLayer.new()
 	radial_menu.set_script(RadialMenuScript)
@@ -911,7 +912,6 @@ var _quit_layer: CanvasLayer = null
 func _show_quit_confirmation() -> void:
 	if _quit_layer:
 		return  # Already visible
-	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, false)
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SHOW_QUIT"}))
 
@@ -1061,8 +1061,8 @@ func _on_mic_toggled(enabled: bool) -> void:
 		ws.send_text(JSON.stringify({"command": "SET_MIC_ALLOWED", "enabled": enabled}))
 
 func _safe_restore_passthrough() -> void:
-	"""Smart UI visibility: show _ui_window when any UI is open, hide when all closed.
-	Also manages Tama's always_on_top: dropped while UI is open so UI stays above."""
+	"""Park _ui_window off-screen when all UI is closed. Move it on-screen when active.
+	Position changes are free (no DWM lag, unlike visible toggle)."""
 	var is_ui_active := false
 	if radial_menu and radial_menu.is_open: is_ui_active = true
 	if settings_panel and settings_panel.is_open: is_ui_active = true
@@ -1075,20 +1075,14 @@ func _safe_restore_passthrough() -> void:
 	else:
 		if _ui_window and _ui_window.position.x > -1000:
 			_ui_window.position = Vector2i(-5000, -5000)  # Park off-screen
-		# Restore Tama to TOPMOST when all UI is closed
-		if _tama_window and is_instance_valid(_tama_window):
-			_tama_window.always_on_top = true
 
-	# Main window (Tama 3D) always lets clicks through
+	# Main window always lets clicks through
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 
 func _sync_and_show_ui() -> void:
-	"""Position the UI window at home (bottom-right) and raise it above Tama.
-	UI stays fixed — it does NOT follow Tama when she dodges.
-	Z-order strategy: temporarily drop Tama from TOPMOST while UI is active.
-	Since UI window stays TOPMOST, it's naturally above Tama.
-	Tama's always_on_top is restored by _safe_restore_passthrough when all UI closes.
-	No DWM surface recreation, no grab_focus, no visible toggle = smooth."""
+	"""Move UI window to correct position (bottom-right, matching Tama).
+	No visible toggle (avoids DWM lag). Just position change = instant.
+	Z-order was fixed once at entrance (see _trigger_entrance)."""
 	if _ui_window:
 		var usable := DisplayServer.screen_get_usable_rect()
 		var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
@@ -1096,13 +1090,6 @@ func _sync_and_show_ui() -> void:
 		var y := usable.position.y + usable.size.y - win_size.y
 		_ui_window.size = win_size
 		_ui_window.position = Vector2i(x, y)
-		if not _ui_window.visible:
-			_ui_window.visible = true
-		# Drop Tama from TOPMOST so UI (still TOPMOST) is naturally above.
-		# This is a single cheap SetWindowPos call — no lag, no flicker.
-		# Tama stays above regular windows, just below TOPMOST ones.
-		if _tama_window and is_instance_valid(_tama_window):
-			_tama_window.always_on_top = false
 
 func _position_window() -> void:
 	_reposition_bottom_right()
@@ -2488,6 +2475,12 @@ func _trigger_entrance() -> void:
 	# 1. Force window visible + position
 	if _tama_window:
 		_tama_window.visible = true
+		_tama_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)  # Always click-through (Tama dodges)
+		# Fix z-order: re-show _ui_window so it stays above _tama_window
+		# This only happens once per entrance, not on every radial open
+		if _ui_window:
+			_ui_window.visible = false
+			_ui_window.visible = true
 		if not _dodge_active:
 			_reposition_bottom_right()
 	# 2. Force 3D model visible (safety net)
@@ -2530,6 +2523,11 @@ func _instant_entrance_with_greeting() -> void:
 	# 1. Force window visible + position
 	if _tama_window:
 		_tama_window.visible = true
+		_tama_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)  # Always click-through (Tama dodges)
+		# Fix z-order: re-show _ui_window so it stays above _tama_window
+		if _ui_window:
+			_ui_window.visible = false
+			_ui_window.visible = true
 		if not _dodge_active:
 			_reposition_bottom_right()
 	# 2. Force 3D model visible
