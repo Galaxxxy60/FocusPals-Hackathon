@@ -1061,7 +1061,8 @@ func _on_mic_toggled(enabled: bool) -> void:
 		ws.send_text(JSON.stringify({"command": "SET_MIC_ALLOWED", "enabled": enabled}))
 
 func _safe_restore_passthrough() -> void:
-	"""Smart UI visibility: show _ui_window when any UI is open, hide when all closed."""
+	"""Smart UI visibility: show _ui_window when any UI is open, hide when all closed.
+	Also manages Tama's always_on_top: dropped while UI is open so UI stays above."""
 	var is_ui_active := false
 	if radial_menu and radial_menu.is_open: is_ui_active = true
 	if settings_panel and settings_panel.is_open: is_ui_active = true
@@ -1074,6 +1075,9 @@ func _safe_restore_passthrough() -> void:
 	else:
 		if _ui_window and _ui_window.position.x > -1000:
 			_ui_window.position = Vector2i(-5000, -5000)  # Park off-screen
+		# Restore Tama to TOPMOST when all UI is closed
+		if _tama_window and is_instance_valid(_tama_window):
+			_tama_window.always_on_top = true
 
 	# Main window (Tama 3D) always lets clicks through
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
@@ -1081,10 +1085,10 @@ func _safe_restore_passthrough() -> void:
 func _sync_and_show_ui() -> void:
 	"""Position the UI window at home (bottom-right) and raise it above Tama.
 	UI stays fixed — it does NOT follow Tama when she dodges.
-	Z-order strategy: toggle always_on_top (false→true) which re-inserts
-	the window at the TOP of the TOPMOST z-band via SetWindowPos(HWND_TOPMOST).
-	This is a pure z-order change — no DWM surface recreation (no lag),
-	no grab_focus (no taskbar icon)."""
+	Z-order strategy: temporarily drop Tama from TOPMOST while UI is active.
+	Since UI window stays TOPMOST, it's naturally above Tama.
+	Tama's always_on_top is restored by _safe_restore_passthrough when all UI closes.
+	No DWM surface recreation, no grab_focus, no visible toggle = smooth."""
 	if _ui_window:
 		var usable := DisplayServer.screen_get_usable_rect()
 		var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
@@ -1094,11 +1098,11 @@ func _sync_and_show_ui() -> void:
 		_ui_window.position = Vector2i(x, y)
 		if not _ui_window.visible:
 			_ui_window.visible = true
-		# Raise UI above Tama by re-entering the TOPMOST z-band.
-		# always_on_top false→true = SetWindowPos(HWND_TOPMOST) = top of TOPMOST group.
-		# Much cheaper than visible toggle (no DWM surface recreation).
-		_ui_window.always_on_top = false
-		_ui_window.always_on_top = true
+		# Drop Tama from TOPMOST so UI (still TOPMOST) is naturally above.
+		# This is a single cheap SetWindowPos call — no lag, no flicker.
+		# Tama stays above regular windows, just below TOPMOST ones.
+		if _tama_window and is_instance_valid(_tama_window):
+			_tama_window.always_on_top = false
 
 func _position_window() -> void:
 	_reposition_bottom_right()
