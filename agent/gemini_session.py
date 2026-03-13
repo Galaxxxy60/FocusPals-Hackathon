@@ -872,7 +872,7 @@ async def run_gemini_loop(pya):
                 # 🔊 Offline voice: "I'm back!" after visible reconnection
                 if _consecutive_failures > 5:
                     try:
-                        await play_offline_phrase("back_online")
+                        await play_offline_phrase("back_online", broadcast_visemes=False)
                     except Exception:
                         pass
 
@@ -2210,7 +2210,7 @@ async def run_gemini_loop(pya):
                 # 🔊 Offline voice: tell user we're reconnecting (only on first visible failure)
                 if _consecutive_failures <= 6:
                     try:
-                        await play_offline_phrase("reconnecting")
+                        await play_offline_phrase("reconnecting", broadcast_visemes=False)
                     except Exception:
                         pass
             # ── Spare Tire: keep watching during reconnection ──
@@ -2237,50 +2237,57 @@ async def run_gemini_loop(pya):
                             new_s = max(0, min(10, state["current_suspicion_index"] + delta))
                             state["current_suspicion_index"] = new_s
                             print(f"  🛞 Spare tire: S:{new_s:.0f} A:{ali} Cat:{cat} — {lite_result.get('reason', '')}")
-                            # 🔊 Offline voice: focus reminders based on suspicion level
-                            if new_s >= 7 and not state.get("_spare_tire_spoke"):
-                                state["_spare_tire_spoke"] = True
-                                try:
-                                    await play_offline_phrase("focus_warning")
-                                except Exception:
-                                    pass
-                            elif new_s >= 4 and not state.get("_spare_tire_spoke"):
-                                state["_spare_tire_spoke"] = True
-                                try:
-                                    await play_offline_phrase("focus_reminder")
-                                except Exception:
-                                    pass
-                            elif new_s < 3:
-                                state["_spare_tire_spoke"] = False  # Reset when user gets back on track
-                            # 🔊 Offline voice: distraction spotted
-                            if cat in ("PURE_DISTRACTION", "PROCRASTINATION") and not state.get("_spare_tire_distraction_spoke"):
-                                state["_spare_tire_distraction_spoke"] = True
-                                try:
-                                    await play_offline_phrase("distraction_spotted")
-                                except Exception:
-                                    pass
-                            elif ali > 0.75:
-                                state["_spare_tire_distraction_spoke"] = False  # Reset when aligned
+                            # 🔊 Offline voice — ONE phrase per cycle, 12s cooldown
+                            # Priority: strike_warning > distraction_spotted > focus_warning > focus_reminder
+                            _offline_cooldown = 12.0  # seconds between any offline phrase
+                            _last_offline = state.get("_offline_voice_last_time", 0)
+                            _can_speak = (time.time() - _last_offline) > _offline_cooldown
+                            # Reset spoke flags when user returns to work
+                            if new_s < 3:
+                                state["_spare_tire_spoke"] = False
+                                state["_spare_tire_distraction_spoke"] = False
                             # Auto-strike if critical suspicion — even without Gemini
                             if new_s >= 9 and not state.get("_strike_in_progress"):
-                                # 🔊 Offline voice: strike warning before closing
-                                try:
-                                    await play_offline_phrase("strike_warning")
-                                except Exception:
-                                    pass
+                                # 🔊 Strike warning (always plays — overrides cooldown for urgency)
+                                if not state.get("_spare_tire_strike_spoke"):
+                                    state["_spare_tire_strike_spoke"] = True
+                                    try:
+                                        await play_offline_phrase("strike_warning", broadcast_visemes=False)
+                                        state["_offline_voice_last_time"] = time.time()
+                                    except Exception:
+                                        pass
                                 result = await asyncio.to_thread(prepare_close_tab, "Procrastination detected during API outage", None)
                                 if result.get("status") == "success":
                                     print(f"  🛞⚡ SPARE TIRE STRIKE! Closing tab without Gemini")
                                     state["_strike_in_progress"] = True
-                                    # Send strike to Godot (coordinates are in _pending_strike, not return value)
                                     pending = state.get("_pending_strike", {})
                                     strike_msg = json.dumps({"command": "STRIKE_TARGET", "x": pending.get("target_x", 960), "y": pending.get("target_y", 540)})
                                     broadcast_to_godot(strike_msg)
-                                    # 🛡️ FIX : Déclenchement forcé de l'animation pour ne pas bloquer Python
                                     send_anim_to_godot("Strike", False)
-                                    # 🔊 Offline voice: distraction closed after strike
+                                    # No distraction_closed — Gemini will speak when it reconnects
+                            elif _can_speak:
+                                # Distraction spotted (mid priority)
+                                if cat in ("PURE_DISTRACTION", "PROCRASTINATION", "BANNIE") and not state.get("_spare_tire_distraction_spoke"):
+                                    state["_spare_tire_distraction_spoke"] = True
+                                    state["_offline_voice_last_time"] = time.time()
                                     try:
-                                        await play_offline_phrase("distraction_closed")
+                                        await play_offline_phrase("distraction_spotted", broadcast_visemes=False)
+                                    except Exception:
+                                        pass
+                                # Focus warning (low-mid priority, only if didn't already speak)
+                                elif new_s >= 7 and not state.get("_spare_tire_spoke"):
+                                    state["_spare_tire_spoke"] = True
+                                    state["_offline_voice_last_time"] = time.time()
+                                    try:
+                                        await play_offline_phrase("focus_warning", broadcast_visemes=False)
+                                    except Exception:
+                                        pass
+                                # Focus reminder (lowest priority)
+                                elif new_s >= 4 and not state.get("_spare_tire_spoke"):
+                                    state["_spare_tire_spoke"] = True
+                                    state["_offline_voice_last_time"] = time.time()
+                                    try:
+                                        await play_offline_phrase("focus_reminder", broadcast_visemes=False)
                                     except Exception:
                                         pass
                     except asyncio.TimeoutError:
