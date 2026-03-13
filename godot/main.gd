@@ -1079,11 +1079,12 @@ func _safe_restore_passthrough() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 
 func _sync_and_show_ui() -> void:
-	"""Position the UI window at home (bottom-right) and show it.
+	"""Position the UI window at home (bottom-right) and raise it above Tama.
 	UI stays fixed — it does NOT follow Tama when she dodges.
-	The visible=false→true toggle is needed to force DWM z-order above Tama
-	(both are TOPMOST, move_to_foreground alone can't reorder them).
-	We do NOT call grab_focus() — that was causing the freeze and taskbar icon."""
+	Z-order strategy: toggle always_on_top (false→true) which re-inserts
+	the window at the TOP of the TOPMOST z-band via SetWindowPos(HWND_TOPMOST).
+	This is a pure z-order change — no DWM surface recreation (no lag),
+	no grab_focus (no taskbar icon)."""
 	if _ui_window:
 		var usable := DisplayServer.screen_get_usable_rect()
 		var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
@@ -1091,13 +1092,13 @@ func _sync_and_show_ui() -> void:
 		var y := usable.position.y + usable.size.y - win_size.y
 		_ui_window.size = win_size
 		_ui_window.position = Vector2i(x, y)
-		# Force UI window above Tama's rendering window in desktop z-order.
-		# The visible false→true forces Windows DWM to recreate the window surface
-		# at the top of the TOPMOST z-order group (both windows are always_on_top).
-		# This is cheap on a transparent borderless window.
-		# NO grab_focus() — that steals focus, creates a taskbar icon, and causes lag.
-		_ui_window.visible = false
-		_ui_window.visible = true
+		if not _ui_window.visible:
+			_ui_window.visible = true
+		# Raise UI above Tama by re-entering the TOPMOST z-band.
+		# always_on_top false→true = SetWindowPos(HWND_TOPMOST) = top of TOPMOST group.
+		# Much cheaper than visible toggle (no DWM surface recreation).
+		_ui_window.always_on_top = false
+		_ui_window.always_on_top = true
 
 func _position_window() -> void:
 	_reposition_bottom_right()
