@@ -9,6 +9,7 @@ import io
 import json
 import math
 import os
+import re
 import struct
 import sys
 import time
@@ -35,6 +36,7 @@ from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot
 from mood_engine import get_mood_context, track_infraction, track_compliance
 from flash_lite import pre_classify, clear_classification_history, generate_session_summary
 from app_control import execute_action as jarvis_execute
+from offline_voices import play_offline_phrase
 
 
 # ─── Screen Capture & Window Cache ──────────────────────────
@@ -867,6 +869,13 @@ async def run_gemini_loop(pya):
                     broadcast_to_godot(json.dumps({"command": "TAMA_MOOD", "mood": "calm", "intensity": 0.3}))
                     print("  🎭 Mood reset → calm (stealth reconnect)")
 
+                # 🔊 Offline voice: "I'm back!" after visible reconnection
+                if _consecutive_failures > 5:
+                    try:
+                        await play_offline_phrase("back_online")
+                    except Exception:
+                        pass
+
                 # (Circuit breaker no longer needed — images are never sent to Live API)
 
                 # ── Conversation greeting: tell Tama to speak first ──
@@ -1564,12 +1573,16 @@ async def run_gemini_loop(pya):
                                 if server and hasattr(server, 'output_transcription') and server.output_transcription:
                                     txt = getattr(server.output_transcription, 'text', '')
                                     if txt and txt.strip():
-                                        print(f"  💬 Tama said: \"{txt.strip()}\"")
-                                        # Rolling conversation buffer for crash recovery
-                                        conv_buf = state.setdefault("_conversation_buffer", [])
-                                        conv_buf.append(f"Tama: {txt.strip()}")
-                                        if len(conv_buf) > 10:
-                                            conv_buf.pop(0)
+                                        # Filter out Gemini control tokens (<ctrl46> etc.)
+                                        # These are internal model artifacts, not real speech
+                                        clean_txt = re.sub(r'<ctrl\d+>', '', txt).strip()
+                                        if clean_txt:
+                                            print(f"  💬 Tama said: \"{clean_txt}\"")
+                                            # Rolling conversation buffer for crash recovery
+                                            conv_buf = state.setdefault("_conversation_buffer", [])
+                                            conv_buf.append(f"Tama: {clean_txt}")
+                                            if len(conv_buf) > 10:
+                                                conv_buf.pop(0)
 
                                 if server and server.model_turn:
                                     for part in server.model_turn.parts:
@@ -2194,6 +2207,12 @@ async def run_gemini_loop(pya):
                         await ws_client.send(_conn_msg)
                     except Exception:
                         pass
+                # 🔊 Offline voice: tell user we're reconnecting (only on first visible failure)
+                if _consecutive_failures <= 6:
+                    try:
+                        await play_offline_phrase("reconnecting")
+                    except Exception:
+                        pass
             # ── Spare Tire: keep watching during reconnection ──
             # Flash-Lite is HTTP (not WebSocket) — works while Live API is dead
             # If user is procrastinating during a crash, we still catch them
@@ -2218,8 +2237,37 @@ async def run_gemini_loop(pya):
                             new_s = max(0, min(10, state["current_suspicion_index"] + delta))
                             state["current_suspicion_index"] = new_s
                             print(f"  🛞 Spare tire: S:{new_s:.0f} A:{ali} Cat:{cat} — {lite_result.get('reason', '')}")
+                            # 🔊 Offline voice: focus reminders based on suspicion level
+                            if new_s >= 7 and not state.get("_spare_tire_spoke"):
+                                state["_spare_tire_spoke"] = True
+                                try:
+                                    await play_offline_phrase("focus_warning")
+                                except Exception:
+                                    pass
+                            elif new_s >= 4 and not state.get("_spare_tire_spoke"):
+                                state["_spare_tire_spoke"] = True
+                                try:
+                                    await play_offline_phrase("focus_reminder")
+                                except Exception:
+                                    pass
+                            elif new_s < 3:
+                                state["_spare_tire_spoke"] = False  # Reset when user gets back on track
+                            # 🔊 Offline voice: distraction spotted
+                            if cat in ("PURE_DISTRACTION", "PROCRASTINATION") and not state.get("_spare_tire_distraction_spoke"):
+                                state["_spare_tire_distraction_spoke"] = True
+                                try:
+                                    await play_offline_phrase("distraction_spotted")
+                                except Exception:
+                                    pass
+                            elif ali > 0.75:
+                                state["_spare_tire_distraction_spoke"] = False  # Reset when aligned
                             # Auto-strike if critical suspicion — even without Gemini
                             if new_s >= 9 and not state.get("_strike_in_progress"):
+                                # 🔊 Offline voice: strike warning before closing
+                                try:
+                                    await play_offline_phrase("strike_warning")
+                                except Exception:
+                                    pass
                                 result = await asyncio.to_thread(prepare_close_tab, "Procrastination detected during API outage", None)
                                 if result.get("status") == "success":
                                     print(f"  🛞⚡ SPARE TIRE STRIKE! Closing tab without Gemini")
@@ -2230,6 +2278,11 @@ async def run_gemini_loop(pya):
                                     broadcast_to_godot(strike_msg)
                                     # 🛡️ FIX : Déclenchement forcé de l'animation pour ne pas bloquer Python
                                     send_anim_to_godot("Strike", False)
+                                    # 🔊 Offline voice: distraction closed after strike
+                                    try:
+                                        await play_offline_phrase("distraction_closed")
+                                    except Exception:
+                                        pass
                     except asyncio.TimeoutError:
                         print("  🛞⚠️ Spare tire Flash-Lite timeout (>8s)")
                     except Exception as e:
