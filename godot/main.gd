@@ -1041,7 +1041,8 @@ func _on_volume_changed(volume: float) -> void:
 		ws.send_text(JSON.stringify({"command": "SET_TAMA_VOLUME", "volume": volume}))
 
 func _on_session_duration_changed(duration: int) -> void:
-	print("⏱️ Session duration changed: " + str(duration) + " min")
+	session_duration_secs = duration * 60  # Sync locally so timer shows correct value immediately
+	print("⏱️ Session duration changed: " + str(duration) + " min (" + str(session_duration_secs) + "s)")
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_SESSION_DURATION", "duration": duration}))
 
@@ -1615,6 +1616,7 @@ func _handle_message(raw: String) -> void:
 		var lang = data.get("language", "en")
 		var tama_vol = data.get("tama_volume", 1.0)
 		var session_duration = int(data.get("session_duration", 50))
+		session_duration_secs = session_duration * 60  # Sync from Python's authoritative value
 		var api_usage = data.get("api_usage", {})
 		var screen_share = data.get("screen_share_allowed", true)
 		var mic_on = data.get("mic_allowed", true)
