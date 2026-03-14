@@ -3156,7 +3156,10 @@ func _show_ghost_silhouette() -> void:
 			_body_mesh.set_blend_shape_value(_bs_hide_right_eye, 0.0)  # Right iris: visible
 	if _mouth_material and MOUTH_OFFSETS.has("M4"):
 		_mouth_material.uv1_offset = MOUTH_OFFSETS["M4"]  # Smile
-	print("😉 Clin d'œil (E9 texture only, no blend shapes)")
+	# Correct gaze: Hello anim rotates Tama, so push iris toward camera
+	if _body_mesh and _bs_look_right >= 0:
+		_body_mesh.set_blend_shape_value(_bs_look_right, 0.4)  # Adjust value as needed
+	print("😉 Clin d'œil (E9 + hide left iris + look right)")
 
 
 func _materialize_from_ghost() -> void:
