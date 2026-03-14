@@ -3745,14 +3745,14 @@ const GAZE_MAX_PITCH: float = 45.0  # Up/down (increased for more range)
 # Constant pitch offset (degrees) to compensate for camera–head height mismatch.
 # Positive = tilts gaze upward (counters "looking down" bias).
 # Adjust visually: if head looks too high, make this MORE NEGATIVE; too low, MORE POSITIVE.
-const GAZE_PITCH_OFFSET_DEG: float = -20.0
+const GAZE_PITCH_OFFSET_DEG: float = -8.0
 
 # Preset targets → 3D world offsets from head (X=right, Y=up, Z=toward camera)
 # These are relative to the head bone position
 # Used ONLY for targets that don't map to a screen point (USER, BOOK, AWAY)
 # BOOK is dynamic when _book_bone_idx is found (uses Jnt_L_thumb world pos)
 var GAZE_PRESET_OFFSETS = {
-	GazeTarget.USER: Vector3(0, 1.5, 2.0),            # Up toward user (4th wall — head is down in Idle_wall)
+	GazeTarget.USER: Vector3(0, 0.3, 2.0),            # Slightly up toward user (webcam is above screen)
 	GazeTarget.BOOK: Vector3(-0.3, -0.8, 0.5),         # Down in front (fallback if bone not found)
 	GazeTarget.AWAY: Vector3(2.0, 0.2, -0.5),          # Behind to the right
 }
