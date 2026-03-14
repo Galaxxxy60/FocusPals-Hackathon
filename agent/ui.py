@@ -201,7 +201,7 @@ def setup_tray():
     
     image = create_tray_image(TamaState.CALM)
     menu = (
-        item('Démarrer Session (Deep Work) ⚡', start_session_from_tray),
+        item('Appeler Tama 🛸', start_session_from_tray),
         item('☕ Accepter la pause', accept_break_from_tray),
         item('💪 Refuser la pause', refuse_break_from_tray),
         pystray.Menu.SEPARATOR,

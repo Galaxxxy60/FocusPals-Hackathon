@@ -221,11 +221,11 @@ func _build_strings() -> void:
 			"ja": "Hey Tama",
 			"zh": "Hey Tama",
 		},
-		"radial_session": {
-			"fr": "Session",
-			"en": "Work Session",
-			"ja": "作業セッション",
-			"zh": "工作会话",
+		"radial_call_tama": {
+			"fr": "Appeler Tama",
+			"en": "Call Tama",
+			"ja": "Tamaを呼ぶ",
+			"zh": "呼叫Tama",
 		},
 		"radial_quit": {
 			"fr": "Quitter",

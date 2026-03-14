@@ -376,9 +376,9 @@ func _setup_window_pool() -> void:
 	"""Pre-create all floating windows at startup."""
 	_setup_tama_window()
 	_setup_ui_window()
-	_hand_window = _init_pooled_emoji_window("TamaHand_Strike")
+	_setup_drone_window()  # Widget Sentinelle (remplace la Main Magique)
 	_jarvis_hand = _init_pooled_emoji_window("TamaHand_Jarvis")
-	print("🎱 Window pool ready: tama + ui + hand + jarvis")
+	print("🎱 Window pool ready: tama + ui + drone + jarvis")
 
 func _setup_ui_window() -> void:
 	"""Create a dedicated window for all UI menus (radial, settings, quit).
@@ -637,8 +637,8 @@ func _on_tree_strike_fire() -> void:
 		_gaze_modifier.arm_ik_target = target_3d
 		_gaze_modifier.arm_ik_active = true
 		_gaze_modifier.arm_ik_blend_target = 1.0
-	_spawn_hand_window()
-	print("🎯 STRIKE_FIRE (via AnimTree) — hand window + arm IK + close signal")
+	_spawn_drone_strike()
+	print("🎯 STRIKE_FIRE (via AnimTree) — drone strike + arm IK + close signal")
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
 
@@ -705,6 +705,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				print("🎛️ [DEBUG] F1 → Ouverture du radial menu")
 				_sync_and_show_ui()
+				radial_menu.tama_active = session_active or conversation_active
 				radial_menu.open()
 				_safe_restore_passthrough()
 	# F2 = hidden debug tweaks panel
@@ -754,9 +755,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
 			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
-	# F7 = Debug Strike: trigger strike via AnimTree + hand window →
-# ─── Multi-Window Hand Animation (Pooled) ──────────────────
-var _hand_window: Window = null
+	# F7 = Debug Strike: trigger strike via AnimTree + drone strike →
+# ─── Widget Drone (Remplace la Main Magique) ──────────────────
+var _drone_window: Window = null
+var _drone_state: String = "HIDDEN"  # États : HIDDEN, WAITING_START, STRIKING
+var _drone_panel: Panel = null        # Fallback 2D (if Wings.glb missing)
+var _drone_mesh: MeshInstance3D = null # Wings 3D model
+var _drone_screen_mat: StandardMaterial3D = null  # Screen material (slot 1)
+var _drone_screen_vp: SubViewport = null          # SubViewport for screen text
+var _drone_screen_label: Label = null             # Dynamic text on the screen
+var _drone_anim: AnimationPlayer = null           # Wings AnimationPlayer (idle/dash/strike)
+var _drone_anim_names: Dictionary = {}            # Resolved anim names
+var _drone_glitch_mat: ShaderMaterial = null       # Glitch effect shader material
+var _drone_glitch_quad: MeshInstance3D = null       # Glitch quad reference
 
 func _get_hand_bone_screen_pos() -> Vector2i:
 	"""Get Tama's hand bone projected to screen coords, or center fallback."""
@@ -796,7 +807,7 @@ func _animate_pooled_window(win: Window, target_pos: Vector2i, start_emoji: Stri
 	win.position = Vector2i(start.x - half, start.y - half)
 	win.visible = true
 
-	var label := win.get_node("EmojiLabel") as Label
+	var label := win.find_child("EmojiLabel", true, false) as Label
 	if label:
 		label.text = start_emoji
 		label.add_theme_font_size_override("font_size", font_size)
@@ -820,14 +831,351 @@ func _animate_pooled_window(win: Window, target_pos: Vector2i, start_emoji: Stri
 		on_done.call()
 	)
 
-func _spawn_hand_window() -> void:
-	"""Strike hand: aggressive punch toward target (pooled window)."""
+func _drone_play(anim_key: String, crossfade: float = 0.2) -> void:
+	"""Play a drone animation by key (idle/dash/strike)."""
+	if _drone_anim and _drone_anim_names.has(anim_key):
+		_drone_anim.play(_drone_anim_names[anim_key], crossfade)
+
+func _spawn_drone_strike() -> void:
+	"""Strike : Tama donne l'ordre, le drone s'énerve et fonce sur l'onglet !"""
+	_drone_state = "STRIKING"
+	if not _drone_window or not is_instance_valid(_drone_window):
+		return
+	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
+
 	var aim: Vector2i = _strike_target if _strike_target.x >= 0 else DisplayServer.mouse_get_position()
-	_animate_pooled_window(_hand_window, aim, "🖐️", "👆", 120, 64,
-		Tween.EASE_IN_OUT, Tween.TRANS_CUBIC, 0.7, func():
+
+	# Look "Méchant" — rouge colère
+	if _drone_screen_label:
+		_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+	if _drone_screen_mat:
+		_drone_screen_mat.emission = Color(0.8, 0.1, 0.1)
+		_drone_screen_mat.emission_energy_multiplier = 3.0
+	if _drone_panel:
+		var style = _drone_panel.get_theme_stylebox("panel") as StyleBoxFlat
+		if style:
+			style.border_color = Color(1.0, 0.2, 0.2, 0.9)
+			style.shadow_color = Color(1.0, 0.0, 0.0, 0.5)
+
+	# Anim: dash pendant le vol
+	_drone_play("dash", 0.1)
+
+	# Le drone fonce vers l'onglet, strike à l'impact !
+	_animate_pooled_window(_drone_window, aim, "Ò_Ó", "💥", 240, 36,
+		Tween.EASE_IN_OUT, Tween.TRANS_CUBIC, 0.6, func():
+			# Anim: strike à l'impact
+			_drone_play("strike", 0.0)
 			_deactivate_imba()
 			_strike_target = Vector2i(-1, -1)
+			_drone_state = "HIDDEN"
+			_reset_drone_style()
 	)
+
+func _reset_drone_style() -> void:
+	"""Reset drone screen to friendly blue/cyan look + idle anim."""
+	if _drone_screen_label:
+		_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.7))
+	if _drone_screen_mat:
+		_drone_screen_mat.emission = Color(0.1, 0.4, 0.8)
+		_drone_screen_mat.emission_energy_multiplier = 1.5
+	_drone_play("idle")
+
+func _setup_drone_window() -> void:
+	"""Create the Sentinel Drone widget — 3D Wings model with SubViewport screen."""
+	_drone_window = Window.new()
+	_drone_window.title = "TamaDrone"
+	_drone_window.borderless = true
+	_drone_window.transparent_bg = true
+	_drone_window.always_on_top = true
+	_drone_window.unfocusable = true
+	_drone_window.transparent = true
+	_drone_window.gui_embed_subwindows = false
+	_drone_window.size = Vector2i(240, 180)
+
+	# ── Load Wings.glb 3D model ──
+	var wings_scene = load("res://Wings.glb") as PackedScene
+	if not wings_scene:
+		push_warning("⚠️ Wings.glb not found — drone will use fallback")
+		_setup_drone_window_fallback()
+		return
+
+	var wings_instance = wings_scene.instantiate()
+
+	# ── Own World3D (no sharing — everything is unshaded) ──
+	var drone_world = World3D.new()
+	_drone_window.world_3d = drone_world
+
+	# Transparent environment
+	var env = Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0, 0, 0, 0)
+	var world_env = WorldEnvironment.new()
+	world_env.environment = env
+	_drone_window.add_child(world_env)
+
+	# ── Camera ──
+	var drone_cam = Camera3D.new()
+	drone_cam.projection = Camera3D.PROJECTION_PERSPECTIVE
+	drone_cam.fov = 50.0
+	drone_cam.position = Vector3(0, 0.02, 0.8)
+	drone_cam.current = true
+	_drone_window.add_child(drone_cam)
+
+	# ── Glitch entrance effect (same shader as Tama) ──
+	var glitch_shader = load("res://glitch_effect.gdshader")
+	if glitch_shader:
+		_drone_glitch_quad = MeshInstance3D.new()
+		_drone_glitch_quad.name = "DroneGlitch"
+		var quad = QuadMesh.new()
+		quad.size = Vector2(10.0, 10.0)
+		_drone_glitch_quad.mesh = quad
+		_drone_glitch_quad.position = Vector3(0.0, 0.0, -0.5)
+		_drone_glitch_mat = ShaderMaterial.new()
+		_drone_glitch_mat.shader = glitch_shader
+		_drone_glitch_mat.set_shader_parameter("intensity", 0.0)
+		_drone_glitch_mat.set_shader_parameter("shake_power", 0.03)
+		_drone_glitch_mat.set_shader_parameter("shake_rate", 0.3)
+		_drone_glitch_mat.set_shader_parameter("shake_speed", 5.0)
+		_drone_glitch_mat.set_shader_parameter("shake_block_size", 30.5)
+		_drone_glitch_mat.set_shader_parameter("shake_color_rate", 0.015)
+		_drone_glitch_mat.render_priority = 100
+		_drone_glitch_quad.material_override = _drone_glitch_mat
+		_drone_glitch_quad.visible = false
+		drone_cam.add_child(_drone_glitch_quad)
+		print("📺 Drone glitch shader ready")
+
+	_drone_window.add_child(wings_instance)
+
+	# ── Resolve animations ──
+	# NOTE: Wings.glb contient TOUTES les anims du fichier Blender (28 anims de Tama incluses).
+	# On hardcode les 3 anims spécifiques au drone pour éviter les collisions de noms.
+	_drone_anim = wings_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if _drone_anim:
+		var anims = _drone_anim.get_animation_list()
+		print("🛸 Wings animations (%d): %s" % [anims.size(), str(anims)])
+		# Drone-specific anims (lowercase "idle" = Wings idle, not Tama's "Idle")
+		_drone_anim_names = {"idle": "idle", "dash": "Dash", "strike": "Strike_Dab"}
+		# Verify they exist
+		for key in _drone_anim_names:
+			if not _drone_anim.has_animation(_drone_anim_names[key]):
+				print("⚠️ Drone anim '%s' → '%s' NOT FOUND" % [key, _drone_anim_names[key]])
+				_drone_anim_names.erase(key)
+		# Set idle to loop
+		if _drone_anim_names.has("idle"):
+			var idle_anim = _drone_anim.get_animation(_drone_anim_names["idle"])
+			if idle_anim:
+				idle_anim.loop_mode = Animation.LOOP_LINEAR
+		_drone_play("idle")
+		print("🛸 Anim mapping: %s" % str(_drone_anim_names))
+
+	# ── Debug: print node tree of Wings.glb ──
+	print("🛸 Wings.glb node tree:")
+	_debug_print_tree(wings_instance, "  ")
+
+	# ── Find the "wings" mesh and its screen material (slot 1) ──
+	_drone_mesh = _find_mesh_instance(wings_instance, "wings")
+	if not _drone_mesh:
+		_drone_mesh = _find_first_mesh(wings_instance)
+
+	if _drone_mesh and _drone_mesh.mesh:
+		var surface_count = _drone_mesh.mesh.get_surface_count()
+		var aabb = _drone_mesh.mesh.get_aabb()
+		print("🛸 Wings mesh: %s | %d surfaces | AABB: %s | size: %s" % [
+			_drone_mesh.name, surface_count, str(aabb.position), str(aabb.size)])
+		if surface_count > 1:
+			_drone_screen_mat = _drone_mesh.get_active_material(1)
+			if not _drone_screen_mat:
+				_drone_screen_mat = _drone_mesh.mesh.surface_get_material(1)
+			if _drone_screen_mat:
+				_drone_screen_mat = _drone_screen_mat.duplicate() as StandardMaterial3D
+				_drone_mesh.set_surface_override_material(1, _drone_screen_mat)
+				print("🛸 Screen material (slot 1): %s" % str(_drone_screen_mat))
+			else:
+				print("⚠️ No material found at slot 1")
+		else:
+			print("⚠️ Only %d surface(s) — expected 2+" % surface_count)
+	else:
+		print("⚠️ Wings mesh NOT found!")
+
+	# ── SubViewport for the dynamic screen text ──
+	_drone_screen_vp = SubViewport.new()
+	_drone_screen_vp.size = Vector2i(256, 144)  # 16:9
+	_drone_screen_vp.transparent_bg = true
+	_drone_screen_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+
+	var screen_bg = ColorRect.new()
+	screen_bg.color = Color(0.02, 0.05, 0.08, 0.9)
+	screen_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_drone_screen_vp.add_child(screen_bg)
+
+	_drone_screen_label = Label.new()
+	_drone_screen_label.name = "EmojiLabel"
+	_drone_screen_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_drone_screen_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_drone_screen_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_drone_screen_label.add_theme_font_size_override("font_size", 36)
+	_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.7))
+	_drone_screen_vp.add_child(_drone_screen_label)
+
+	_drone_window.add_child(_drone_screen_vp)
+
+	# Apply ViewportTexture to the screen material
+	if _drone_screen_mat:
+		_drone_screen_mat.albedo_texture = _drone_screen_vp.get_texture()
+		_drone_screen_mat.emission_enabled = true
+		_drone_screen_mat.emission = Color(0.1, 0.4, 0.8)
+		_drone_screen_mat.emission_energy_multiplier = 1.5
+		_drone_screen_mat.emission_texture = _drone_screen_vp.get_texture()
+		print("🛸 Screen material linked to SubViewport texture")
+
+	# ── Click overlay ──
+	var click_area = Control.new()
+	click_area.set_anchors_preset(Control.PRESET_FULL_RECT)
+	click_area.gui_input.connect(_on_drone_gui_input)
+	click_area.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_drone_window.add_child(click_area)
+
+	add_child(_drone_window)
+	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
+	_drone_window.visible = false
+	print("🛸 Drone Sentinelle 3D créé (Wings.glb)")
+
+func _debug_print_tree(node: Node, indent: String) -> void:
+	"""Print node tree for debugging."""
+	var info = "%s%s [%s]" % [indent, node.name, node.get_class()]
+	if node is MeshInstance3D:
+		var mi = node as MeshInstance3D
+		if mi.mesh:
+			info += " | %d surfaces | pos=%s" % [mi.mesh.get_surface_count(), str(mi.position)]
+	elif node is Node3D:
+		info += " | pos=%s" % str((node as Node3D).position)
+	print(info)
+	for child in node.get_children():
+		_debug_print_tree(child, indent + "  ")
+
+func _setup_drone_window_fallback() -> void:
+	"""Fallback: 2D panel drone if Wings.glb is missing."""
+	_drone_panel = Panel.new()
+	_drone_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.08, 0.12, 0.95)
+	style.border_color = Color(0.2, 0.8, 1.0, 0.8)
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(20)
+	style.shadow_color = Color(0, 0.5, 1.0, 0.3)
+	style.shadow_size = 15
+	_drone_panel.add_theme_stylebox_override("panel", style)
+	_drone_window.add_child(_drone_panel)
+
+	_drone_screen_label = Label.new()
+	_drone_screen_label.name = "EmojiLabel"
+	_drone_screen_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_drone_screen_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_drone_screen_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_drone_panel.add_child(_drone_screen_label)
+
+	var click_area = Control.new()
+	click_area.set_anchors_preset(Control.PRESET_FULL_RECT)
+	click_area.gui_input.connect(_on_drone_gui_input)
+	click_area.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_drone_window.add_child(click_area)
+
+	add_child(_drone_window)
+	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
+	_drone_window.visible = false
+	print("🛸 Drone Sentinelle (fallback 2D)")
+
+func _find_mesh_instance(node: Node, mesh_name: String) -> MeshInstance3D:
+	"""Recursively find a MeshInstance3D by name (case-insensitive)."""
+	if node is MeshInstance3D and node.name.to_lower().contains(mesh_name.to_lower()):
+		return node as MeshInstance3D
+	for child in node.get_children():
+		var found = _find_mesh_instance(child, mesh_name)
+		if found:
+			return found
+	return null
+
+func _find_first_mesh(node: Node) -> MeshInstance3D:
+	"""Recursively find the first MeshInstance3D."""
+	if node is MeshInstance3D:
+		return node as MeshInstance3D
+	for child in node.get_children():
+		var found = _find_first_mesh(child)
+		if found:
+			return found
+	return null
+
+func _show_drone_start_widget() -> void:
+	"""Affiche le widget START au-dessus de la tête de Tama."""
+	if not _drone_window or not is_instance_valid(_drone_window):
+		return
+	_drone_state = "WAITING_START"
+	_drone_window.size = Vector2i(240, 180)
+
+	# Look amical (Bleu/Vert)
+	_reset_drone_style()
+
+	if _drone_screen_label:
+		_drone_screen_label.text = "▶ START"
+		_drone_screen_label.add_theme_font_size_override("font_size", 36)
+		_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.7))
+
+	# Positionner juste au-dessus de la tête de Tama
+	var tama_center = _get_tama_screen_center()
+	_drone_window.position = Vector2i(tama_center.x - 120, tama_center.y - 280)
+
+	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
+	_drone_window.unfocusable = false
+	_drone_window.visible = true
+	# Relancer l'anim idle (ne tourne pas quand la Window est invisible)
+	_drone_play("idle")
+	# Glitch d'entrée !
+	_drone_entrance_glitch()
+	print("🛸 Drone appelé ! En attente de clic...")
+
+func _drone_entrance_glitch() -> void:
+	"""Burst de glitch quand le drone apparaît — même shader que Tama."""
+	if not _drone_glitch_quad or not _drone_glitch_mat:
+		return
+	_drone_glitch_quad.visible = true
+	_drone_glitch_mat.set_shader_parameter("intensity", 0.0)
+	var tw = create_tween()
+	tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 0.0, 1.2, 0.15)
+	tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 1.2, 0.0, 0.4)
+	tw.tween_callback(func():
+		if _drone_glitch_quad:
+			_drone_glitch_quad.visible = false
+	)
+
+func _drone_exit_glitch() -> void:
+	"""Burst de glitch quand le drone disparaît."""
+	if not _drone_glitch_quad or not _drone_glitch_mat:
+		_drone_window.visible = false
+		return
+	_drone_glitch_quad.visible = true
+	_drone_glitch_mat.set_shader_parameter("intensity", 0.0)
+	var tw = create_tween()
+	tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 0.0, 1.5, 0.25)
+	tw.tween_callback(func():
+		_drone_window.visible = false
+		_drone_glitch_mat.set_shader_parameter("intensity", 0.0)
+		if _drone_glitch_quad:
+			_drone_glitch_quad.visible = false
+	)
+
+func _on_drone_gui_input(event: InputEvent) -> void:
+	"""Handle clicks on the drone widget."""
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if _drone_state == "WAITING_START":
+			print("▶️ Drone cliqué ! Démarrage de la session...")
+			_drone_state = "HIDDEN"
+			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
+			_drone_window.unfocusable = true
+
+			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+				ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "start_session"}))
+
+			_drone_exit_glitch()
 
 
 # ─── Jarvis Hand (Gentle Tap Animation) ─────────────────────
@@ -895,6 +1243,26 @@ func _set_imba_blend(value: float) -> void:
 
 func _on_radial_action(action_id: String) -> void:
 	print("🎛️ Radial action: " + action_id)
+
+	# 🟢 Appeler Tama : elle et le drone apparaissent ensemble
+	if action_id == "call_tama":
+		# Déjà active ? Ignore
+		if _drone_state == "WAITING_START" or session_active or conversation_active:
+			print("🛸 Tama déjà là — appel ignoré")
+			if radial_menu:
+				radial_menu.close()
+			_safe_restore_passthrough()
+			return
+		# 1. Lancer la conversation → Tama arrive avec le glitch
+		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "talk"}))
+		# 2. Drone START apparaît immédiatement
+		_show_drone_start_widget()
+		if radial_menu:
+			radial_menu.close()
+		_safe_restore_passthrough()
+		return
+
 	if action_id == "settings":
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "GET_SETTINGS"}))
@@ -1127,6 +1495,9 @@ func _update_mouse_dodge(delta: float) -> void:
 	if not _tama_window or not _tama_window.visible:
 		return
 	if _glitch_quitting or _glitch_teleporting or _dodge_departing:
+		return
+	# 🛑 L'ASTUCE : Tama se laisse faire tant que le drone attend le clic !
+	if _drone_state == "WAITING_START":
 		return
 	if _quit_layer:
 		return
@@ -1539,7 +1910,13 @@ func _handle_message(raw: String) -> void:
 		if not session_active:
 			session_active = true
 			conversation_active = false  # Session overrides conversation
-			if _has_local_greeting:
+			# Si Tama est déjà visible (mode conversation → upgrade to session),
+			# pas besoin de la faire ré-entrer — juste activer la session
+			if _started and _tama_window and _tama_window.visible:
+				print("🚀 Session lancée ! (Tama déjà présente — upgrade conversation → session)")
+				if _session_ding_player:
+					_session_ding_player.play()
+			elif _has_local_greeting:
 				# ⚡ Instant entrance with local greeting audio (0ms latency)
 				print("🚀 Session lancée ! (Greeting local)")
 				_instant_entrance_with_greeting()
@@ -1601,6 +1978,7 @@ func _handle_message(raw: String) -> void:
 			settings_panel.close()
 		if radial_menu:
 			_sync_and_show_ui()
+			radial_menu.tama_active = session_active or conversation_active
 			radial_menu.open()
 			_safe_restore_passthrough()
 		return

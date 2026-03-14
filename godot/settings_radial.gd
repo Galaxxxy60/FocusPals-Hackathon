@@ -10,8 +10,7 @@ var _L = preload("res://locale.gd").new()
 
 var ITEMS := [
 	{"icon": "⚙️", "label": "Settings",      "id": "settings", "color": Color(0.4, 0.8, 1.0),  "scale": 0.85, "loc_key": "radial_settings"},
-	{"icon": "🫰", "label": "Hey Tama",       "id": "talk",     "color": Color(0.6, 0.4, 1.0),  "scale": 1.0,  "loc_key": "radial_talk"},
-	{"icon": "⚡", "label": "Work Session",   "id": "session",  "color": Color(0.4, 1.0, 0.5),  "scale": 1.35, "loc_key": "radial_session"},
+	{"icon": "🛸", "label": "Appeler Tama",   "id": "call_tama",  "color": Color(0.4, 1.0, 0.5),  "scale": 1.35, "loc_key": "radial_call_tama"},
 	{"icon": "⛔", "label": "Quit",           "id": "quit",     "color": Color(1.0, 0.3, 0.3),  "scale": 0.85, "loc_key": "radial_quit"},
 ]
 
@@ -20,6 +19,7 @@ const ITEM_SIZE  := 28.0
 const ARC_SPREAD := 2.4
 
 var is_open := false
+var tama_active := false  # Set by main.gd — greys out 'call_tama' when Tama is on screen
 var _progress := 0.0
 var _hovered := -1
 var _hover_scales: Array[float] = []
@@ -108,6 +108,9 @@ func _update_hover(delta: float) -> void:
 	if _progress < 0.5:
 		return
 	for i in ITEMS.size():
+		# Skip disabled items for hover
+		if ITEMS[i]["id"] == "call_tama" and tama_active:
+			continue
 		if mouse.distance_to(_item_pos(i)) < ITEM_SIZE * 1.6:
 			_hovered = i
 			break
@@ -194,6 +197,11 @@ func _draw_item(index: int) -> void:
 		item_scale = float(item["scale"])
 	var r := ITEM_SIZE * item_scale * (1.0 + hover * 0.25)
 	var accent: Color = item["color"]
+	# Grey out disabled items
+	var is_disabled = (item["id"] == "call_tama" and tama_active)
+	if is_disabled:
+		accent = Color(0.3, 0.3, 0.3)
+		alpha *= 0.3
 	
 	if hover > 0.01:
 		for g in range(3):

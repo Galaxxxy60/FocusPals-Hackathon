@@ -65,7 +65,7 @@ def _update_click_through():
 
 def _handle_menu_action(action: str):
     """Handle radial menu item clicks."""
-    if action == "session":
+    if action in ("session", "start_session", "call_tama"):
         if not state["is_session_active"]:
             start_session("Radial Menu")
         else:
