@@ -462,7 +462,8 @@ func _setup_window_pool() -> void:
 	_setup_ui_window()
 	_setup_drone_window()  # Widget Sentinelle (remplace la Main Magique)
 	_jarvis_hand = _init_pooled_emoji_window("TamaHand_Jarvis")
-	print("🎱 Window pool ready: tama + ui + drone + jarvis")
+	_setup_confetti_window()
+	print("🎱 Window pool ready: tama + ui + drone + confetti + jarvis")
 
 func _setup_ui_window() -> void:
 	"""Create a dedicated window for all UI menus (radial, settings, quit).
@@ -855,9 +856,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ─── Widget Drone (Remplace la Main Magique) ──────────────────
 var _drone_window: Window = null
-var _drone_state: String = "HIDDEN"  # États : HIDDEN, WAITING_START, STRIKING
+var _drone_state: String = "HIDDEN"  # États : HIDDEN, WAITING_START, TIMER, STRIKING, WAITING_BREAK, BREAK_TIMER
+var _break_timer_start: float = 0.0  # Timestamp when break started (for drone countdown)
+var _break_timer_duration: float = 300.0  # Break duration in seconds
+var _confetti_window: Window = null
+var _confetti_rect: ColorRect = null
 var _drone_panel: Panel = null        # Fallback 2D (if Wings.glb missing)
 var _drone_mesh: MeshInstance3D = null # Wings 3D model
+var _drone_model: Node3D = null       # Reference to the Wings 3D root (for scale tweening)
 var _drone_screen_mat: StandardMaterial3D = null  # Screen material (slot 1)
 var _drone_screen_vp: SubViewport = null          # SubViewport for screen text
 var _drone_screen_label: Label = null             # Dynamic text on the screen
@@ -934,7 +940,9 @@ func _drone_play(anim_key: String, crossfade: float = 0.2) -> void:
 		_drone_anim.play(_drone_anim_names[anim_key], crossfade)
 
 func _spawn_drone_strike() -> void:
-	"""Strike : Tama donne l'ordre, le drone s'énerve et fonce sur l'onglet !"""
+	"""Strike : Le drone charge son attaque et fonce sur l'onglet avec un mouvement d'ange !"""
+	if _drone_state == "STRIKING":
+		return
 	_drone_state = "STRIKING"
 	if not _drone_window or not is_instance_valid(_drone_window):
 		return
@@ -942,9 +950,15 @@ func _spawn_drone_strike() -> void:
 
 	var aim: Vector2i = _strike_target if _strike_target.x >= 0 else DisplayServer.mouse_get_position()
 
-	# Look "Méchant" — rouge colère
+	# Agrandir le modèle 3D pour l'impact
+	if _drone_model:
+		create_tween().tween_property(_drone_model, "scale", Vector3(1.2, 1.2, 1.2), 0.3).set_trans(Tween.TRANS_SPRING)
+
+	# Mode "Colère"
 	if _drone_screen_label:
 		_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+		_drone_screen_label.text = "Ò_Ó"
+		_drone_screen_label.add_theme_font_size_override("font_size", 48)
 	if _drone_screen_mat:
 		_drone_screen_mat.emission = Color(0.8, 0.1, 0.1)
 		_drone_screen_mat.emission_energy_multiplier = 3.0
@@ -954,56 +968,85 @@ func _spawn_drone_strike() -> void:
 			style.border_color = Color(1.0, 0.2, 0.2, 0.9)
 			style.shadow_color = Color(1.0, 0.0, 0.0, 0.5)
 
-	# Phase 1: Angry hover — drone stays in place, turns red, "charges up"
-	# This gives the user time to SEE the drone before it charges
 	_drone_play("idle", 0.1)  # Menacing idle hover
 
 	# ── Strike SFX: end of sound = moment of impact ──
-	# Total time to impact: 0.4s (hover) + 1.2s (flight) = 1.6s
 	const IMPACT_TIME: float = 1.6
 	if _strike_sfx_player and _strike_sfx_player.stream:
 		var sfx_duration: float = _strike_sfx_player.stream.get_length()
 		if sfx_duration > IMPACT_TIME:
-			# Sound is longer than flight — start with offset so END = impact
-			var offset: float = sfx_duration - IMPACT_TIME
-			_strike_sfx_player.play(offset)
-			print("🔊 Strike SFX: playing from %.1fs (dur=%.1fs, offset=%.1fs)" % [offset, sfx_duration, offset])
+			_strike_sfx_player.play(sfx_duration - IMPACT_TIME)
 		else:
-			# Sound is shorter — delay start so END = impact
-			var delay: float = IMPACT_TIME - sfx_duration
 			var sfx_tween := create_tween().bind_node(self)
-			sfx_tween.tween_interval(delay)
-			sfx_tween.tween_callback(func():
-				if _strike_sfx_player:
-					_strike_sfx_player.play()
-			)
-			print("🔊 Strike SFX: delayed %.1fs then full play (dur=%.1fs)" % [delay, sfx_duration])
+			sfx_tween.tween_interval(IMPACT_TIME - sfx_duration)
+			sfx_tween.tween_callback(func(): if _strike_sfx_player: _strike_sfx_player.play())
 
-	# Phase 2: After 0.4s, dash toward the target (dramatic approach)
-	var drone_tween := create_tween().bind_node(self)
-	drone_tween.tween_interval(0.4)  # Angry hover delay
+	# Couper les anciens tweens de mouvement
+	if _drone_window.has_meta("strike_tween"):
+		var old_tween = _drone_window.get_meta("strike_tween") as Tween
+		if is_instance_valid(old_tween) and old_tween.is_running():
+			old_tween.kill()
+
+	var drone_tween := create_tween().bind_node(_drone_window)
+	_drone_window.set_meta("strike_tween", drone_tween)
+
+	var start_pos = _drone_window.position
+	var half = _drone_window.size / 2
+	var dest = Vector2i(aim.x - half.x, aim.y - half.y)
+
+	# Phase 1: Anticipation (Recul vers le haut pour prendre de l'élan)
+	var dir = Vector2(dest - start_pos).normalized()
+	var recoil_pos = start_pos - Vector2i(dir * 50.0) + Vector2i(0, -60)
+	drone_tween.tween_property(_drone_window, "position", recoil_pos, 0.5)\
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	drone_tween.tween_callback(func(): _drone_play("dash", 0.1))
+
+	# Phase 2: Plongeon Foudroyant
+	drone_tween.tween_property(_drone_window, "position", dest, 1.1)\
+		.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_IN)
+
+	# Phase 3: Impact !
 	drone_tween.tween_callback(func():
-		_drone_play("dash", 0.1)  # Switch to dash animation mid-flight
+		_drone_play("strike", 0.0)
+		_deactivate_imba()
+		if _drone_screen_label:
+			_drone_screen_label.text = "💥"
+			_drone_screen_label.add_theme_font_size_override("font_size", 64)
+		# Petit shake de l'écran local
+		var shake_tw = create_tween()
+		for i in range(3):
+			shake_tw.tween_property(_drone_window, "position", dest + Vector2i(randi_range(-15, 15), randi_range(-15, 15)), 0.04)
+		shake_tw.tween_property(_drone_window, "position", dest, 0.04)
 	)
 
-	# Phase 3: Fly to target (1.2s — slow enough to see, fast enough to feel punchy)
-	_animate_pooled_window(_drone_window, aim, "Ò_Ó", "💥", 240, 36,
-		Tween.EASE_IN, Tween.TRANS_EXPO, 1.2, func():
-			# Anim: strike à l'impact
-			_drone_play("strike", 0.0)
-			_deactivate_imba()
-			_strike_target = Vector2i(-1, -1)
+	# Phase 4: Pose de victoire puis retour doux
+	drone_tween.tween_interval(1.2)
+	drone_tween.tween_callback(func():
+		_strike_target = Vector2i(-1, -1)
+		if session_active:
+			_show_drone_timer_mode()
+		else:
 			_drone_state = "HIDDEN"
 			_reset_drone_style()
+			_drone_window.visible = false
 	)
 
 func _reset_drone_style() -> void:
 	"""Reset drone screen to friendly blue/cyan look + idle anim."""
 	if _drone_screen_label:
 		_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.7))
+		if _drone_state == "TIMER":
+			_drone_screen_label.add_theme_font_size_override("font_size", 32)
+		else:
+			_drone_screen_label.add_theme_font_size_override("font_size", 36)
 	if _drone_screen_mat:
 		_drone_screen_mat.emission = Color(0.1, 0.4, 0.8)
 		_drone_screen_mat.emission_energy_multiplier = 1.5
+	if _drone_panel:
+		var style = _drone_panel.get_theme_stylebox("panel") as StyleBoxFlat
+		if style:
+			style.border_color = Color(0.2, 0.8, 1.0, 0.8)
+			style.shadow_color = Color(0, 0.5, 1.0, 0.3)
 	_drone_play("idle")
 
 func _setup_drone_window() -> void:
@@ -1027,6 +1070,7 @@ func _setup_drone_window() -> void:
 		return
 
 	var wings_instance = wings_scene.instantiate()
+	_drone_model = wings_instance as Node3D  # Save reference for scale tweening
 
 	# ── Own World3D (no sharing — everything is unshaded) ──
 	var drone_world = World3D.new()
@@ -1073,9 +1117,7 @@ func _setup_drone_window() -> void:
 
 	_drone_window.add_child(wings_instance)
 
-	# ── Resolve animations ──
-	# NOTE: Wings.glb contient TOUTES les anims du fichier Blender (28 anims de Tama incluses).
-	# On hardcode les 3 anims spécifiques au drone pour éviter les collisions de noms.
+	# ── Resolve animations (dynamic, case-insensitive) ──
 	_drone_anim = wings_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _drone_anim:
 		# Force l'AnimationPlayer à toujours processer (même Window non-focusée)
@@ -1083,13 +1125,24 @@ func _setup_drone_window() -> void:
 		_drone_anim.process_mode = Node.PROCESS_MODE_ALWAYS
 		var anims = _drone_anim.get_animation_list()
 		print("🛸 Wings animations (%d): %s" % [anims.size(), str(anims)])
-		# Drone-specific anims (lowercase "idle" = Wings idle, not Tama's "Idle")
-		_drone_anim_names = {"idle": "idle", "dash": "Dash", "strike": "Strike_Dab"}
-		# Verify they exist
-		for key in _drone_anim_names.keys():
-			if not _drone_anim.has_animation(_drone_anim_names[key]):
-				print("⚠️ Drone anim '%s' → '%s' NOT FOUND" % [key, _drone_anim_names[key]])
-				_drone_anim_names.erase(key)
+		# Dynamic case-insensitive search for drone-specific anims
+		_drone_anim_names.clear()
+		for a in anims:
+			var al = a.to_lower()
+			if ("idle" in al or "hover" in al) and not "wall" in al and not "ground" in al and not "Idle" in a:
+				# Lowercase "idle" = Wings idle, not Tama's "Idle"
+				_drone_anim_names["idle"] = a
+			elif "dash" in al or "fly" in al:
+				_drone_anim_names["dash"] = a
+			elif "strike" in al or "dab" in al:
+				_drone_anim_names["strike"] = a
+		# Fallback: if "idle" wasn't found with exact lowercase, try exact match
+		if not _drone_anim_names.has("idle") and _drone_anim.has_animation("idle"):
+			_drone_anim_names["idle"] = "idle"
+		if not _drone_anim_names.has("dash") and _drone_anim.has_animation("Dash"):
+			_drone_anim_names["dash"] = "Dash"
+		if not _drone_anim_names.has("strike") and _drone_anim.has_animation("Strike_Dab"):
+			_drone_anim_names["strike"] = "Strike_Dab"
 		# Set idle to loop
 		if _drone_anim_names.has("idle"):
 			var idle_anim = _drone_anim.get_animation(_drone_anim_names["idle"])
@@ -1132,6 +1185,7 @@ func _setup_drone_window() -> void:
 	_drone_screen_vp.size = Vector2i(256, 144)  # 16:9
 	_drone_screen_vp.transparent_bg = true
 	_drone_screen_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_drone_screen_vp.process_mode = Node.PROCESS_MODE_ALWAYS  # Refresh même sans focus
 
 	var screen_bg = ColorRect.new()
 	screen_bg.color = Color(0.02, 0.05, 0.08, 0.9)
@@ -1255,7 +1309,8 @@ func _show_drone_start_widget() -> void:
 	_drone_window.position = Vector2i(tama_center.x - 120, tama_center.y - 280)
 
 	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
-	_drone_window.unfocusable = false
+	# NE PAS toucher à unfocusable ! Le changer dynamiquement sous Windows
+	# détruit/recrée la Window native, tuant le contexte de rendu.
 	_drone_window.visible = true
 	# Relancer l'anim idle (ne tourne pas quand la Window est invisible)
 	_drone_play("idle")
@@ -1293,15 +1348,56 @@ func _drone_exit_glitch() -> void:
 			_drone_glitch_quad.visible = false
 	)
 
+func _setup_confetti_window() -> void:
+	"""Création d'une fenêtre 800x800 pour la célébration de pause via shader de confettis."""
+	_confetti_window = Window.new()
+	_confetti_window.title = "TamaConfetti"
+	_confetti_window.borderless = true
+	_confetti_window.transparent_bg = true
+	_confetti_window.always_on_top = true
+	_confetti_window.unfocusable = true
+	_confetti_window.transparent = true
+	_confetti_window.gui_embed_subwindows = false
+	
+	_confetti_rect = ColorRect.new()
+	_confetti_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var shader = load("res://confetti.gdshader")
+	if shader:
+		var mat = ShaderMaterial.new()
+		mat.shader = shader
+		_confetti_rect.material = mat
+	_confetti_window.add_child(_confetti_rect)
+	# Add to tree FIRST — then set display-server-dependent properties
+	add_child(_confetti_window)
+	_confetti_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
+	_confetti_window.size = Vector2i(800, 800)
+	_confetti_window.visible = false
+	print("🎊 Confetti window setup complete")
+
+func _show_drone_timer_mode() -> void:
+	"""Affiche le drone en mode Timer (se réduit et affiche le temps)."""
+	if not _drone_window or not is_instance_valid(_drone_window):
+		return
+	_drone_state = "TIMER"
+	# NE PAS utiliser FLAG_MOUSE_PASSTHROUGH ici !
+	# Sur Windows, DWM arrête de rafraîchir le contenu visuel d'une Window passthrough,
+	# ce qui gèle l'animation ET le SubViewport texte.
+	# Le handler _on_drone_gui_input ignore déjà les clics en mode TIMER.
+	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
+	# unfocusable reste true (valeur initiale) — ne JAMAIS le toggler dynamiquement
+	_drone_window.size = Vector2i(120, 100)  # Petit pour ne pas gêner les clics
+	_drone_window.visible = true
+	_reset_drone_style()
+	_drone_play("idle")
+	# Glitch d'entrée si on ne l'a pas déjà fait
+	if not _drone_glitch_quad or not _drone_glitch_quad.visible:
+		_drone_entrance_glitch()
+
 func _on_drone_gui_input(event: InputEvent) -> void:
 	"""Handle clicks on the drone widget."""
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if _drone_state == "WAITING_START":
 			print("▶️ Drone cliqué ! Démarrage de la session...")
-			# Passer en mode Timer (le drone reste visible)
-			_drone_state = "TIMER"
-			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
-			_drone_window.unfocusable = true
 
 			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 				ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "start_session"}))
@@ -1312,34 +1408,99 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 			if _gaze_modifier:
 				_gaze_modifier.arm_ik_blend_target = 0.0
 
-			# Afficher le timer au lieu de START
+			# Switch to timer mode via new function
+			_show_drone_timer_mode()
 			if _drone_screen_label:
 				_drone_screen_label.text = "--:--"
-				_drone_screen_label.add_theme_font_size_override("font_size", 32)
-				_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
-			if _drone_screen_mat:
-				_drone_screen_mat.emission = Color(0.1, 0.3, 0.6)
-				_drone_screen_mat.emission_energy_multiplier = 1.2
-			# Relancer idle (peut avoir été stoppé)
-			_drone_play("idle")
 			print("🛸 Drone → mode TIMER (anims: %s)" % str(_drone_anim_names))
+		elif _drone_state == "WAITING_BREAK":
+			print("▶️ Drone cliqué ! Démarrage de la pause...")
+			# Passer en mode BREAK_TIMER (le drone reste, affiche le décompte)
+			_drone_state = "BREAK_TIMER"
+			_break_timer_start = Time.get_unix_time_from_system()
+			# Garder passthrough=false pour que DWM continue le rendu
+			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
+			# unfocusable reste true — ne JAMAIS le toggler
+			_drone_window.size = Vector2i(120, 100)  # Petit familier
+			if _confetti_window:
+				_confetti_window.visible = false
+			# Style pause (vert/doré doux)
+			if _drone_screen_label:
+				_drone_screen_label.add_theme_font_size_override("font_size", 28)
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.7))
+			if _drone_screen_mat:
+				_drone_screen_mat.emission = Color(0.1, 0.5, 0.3)
+				_drone_screen_mat.emission_energy_multiplier = 1.2
+			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+				ws.send_text(JSON.stringify({"command": "ACCEPT_BREAK"}))
+
 
 func _update_drone_timer() -> void:
-	"""Update drone position (follows Tama) and display remaining session time."""
-	if _drone_state != "TIMER":
+	"""Flottaison organique du drone (suit Tama) et affichage du Timer/Break."""
+	if _drone_state not in ["WAITING_START", "TIMER", "WAITING_BREAK", "BREAK_TIMER"]:
 		return
 	if not _drone_window or not is_instance_valid(_drone_window):
 		return
-	# Suivre Tama
-	var tama_center = _get_tama_screen_center()
-	_drone_window.position = Vector2i(tama_center.x - _drone_window.size.x / 2, tama_center.y - 280)
-	# Mettre à jour le texte du timer
-	var remaining = max(session_duration_secs - session_elapsed_secs, 0)
-	var mins = remaining / 60
-	var secs = remaining % 60
-	var time_str = "%02d:%02d" % [mins, secs]
-	if _drone_screen_label:
-		_drone_screen_label.text = time_str
+
+	var delta = get_process_delta_time()
+
+	# ── Taille du drone ──
+	if _drone_model:
+		var target_scale: Vector3
+		if _drone_state in ["TIMER", "BREAK_TIMER"]:
+			target_scale = Vector3(0.55, 0.55, 0.55)  # Petit familier
+		else:
+			target_scale = Vector3(1.0, 1.0, 1.0)  # Taille normale
+		_drone_model.scale = _drone_model.scale.lerp(target_scale, 5.0 * delta)
+
+	# ── Calcul de la Cible (Au-dessus de la tête) ──
+	var target_x: float = 0.0
+	var target_y: float = 0.0
+
+	if head_screen_pos.x > 0 and head_screen_pos.y > 0 and _tama_window:
+		target_x = float(_tama_window.position.x) + head_screen_pos.x - _drone_window.size.x / 2.0
+		target_y = float(_tama_window.position.y) + head_screen_pos.y - _drone_window.size.y - 15.0
+	else:
+		var tama_center = _get_tama_screen_center()
+		target_x = float(tama_center.x - _drone_window.size.x / 2.0)
+		target_y = float(tama_center.y - 280.0)
+
+	# ── Flottement organique (Mouvement sinusoïdal d'ange) ──
+	var time_sec = Time.get_ticks_msec() / 1000.0
+	target_y += sin(time_sec * 2.5) * 12.0
+	target_x += cos(time_sec * 1.5) * 4.0
+
+	# ── Déplacement Lerp Fluide ──
+	var current_pos = Vector2(_drone_window.position)
+	var new_pos = current_pos.lerp(Vector2(target_x, target_y), 6.0 * delta)
+	if current_pos.distance_to(Vector2(target_x, target_y)) > 600:
+		new_pos = Vector2(target_x, target_y)  # Téléportation si Tama a fait un grand bond
+	_drone_window.position = Vector2i(new_pos)
+
+	# ── Mise à jour du Texte ──
+	if _drone_state == "TIMER":
+		# CORRECTION : int() pour éviter le crash du modulo % sur float
+		var remaining = int(max(session_duration_secs - session_elapsed_secs, 0))
+		var mins = remaining / 60
+		var secs = remaining % 60
+		if _drone_screen_label:
+			_drone_screen_label.text = "%02d:%02d" % [mins, secs]
+			if remaining <= 60:
+				_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+			else:
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+	elif _drone_state == "BREAK_TIMER":
+		# Afficher le temps de pause restant
+		var elapsed = Time.get_unix_time_from_system() - _break_timer_start
+		var remaining_f = maxf(_break_timer_duration - elapsed, 0.0)
+		var mins = int(remaining_f) / 60
+		var secs = int(remaining_f) % 60
+		if _drone_screen_label:
+			_drone_screen_label.text = "☕ %02d:%02d" % [mins, secs]
+			# Couleur verte qui évolue
+			var progress = clampf(elapsed / _break_timer_duration, 0.0, 1.0)
+			var col = Color(0.5, 1.0, 0.7).lerp(Color(0.3, 0.8, 1.0), progress)
+			_drone_screen_label.add_theme_color_override("font_color", col)
 
 func _hide_drone_timer() -> void:
 	"""Masque le drone avec glitch de sortie (fin de session)."""
@@ -2742,13 +2903,26 @@ func _handle_message(raw: String) -> void:
 			_tama_ui.show_break_overlay(break_dur_min)
 		if _session_ding_player and _session_ding_player.stream:
 			_session_ding_player.play()
-		print("☕ Break started! (%.0f min)" % break_dur_min)
+		# Hide Tama's 3D model during break ("est pas là")
+		var tama_node = get_node_or_null("Tama")
+		if tama_node:
+			tama_node.visible = false
+		print("☕ Break started! (%.0f min), Tama est partie en pause")
 	elif not on_break and _was_on_break:
 		# Break ended — hide overlay
 		if _tama_ui:
 			_tama_ui.hide_break_overlay()
 		if _session_ding_player and _session_ding_player.stream:
 			_session_ding_player.play()
+		# Hide the drone break timer
+		if _drone_state == "BREAK_TIMER":
+			_drone_state = "HIDDEN"
+			_drone_exit_glitch()
+		# Bring Tama back
+		var tama_node = get_node_or_null("Tama")
+		if tama_node:
+			tama_node.visible = true
+			_trigger_entrance() # Replay WalkIn/Teleport if possible or just appear
 		print("💪 Break ended — back to work!")
 	_was_on_break = on_break
 
@@ -4451,145 +4625,70 @@ func _show_break_popup() -> void:
 		return
 	_break_popup_visible = true
 
-	# Create popup container if needed
-	if _break_popup_container and is_instance_valid(_break_popup_container):
-		_break_popup_container.visible = true
-		_sync_and_show_ui()
-		_safe_restore_passthrough()
-		print("☕ Break popup shown (reused)")
+	# Replace old UI popup with Sentinelle Drone + Confetti
+	if not _drone_window or not is_instance_valid(_drone_window):
 		return
+	_drone_state = "WAITING_BREAK"
+	_drone_window.size = Vector2i(240, 180)
 
-	var ui_parent: Node = _ui_window if _ui_window else self
+	# Compute break duration for later countdown
+	var sess_dur := session_duration_secs / 60
+	if sess_dur <= 30:
+		_break_timer_duration = 5.0 * 60.0
+	elif sess_dur <= 60:
+		_break_timer_duration = 10.0 * 60.0
+	elif sess_dur <= 120:
+		_break_timer_duration = 15.0 * 60.0
+	else:
+		_break_timer_duration = 20.0 * 60.0
 
-	# ── Container (centered panel) ──
-	var canvas := CanvasLayer.new()
-	canvas.layer = 200  # Above everything
-	ui_parent.add_child(canvas)
+	# Look amical orange/doré
+	if _drone_screen_label:
+		_drone_screen_label.text = "☕ PAUSE"
+		_drone_screen_label.add_theme_font_size_override("font_size", 36)
+		_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.4))
+	if _drone_screen_mat:
+		_drone_screen_mat.emission = Color(0.8, 0.5, 0.1)
+		_drone_screen_mat.emission_energy_multiplier = 1.5
 
-	_break_popup_container = Control.new()
-	_break_popup_container.name = "BreakPopup"
-	_break_popup_container.set_anchors_preset(Control.PRESET_FULL_RECT)
-	canvas.add_child(_break_popup_container)
+	# Positionner au-dessus de la tête de Tama
+	var tama_center = _get_tama_screen_center()
+	var dx = tama_center.x - 120
+	var dy = tama_center.y - 280
+	_drone_window.position = Vector2i(dx, dy)
+	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
+	# unfocusable reste true — ne JAMAIS le toggler sous Windows
+	_drone_window.visible = true
+	_drone_play("idle")
+	_drone_entrance_glitch()
 
-	# ── Semi-transparent backdrop ──
-	var backdrop := ColorRect.new()
-	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	backdrop.color = Color(0.0, 0.0, 0.0, 0.3)
-	_break_popup_container.add_child(backdrop)
+	# Célébration Confetti !
+	if _confetti_window and is_instance_valid(_confetti_window):
+		# Positionner le centre de la fenêtre 800x800 sur le drone
+		_confetti_window.position = Vector2i(dx + 120 - 400, dy + 90 - 400)
+		_confetti_window.visible = true
 
-	# ── Centered panel ──
-	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_CENTER)
-	panel.custom_minimum_size = Vector2(280, 150)
-	panel.position = Vector2(-140, -75)  # Center offset
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.08, 0.1, 0.16, 0.92)
-	panel_style.corner_radius_top_left = 12
-	panel_style.corner_radius_top_right = 12
-	panel_style.corner_radius_bottom_left = 12
-	panel_style.corner_radius_bottom_right = 12
-	panel_style.border_color = Color(0.3, 0.6, 1.0, 0.3)
-	panel_style.border_width_top = 1
-	panel_style.border_width_bottom = 1
-	panel_style.border_width_left = 1
-	panel_style.border_width_right = 1
-	panel_style.content_margin_top = 20
-	panel_style.content_margin_bottom = 20
-	panel_style.content_margin_left = 20
-	panel_style.content_margin_right = 20
-	panel.add_theme_stylebox_override("panel", panel_style)
-	_break_popup_container.add_child(panel)
-
-	var vbox := VBoxContainer.new()
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 14)
-	panel.add_child(vbox)
-
-	# ── Title ──
-	var title := Label.new()
-	title.text = "⏰ Temps écoulé !"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))
-	vbox.add_child(title)
-
-	# ── Subtitle ──
-	var subtitle := Label.new()
-	subtitle.text = "Tu veux faire une pause ?"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 12)
-	subtitle.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
-	vbox.add_child(subtitle)
-
-	# ── Buttons row ──
-	var btn_row := HBoxContainer.new()
-	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	btn_row.add_theme_constant_override("separation", 12)
-	vbox.add_child(btn_row)
-
-	# Accept button
-	var btn_accept := Button.new()
-	btn_accept.text = "☕ Pause"
-	btn_accept.custom_minimum_size = Vector2(110, 36)
-	var accept_style := StyleBoxFlat.new()
-	accept_style.bg_color = Color(0.15, 0.45, 0.3, 0.9)
-	accept_style.corner_radius_top_left = 8
-	accept_style.corner_radius_top_right = 8
-	accept_style.corner_radius_bottom_left = 8
-	accept_style.corner_radius_bottom_right = 8
-	btn_accept.add_theme_stylebox_override("normal", accept_style)
-	var accept_hover := StyleBoxFlat.new()
-	accept_hover.bg_color = Color(0.2, 0.55, 0.35, 0.95)
-	accept_hover.corner_radius_top_left = 8
-	accept_hover.corner_radius_top_right = 8
-	accept_hover.corner_radius_bottom_left = 8
-	accept_hover.corner_radius_bottom_right = 8
-	btn_accept.add_theme_stylebox_override("hover", accept_hover)
-	btn_accept.add_theme_font_size_override("font_size", 13)
-	btn_accept.add_theme_color_override("font_color", Color(0.85, 1.0, 0.9))
-	btn_accept.pressed.connect(_on_break_accept)
-	btn_row.add_child(btn_accept)
-
-	# Refuse button
-	var btn_refuse := Button.new()
-	btn_refuse.text = "💪 Continuer"
-	btn_refuse.custom_minimum_size = Vector2(110, 36)
-	var refuse_style := StyleBoxFlat.new()
-	refuse_style.bg_color = Color(0.3, 0.2, 0.15, 0.9)
-	refuse_style.corner_radius_top_left = 8
-	refuse_style.corner_radius_top_right = 8
-	refuse_style.corner_radius_bottom_left = 8
-	refuse_style.corner_radius_bottom_right = 8
-	btn_refuse.add_theme_stylebox_override("normal", refuse_style)
-	var refuse_hover := StyleBoxFlat.new()
-	refuse_hover.bg_color = Color(0.4, 0.28, 0.2, 0.95)
-	refuse_hover.corner_radius_top_left = 8
-	refuse_hover.corner_radius_top_right = 8
-	refuse_hover.corner_radius_bottom_left = 8
-	refuse_hover.corner_radius_bottom_right = 8
-	btn_refuse.add_theme_stylebox_override("hover", refuse_hover)
-	btn_refuse.add_theme_font_size_override("font_size", 13)
-	btn_refuse.add_theme_color_override("font_color", Color(1.0, 0.9, 0.8))
-	btn_refuse.pressed.connect(_on_break_refuse)
-	btn_row.add_child(btn_refuse)
-
-	# Show UI window
-	_sync_and_show_ui()
-	_safe_restore_passthrough()
-	print("☕ Break popup created and shown")
+	print("☕ Drone Pause + Confetti shown")
 
 
 func _hide_break_popup() -> void:
 	if not _break_popup_visible:
 		return
 	_break_popup_visible = false
-	if _break_popup_container and is_instance_valid(_break_popup_container):
-		_break_popup_container.visible = false
-	_safe_restore_passthrough()
-	print("☕ Break popup hidden")
+
+	# Masquer le drone si on ne l'a pas déjà cliqué
+	if _drone_state in ["WAITING_BREAK", "BREAK_TIMER"]:
+		_drone_state = "HIDDEN"
+		_drone_exit_glitch()
+
+	if _confetti_window and is_instance_valid(_confetti_window):
+		_confetti_window.visible = false
+
+	print("☕ Drone Pause hidden")
 
 
 func _on_break_accept() -> void:
+	# Called if fallback UI was still used, not used with drone currently
 	print("☕ Break accepted!")
 	_hide_break_popup()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -4601,3 +4700,4 @@ func _on_break_refuse() -> void:
 	_hide_break_popup()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "REFUSE_BREAK"}))
+
