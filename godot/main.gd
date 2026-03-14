@@ -57,6 +57,7 @@ const ANIM_COMMAND_COOLDOWN: float = 5.0  # Don't auto-anim if Python sent one r
 #   the hand "bounces" by scaling above 1.0 — that's the fire signal.
 #   Threshold is 1.05 to catch the exact moment the bounce starts.
 var _strike_hand_bone_idx: int = -1  # Jnt_R_Hand, auto-discovered in _setup_gaze
+var _book_bone_idx: int = -1         # Jnt_L_thumb — used as dynamic BOOK gaze target
 
 # Arm IK bones (auto-discovered in _setup_gaze)
 var _arm1_bone_idx: int = -1   # Jnt_R_Arm1 (upper arm)
@@ -223,6 +224,24 @@ var _eye_saccade_timer: float = 0.0   # Timer between saccades
 const EYE_SACCADE_INTERVAL: float = 0.08  # Snap every ~80ms (like real saccades)
 const EYE_SACCADE_THRESHOLD: float = 0.03 # Dead zone: ignore tiny changes
 const EYE_RETURN_SPEED: float = 8.0       # Speed to return to center when deactivated
+
+# ─── Micro-saccades (A1: subtle eye tremor — eyes are NEVER perfectly still) ───
+var _microsaccade_timer: float = 0.0      # Countdown to next micro-saccade
+var _microsaccade_offset_h: float = 0.0   # Current micro-offset horizontal
+var _microsaccade_offset_v: float = 0.0   # Current micro-offset vertical
+const MICROSACCADE_MIN_INTERVAL: float = 0.3   # Min time between saccades
+const MICROSACCADE_MAX_INTERVAL: float = 1.2   # Max time between saccades
+const MICROSACCADE_AMPLITUDE: float = 0.06     # Max offset per axis (subtle!)
+
+# ─── Idle Gaze (A2: organic head movement — BOOK/USER only, NEVER screen) ───
+# Looking at screen = "I see what you're doing" → only on SCREEN_SCAN from Python
+var _idle_gaze_timer: float = 0.0         # Countdown to next idle gaze change
+var _idle_gaze_active: bool = false       # True when idle gaze is currently directing the head
+const IDLE_GAZE_MIN_INTERVAL: float = 6.0   # Min seconds between idle gaze shifts
+const IDLE_GAZE_MAX_INTERVAL: float = 18.0  # Max seconds between idle gaze shifts
+const IDLE_GAZE_DURATION_MIN: float = 1.0   # Min duration of an idle glance
+const IDLE_GAZE_DURATION_MAX: float = 3.5   # Max duration of an idle glance
+var _idle_glance_return_timer: float = 0.0  # Countdown before returning from glance
 
 # ─── UI Window + Menus ───────────────────────────────────────
 var _ui_window: Window = null           # Dedicated window for all UI menus
@@ -1819,6 +1838,9 @@ func _process(delta: float) -> void:
 			_eye_follow_active = false
 			_scan_eye_active = false
 
+	# ─── Idle Gaze (A2: organic life — BOOK/USER only, NEVER screen) ───
+	_update_idle_gaze(delta)
+
 	# ─── Voice-Sync Entrance Timeout ──────────────────────────
 	if _waiting_for_voice:
 		_voice_timeout_timer -= delta
@@ -1898,23 +1920,38 @@ func _set_eye_look(h: float, v: float) -> void:
 	_eye_follow_active = true
 
 func _update_eye_follow(delta: float) -> void:
-	"""Smooth eye movement via blend shapes."""
+	"""Smooth eye movement via blend shapes + micro-saccades."""
 	if _body_mesh == null:
 		return
+
+	# ─── Micro-saccade update (A1: eyes are NEVER perfectly still) ───
+	_microsaccade_timer -= delta
+	if _microsaccade_timer <= 0:
+		# New micro-saccade: tiny random offset
+		_microsaccade_offset_h = randf_range(-MICROSACCADE_AMPLITUDE, MICROSACCADE_AMPLITUDE)
+		_microsaccade_offset_v = randf_range(-MICROSACCADE_AMPLITUDE, MICROSACCADE_AMPLITUDE)
+		_microsaccade_timer = randf_range(MICROSACCADE_MIN_INTERVAL, MICROSACCADE_MAX_INTERVAL)
+	else:
+		# Decay micro-saccade offset smoothly between pulses
+		var decay_t: float = clampf(3.0 * delta, 0.0, 1.0)
+		_microsaccade_offset_h = lerpf(_microsaccade_offset_h, 0.0, decay_t)
+		_microsaccade_offset_v = lerpf(_microsaccade_offset_v, 0.0, decay_t)
+
 	if _eye_follow_active:
-		# Smooth interpolation toward target (no saccade snapping)
-		var t: float = clampf(8.0 * delta, 0.0, 1.0)
+		# Exponential smoothing — near-instant saccade-like dart (speed 15.0)
+		var t: float = 1.0 - exp(-15.0 * delta)
 		_eye_follow_h = lerpf(_eye_follow_h, _eye_target_h, t)
 		_eye_follow_v = lerpf(_eye_follow_v, _eye_target_v, t)
 	else:
-		var t: float = clampf(EYE_RETURN_SPEED * delta, 0.0, 1.0)
+		# Organic return to center (slower, more natural)
+		var t: float = 1.0 - exp(-8.0 * delta)
 		_eye_follow_h = lerpf(_eye_follow_h, 0.0, t)
 		_eye_follow_v = lerpf(_eye_follow_v, 0.0, t)
 	# Compensate for head gaze: reduce eye movement as head turns
-	# BUT during scan glance, bypass: we want the side-eye to stay crisp
-	var head_comp: float = 1.0 if _scan_eye_active else (1.0 - (_gaze_blend * 0.5))
-	var h: float = _eye_follow_h * head_comp
-	var v: float = _eye_follow_v * head_comp
+	# Low factor (0.3) keeps eyes very expressive even during head turns
+	var head_comp: float = 1.0 if _scan_eye_active else (1.0 - (_gaze_blend * 0.3))
+	var h: float = _eye_follow_h * head_comp + _microsaccade_offset_h
+	var v: float = _eye_follow_v * head_comp + _microsaccade_offset_v
 	# Horizontal: swapped because Tama faces the user (mirrored)
 	if _bs_look_left >= 0:
 		_body_mesh.set_blend_shape_value(_bs_look_left, clampf(h, 0.0, 1.0))
@@ -3354,9 +3391,9 @@ func set_gaze_subtle(target: GazeTarget, speed: float = 3.0, max_blend: float = 
 		return
 	_gaze_lerp_speed = speed
 	if target == GazeTarget.NEUTRAL:
-		_gaze_target_head = Quaternion.IDENTITY
-		_gaze_target_neck = Quaternion.IDENTITY
+		# ANTI-SNAP: Just fade the blend — no quaternion reset
 		_gaze_blend_target = 0.0
+		_eye_follow_active = false
 	elif target in [GazeTarget.SCREEN_CENTER, GazeTarget.SCREEN_TOP, GazeTarget.SCREEN_BOTTOM, GazeTarget.OTHER_MONITOR]:
 		# Dynamic: compute actual screen pixel, then convert to 3D world point
 		var pt = _get_dynamic_target_point(target)
@@ -3365,13 +3402,92 @@ func set_gaze_subtle(target: GazeTarget, speed: float = 3.0, max_blend: float = 
 		var target_3d = _screen_to_world(pt.x, pt.y)
 		_gaze_world_target = target_3d
 		_look_at_world_point(target_3d, speed, max_blend)
+		_look_eyes_at_screen_point(pt.x, pt.y)  # Eyes dart instantly
 	else:
-		var head_pos = _get_head_world_pos()
-		var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
-		var target_point = head_pos + offset
+		var target_point: Vector3
+		if target == GazeTarget.BOOK:
+			target_point = _get_book_world_pos()
+		else:
+			var head_pos = _get_head_world_pos()
+			var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
+			target_point = head_pos + offset
 		_gaze_world_target = target_point
 		_look_at_world_point(target_point, speed, max_blend)
 	# Immediate sync to modifier (don't wait for next _process)
+	_sync_gaze_to_modifier()
+
+# ─── Idle Gaze System (A2) ──────────────────────────────────
+# Makes Tama feel alive when nothing is happening.
+# Rules:
+#   - She looks at her BOOK (Jnt_L_thumb) most of the time → she's reading
+#   - Occasionally glances at USER → she's aware you're there
+#   - NEVER looks at the SCREEN during idle → that means "I see what you're doing"
+#   - Screen gaze is EXCLUSIVELY driven by Python SCREEN_SCAN events
+
+func _is_idle_gaze_eligible() -> bool:
+	"""Check if idle gaze should be active (Tama is resting, not busy)."""
+	if not _gaze_active or not _started:
+		return false
+	if _is_speaking or _suspicion_staring:
+		return false
+	if conversation_active:
+		return false
+	if _scan_glance_timer > 0 or _scan_eye_active:
+		return false
+	if _ack_gaze_timer > 0:
+		return false
+	if _debug_gaze_mouse:
+		return false
+	# Only when on the wall or on the ground (idle poses)
+	if _anim_tree_module:
+		var st = _anim_tree_module.current_state
+		# ON_WALL=0, ON_GROUND=6 are the idle states
+		if st != 0 and st != 6:
+			return false
+	return true
+
+func _update_idle_gaze(delta: float) -> void:
+	"""Organic idle gaze: subtle head movements between BOOK and USER."""
+	if not _is_idle_gaze_eligible():
+		# Not eligible — reset timers so we start fresh when idle resumes
+		if _idle_gaze_active:
+			_idle_gaze_active = false
+			_idle_glance_return_timer = 0.0
+		return
+
+	# Return timer: currently doing an idle glance, waiting to return
+	if _idle_glance_return_timer > 0:
+		_idle_glance_return_timer -= delta
+		if _idle_glance_return_timer <= 0:
+			_idle_gaze_active = false
+			# Soft return to neutral (animation takes over)
+			set_gaze(GazeTarget.NEUTRAL, 1.5)
+		return
+
+	# Countdown to next idle gaze shift
+	_idle_gaze_timer -= delta
+	if _idle_gaze_timer > 0:
+		return
+
+	# ─── Trigger new idle glance ───
+	_idle_gaze_timer = randf_range(IDLE_GAZE_MIN_INTERVAL, IDLE_GAZE_MAX_INTERVAL)
+	var duration: float = randf_range(IDLE_GAZE_DURATION_MIN, IDLE_GAZE_DURATION_MAX)
+	_idle_glance_return_timer = duration
+	_idle_gaze_active = true
+
+	# Weighted random: BOOK 70%, USER 25%, micro-drift 5%
+	var roll: float = randf()
+	if roll < 0.70:
+		# BOOK — she's reading, gentle downward look toward Jnt_L_thumb
+		set_gaze_subtle(GazeTarget.BOOK, 1.5, 0.35)
+	elif roll < 0.95:
+		# USER — subtle awareness glance (not full head turn!)
+		set_gaze_subtle(GazeTarget.USER, 2.0, 0.25)
+	else:
+		# MICRO-DRIFT — tiny random head offset (musculature noise)
+		var tiny_yaw: float = randf_range(-3.0, 3.0)
+		var tiny_pitch: float = randf_range(-2.0, 2.0)
+		_set_gaze_from_angles(tiny_yaw, tiny_pitch, 1.0, 0.15)
 	_sync_gaze_to_modifier()
 
 # ─── Gaze System ────────────────────────────────────────
@@ -3402,7 +3518,7 @@ func _setup_gaze() -> void:
 		return
 	_skeleton = skel
 
-	# Find Head, Neck, and Right Hand bones
+	# Find Head, Neck, Right Hand, and Book bones
 	for i in range(_skeleton.get_bone_count()):
 		var bname = _skeleton.get_bone_name(i).to_lower()
 		if bname == "head":
@@ -3411,6 +3527,8 @@ func _setup_gaze() -> void:
 			_neck_bone_idx = i
 		elif bname == "jnt_r_hand":
 			_strike_hand_bone_idx = i
+		elif bname == "jnt_l_thumb":
+			_book_bone_idx = i
 
 	# Also find arm bones for IK
 	for i in range(_skeleton.get_bone_count()):
@@ -3451,6 +3569,10 @@ func _setup_gaze() -> void:
 		print("💪 Arm IK bones: Arm1[%d] Arm2[%d] — procedural pointing ready!" % [_arm1_bone_idx, _arm2_bone_idx])
 	else:
 		print("⚠️ Arm IK bones NOT FOUND — pointing disabled")
+	if _book_bone_idx >= 0:
+		print("📖 Book bone [%d] '%s' — dynamic BOOK gaze target!" % [_book_bone_idx, _skeleton.get_bone_name(_book_bone_idx)])
+	else:
+		print("⚠️ Jnt_L_thumb NOT FOUND — BOOK gaze uses static offset")
 
 	_gaze_active = _head_bone_idx >= 0 and _camera != null
 	if _gaze_active:
@@ -3499,11 +3621,20 @@ const GAZE_PITCH_OFFSET_DEG: float = -20.0
 # Preset targets → 3D world offsets from head (X=right, Y=up, Z=toward camera)
 # These are relative to the head bone position
 # Used ONLY for targets that don't map to a screen point (USER, BOOK, AWAY)
+# BOOK is dynamic when _book_bone_idx is found (uses Jnt_L_thumb world pos)
 var GAZE_PRESET_OFFSETS = {
 	GazeTarget.USER: Vector3(0, 1.5, 2.0),            # Up toward user (4th wall — head is down in Idle_wall)
-	GazeTarget.BOOK: Vector3(-0.3, -0.8, 0.5),         # Down in front
+	GazeTarget.BOOK: Vector3(-0.3, -0.8, 0.5),         # Down in front (fallback if bone not found)
 	GazeTarget.AWAY: Vector3(2.0, 0.2, -0.5),          # Behind to the right
 }
+
+func _get_book_world_pos() -> Vector3:
+	"""Get the BOOK target position from Jnt_L_thumb bone, or fallback to offset."""
+	if _book_bone_idx >= 0 and _skeleton != null:
+		return (_skeleton.global_transform * _skeleton.get_bone_global_pose(_book_bone_idx)).origin
+	# Fallback: offset from head
+	var head_pos = _get_head_world_pos()
+	return head_pos + GAZE_PRESET_OFFSETS.get(GazeTarget.BOOK, Vector3(-0.3, -0.8, 0.5))
 
 # ─── Dynamic Subject Gaze Helpers ───────────────────────────
 func _get_dynamic_target_point(target: GazeTarget) -> Vector2:
@@ -3539,9 +3670,11 @@ func _get_dynamic_target_point(target: GazeTarget) -> Vector2:
 			return Vector2(cx, cy)
 
 func _look_eyes_at_screen_point(px: float, py: float) -> void:
-	"""Orient pupils toward the given screen pixel and accentuate lateral movement."""
+	"""Orient pupils toward the given screen pixel — accentuated for expressiveness."""
 	_set_eye_target_from_screen(px, py)
-	_eye_target_h = signf(_eye_target_h) * minf(absf(_eye_target_h) * 1.5, 1.0)
+	# Exaggerate eye movement (2x) so pupils visibly dart to corners
+	_eye_target_h = signf(_eye_target_h) * minf(absf(_eye_target_h) * 2.0, 1.0)
+	_eye_target_v = signf(_eye_target_v) * minf(absf(_eye_target_v) * 2.0, 1.0)
 	_eye_follow_active = true
 
 func _look_eyes_at_screen_center() -> void:
@@ -3558,15 +3691,16 @@ func _look_eyes_at_webcam() -> void:
 
 func set_gaze(target: GazeTarget, speed: float = 5.0) -> void:
 	"""Look at a named preset target. NEUTRAL = fade gaze out (pure animation).
-	Screen-based targets (SCREEN_CENTER, TOP, BOTTOM, OTHER_MONITOR) are computed
-	dynamically from actual screen resolution — no hardcoded offsets."""
+	Screen-based targets use dynamic screen resolution. Anti-snap: NEUTRAL only
+	fades blend instead of resetting target quaternions."""
 	if not _gaze_active:
 		return
 	_gaze_lerp_speed = speed
 	if target == GazeTarget.NEUTRAL:
-		_gaze_target_head = Quaternion.IDENTITY
-		_gaze_target_neck = Quaternion.IDENTITY
+		# ANTI-SNAP: Don't reset target quaternions to IDENTITY!
+		# Just fade the blend — the head glides back to pure animation.
 		_gaze_blend_target = 0.0
+		_eye_follow_active = false
 	elif target in [GazeTarget.SCREEN_CENTER, GazeTarget.SCREEN_TOP, GazeTarget.SCREEN_BOTTOM, GazeTarget.OTHER_MONITOR]:
 		# Dynamic: compute actual screen pixel, then convert to 3D world point
 		var pt = _get_dynamic_target_point(target)
@@ -3576,11 +3710,16 @@ func set_gaze(target: GazeTarget, speed: float = 5.0) -> void:
 		var target_3d = _screen_to_world(pt.x, pt.y)
 		_gaze_world_target = target_3d
 		_look_at_world_point(target_3d, speed)
+		_look_eyes_at_screen_point(pt.x, pt.y)  # Eyes dart instantly to screen target
 	else:
 		# Offset-based targets (USER, BOOK, AWAY)
-		var head_pos = _get_head_world_pos()
-		var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
-		var target_point = head_pos + offset
+		var target_point: Vector3
+		if target == GazeTarget.BOOK:
+			target_point = _get_book_world_pos()
+		else:
+			var head_pos = _get_head_world_pos()
+			var offset = GAZE_PRESET_OFFSETS.get(target, Vector3(0, 0, 2))
+			target_point = head_pos + offset
 		_gaze_world_target = target_point
 		_look_at_world_point(target_point, speed)
 	# Immediate sync to modifier (don't wait for next _process)

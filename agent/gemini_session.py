@@ -1275,12 +1275,26 @@ async def run_gemini_loop(pya):
                             print(f"  \U0001f50d S:{s_int}/10 | A:{ali} | Cat:{cat} | \u0394S:{delta:+.1f} | C:{c_val:.2f} | Mood:{state.get('_mood_bias', 0):.1f} \u2014 {reason}")
 
                             # Notify Godot: Tama scanned the screen
-                            scan_msg = json.dumps({
+                            scan_data = {
                                 "command": "SCREEN_SCAN",
                                 "suspicion": round(state["current_suspicion_index"], 1),
                                 "alignment": ali,
                                 "category": cat
-                            })
+                            }
+                            # C1: Send active window center as focus point when suspicious
+                            # This makes Tama look at the ACTUAL suspicious content,
+                            # not just screen center. Only when alignment < 0.8 (not fully aligned).
+                            if ali < 0.8:
+                                try:
+                                    active_win = gw.getActiveWindow()
+                                    if active_win and active_win.width > 50:
+                                        focus_x = active_win.left + active_win.width // 2
+                                        focus_y = active_win.top + active_win.height // 2
+                                        scan_data["focus_x"] = focus_x
+                                        scan_data["focus_y"] = focus_y
+                                except Exception:
+                                    pass  # Window query failed — Godot falls back to screen center
+                            scan_msg = json.dumps(scan_data)
                             broadcast_to_godot(scan_msg)
 
                             state["_api_screen_pulses"] += 1

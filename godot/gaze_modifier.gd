@@ -21,14 +21,12 @@ var gaze_lerp_speed: float = 5.0         # Slerp speed toward target
 var head_bone_idx: int = -1
 var neck_bone_idx: int = -1
 
-# Base rotation capture: the animation's natural pose (no gaze overlay)
-var _head_base_rot: Quaternion = Quaternion.IDENTITY
-var _neck_base_rot: Quaternion = Quaternion.IDENTITY
-var _base_captured: bool = false
+# (Base rotation variables removed — we now read animation pose LIVE each frame)
 var _was_blending: bool = false  # For one-shot debug print
 
 # Constants
-const BLEND_SPEED: float = 4.0
+const BLEND_FADE_IN_SPEED: float = 4.0   # How fast gaze activates
+const BLEND_FADE_OUT_SPEED: float = 2.0  # How fast gaze releases (slower = lingers naturally)
 
 # ─── Arm IK State (set by main.gd) ────────────────────────
 var arm_ik_active: bool = false
@@ -83,54 +81,46 @@ func _process_modification_with_delta(delta: float) -> void:
 
 
 func _update_gaze(skel: Skeleton3D, delta: float) -> void:
-	"""Additive gaze: blend between animation's base rotation and gaze target."""
+	"""Additive gaze: blend between LIVE animation rotation and gaze target.
+	Reads animation pose directly each frame — no cached base (anti-snap)."""
 
-	# 0. Capture the animation's bone rotation when gaze ISN'T active.
-	#    Here in _process_modification_with_delta, the bones contain the
-	#    ANIMATION'S output (not our previous modification) — this is the
-	#    key advantage of SkeletonModifier3D!
-	#    We still only capture when blend ≈ 0 to avoid feedback loops from
-	#    the influence system.
-	if gaze_blend < 0.01:
-		if head_bone_idx >= 0:
-			_head_base_rot = skel.get_bone_pose_rotation(head_bone_idx)
-		if neck_bone_idx >= 0:
-			_neck_base_rot = skel.get_bone_pose_rotation(neck_bone_idx)
-		if not _base_captured:
-			_base_captured = true
-			print("👀 GazeModifier: base rotation captured (head=%s)" % str(_head_base_rot))
+	# 0. Read animation pose LIVE every frame.
+	#    SkeletonModifier3D runs AFTER AnimationTree, so get_bone_pose_rotation
+	#    returns the PURE animation output, not our modification. Zero ghost poses.
+	var anim_head_rot: Quaternion = skel.get_bone_pose_rotation(head_bone_idx) if head_bone_idx >= 0 else Quaternion.IDENTITY
+	var anim_neck_rot: Quaternion = skel.get_bone_pose_rotation(neck_bone_idx) if neck_bone_idx >= 0 else Quaternion.IDENTITY
 
-	# 1. Smooth blend weight (fade in/out)
-	var blend_t: float = clampf(BLEND_SPEED * delta, 0.0, 1.0)
+	# 1. Exponential blend weight — frame-rate independent, asymmetric (B3)
+	#    Fade-in is snappy, fade-out lingers naturally
+	var blend_speed: float = BLEND_FADE_IN_SPEED if gaze_blend_target > gaze_blend else BLEND_FADE_OUT_SPEED
+	var blend_t: float = 1.0 - exp(-blend_speed * delta)
 	gaze_blend = lerpf(gaze_blend, gaze_blend_target, blend_t)
 
-	# 2. Slerp toward target rotation
-	var slerp_t: float = clampf(gaze_lerp_speed * delta, 0.0, 1.0)
+	# 2. Exponential slerp toward target (organic acceleration/deceleration)
+	var slerp_t: float = 1.0 - exp(-gaze_lerp_speed * delta)
 	gaze_delta_head = gaze_delta_head.slerp(gaze_target_head, slerp_t).normalized()
 	gaze_delta_neck = gaze_delta_neck.slerp(gaze_target_neck, slerp_t).normalized()
 
-	# 3. When blend ≈ 0, no need to modify bones — animation pose is already correct
+	# 3. When blend ≈ 0, don't touch bones — pure animation
 	if gaze_blend < 0.005:
 		if _was_blending:
 			_was_blending = false
-			print("👀 GazeModifier: blend faded out (gaze inactive)")
+			print("👀 GazeModifier: blend faded out — pure animation")
 		return
 
-	# One-shot print when gaze starts affecting bones
 	if not _was_blending:
 		_was_blending = true
-		print("👀 GazeModifier: blend ACTIVE! blend=%.3f target=%.3f delta_head=%s" % [gaze_blend, gaze_blend_target, str(gaze_delta_head)])
 
-	# 4. Blend between base rotation and base+gaze.
-	#    base_rot → the animation's natural head position (no chin-up)
-	#    base_rot * gaze_delta → gaze applied on top of animation
+	# 4. Fuse: animation pose + gaze delta, weighted by blend
+	#    anim_rot * gaze_delta = "animation + gaze on top"
+	#    anim_rot.slerp(that, blend) = smooth transition
 	if head_bone_idx >= 0:
-		var target_rot: Quaternion = (_head_base_rot * gaze_delta_head).normalized()
-		var final_rot: Quaternion = _head_base_rot.slerp(target_rot, gaze_blend).normalized()
+		var target_rot: Quaternion = (anim_head_rot * gaze_delta_head).normalized()
+		var final_rot: Quaternion = anim_head_rot.slerp(target_rot, gaze_blend).normalized()
 		skel.set_bone_pose_rotation(head_bone_idx, final_rot)
 	if neck_bone_idx >= 0:
-		var target_rot: Quaternion = (_neck_base_rot * gaze_delta_neck).normalized()
-		var final_rot: Quaternion = _neck_base_rot.slerp(target_rot, gaze_blend).normalized()
+		var target_rot: Quaternion = (anim_neck_rot * gaze_delta_neck).normalized()
+		var final_rot: Quaternion = anim_neck_rot.slerp(target_rot, gaze_blend).normalized()
 		skel.set_bone_pose_rotation(neck_bone_idx, final_rot)
 
 
@@ -138,8 +128,8 @@ func _update_gaze(skel: Skeleton3D, delta: float) -> void:
 func _update_arm_ik(skel: Skeleton3D, delta: float) -> void:
 	"""Additive IK: make right arm point towards arm_ik_target."""
 
-	# Smooth blend weight
-	var blend_t: float = clampf(ARM_IK_BLEND_SPEED * delta, 0.0, 1.0)
+	# Exponential blend weight (consistent with gaze system)
+	var blend_t: float = 1.0 - exp(-ARM_IK_BLEND_SPEED * delta)
 	arm_ik_blend = lerpf(arm_ik_blend, arm_ik_blend_target, blend_t)
 
 	# Capture base rotations when IK is inactive
