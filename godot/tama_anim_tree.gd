@@ -705,6 +705,41 @@ func is_striking() -> bool:
 func is_transitioning() -> bool:
 	return current_state in [State.LEAVING_WALL, State.RETURNING_WALL, State.LEAVING_GROUND, State.SITTING_GROUND]
 
+# ─── Ghost Silhouette (freeze at Hello frame 0) ──────────────
+var _ghost_frozen: bool = false  # True when tree is paused for ghost pose
+
+func freeze_hello_pose() -> void:
+	"""Jump to Hello frame 0 and FREEZE the AnimTree.
+	Tama holds the first pose as a ghostly silhouette until unfreeze_and_play_hello()."""
+	if not _ready_ok or not _playback or not _tree:
+		return
+	var anim_key := "hello" if _names.has("hello") else "walk_in"
+	if not _names.has(anim_key):
+		# No entrance anim — just go to idle_wall frozen
+		anim_key = "idle_wall"
+	_playback.start(anim_key)
+	_tree.advance(0)  # Evaluate first frame
+	_tree.active = false  # FREEZE — no more processing
+	_ghost_frozen = true
+	if _tama_node:
+		_tama_node.set_deferred("visible", true)
+	print("🎬 Ghost pose: frozen at '%s' frame 0" % anim_key)
+
+func unfreeze_and_play_hello() -> void:
+	"""UNFREEZE the AnimTree and play Hello from the start.
+	Called when Gemini's voice arrives — Tama materializes."""
+	if not _ready_ok or not _tree:
+		return
+	_ghost_frozen = false
+	_tree.active = true  # Resume processing
+	# Re-start Hello from beginning for clean playback
+	var anim_key := "hello" if _names.has("hello") else "walk_in"
+	if _names.has(anim_key) and _playback:
+		_playback.start(anim_key)
+	_set_state(State.LEAVING_WALL)  # Same state as walk_in()
+	print("🎬 Ghost → MATERIALIZED! Playing '%s'" % anim_key)
+
+
 func get_current_anim_key() -> String:
 	if not _playback:
 		return ""

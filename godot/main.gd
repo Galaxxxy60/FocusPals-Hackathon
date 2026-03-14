@@ -250,6 +250,18 @@ const GLITCH_TELEPORT_START: float = 2.5      # Starting intensity (snappy, not 
 const GLITCH_TELEPORT_FADE_SPEED: float = 8.0  # Fast fade to 0 (~0.3s — DBZ instant transmission)
 var _glitch_teleporting: bool = false        # True during teleport-in sequence
 
+# ─── Ghost Silhouette (Tama appears as hologram, frozen, waiting for voice) ───
+var _ghost_active: bool = false              # True while ghost hologram is showing
+var _ghost_alpha: float = 0.0               # Current ghost opacity (0→TARGET during ghost, →1.0 during materialize)
+var _ghost_materializing: bool = false       # True during ghost→solid fade
+var _ghost_materials: Array = []             # All StandardMaterial3D refs on Tama mesh
+var _ghost_holo_quad: MeshInstance3D = null   # Full-screen quad for hologram shader
+var _ghost_holo_material: ShaderMaterial = null  # Hologram shader material
+const GHOST_ALPHA_TARGET: float = 0.5        # Hologram alpha (higher since shader provides visual)
+const GHOST_FADE_IN_SPEED: float = 2.0       # Speed to fade ghost silhouette in
+const GHOST_MATERIALIZE_SPEED: float = 3.0   # Speed to fade from ghost to solid
+const GHOST_HOLO_FADE_SPEED: float = 2.5     # Speed hologram intensity fades to 0 during materialization
+
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
 var _session_ding_player: AudioStreamPlayer = null
@@ -350,6 +362,7 @@ func _ready() -> void:
 	_setup_greeting_audio()
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_glitch_effect")  # After _setup_gaze (needs _camera)
+	call_deferred("_setup_ghost_hologram") # After _setup_glitch_effect (same camera)
 	call_deferred("_sync_tama_camera")    # After _setup_gaze finds _camera
 	call_deferred("_setup_gaze_debug")
 	call_deferred("_setup_spring_bones_module")
@@ -1748,6 +1761,7 @@ func _process(delta: float) -> void:
 
 	# Glitch effect smooth fade
 	_update_glitch(delta)
+	_update_ghost_fade(delta)
 
 	# Blink system
 	_update_blink(delta)
@@ -1916,31 +1930,18 @@ func _handle_message(raw: String) -> void:
 				print("🚀 Session lancée ! (Tama déjà présente — upgrade conversation → session)")
 				if _session_ding_player:
 					_session_ding_player.play()
-			elif _has_local_greeting:
-				# ⚡ Instant entrance with local greeting audio (0ms latency)
-				print("🚀 Session lancée ! (Greeting local)")
-				_instant_entrance_with_greeting()
 			else:
-				# Fallback: wait for Gemini's first audio
-				print("🚀 Session lancée ! (Attente de la voix...)")
-				_waiting_for_voice = true
-				_voice_timeout_timer = 15.0
-				_show_status_indicator("Connexion neuronale...", Color(0.5, 0.2, 0.8, 0.9))
+				# Silhouette fantôme — se matérialise au premier son de l'IA
+				print("🚀 Session lancée ! (Silhouette fantôme — attente voix IA)")
+				_show_ghost_silhouette()
 		return
 	elif command == "START_CONVERSATION":
 		if not session_active and not conversation_active:
 			conversation_active = true
 			_convo_engagement = 0  # Reset engagement counter
-			if _has_local_greeting:
-				# ⚡ Instant entrance with local greeting audio (0ms latency)
-				print("💬 Mode conversation ! (Greeting local)")
-				_instant_entrance_with_greeting()
-			else:
-				# Fallback: wait for Gemini's first audio
-				print("💬 Mode conversation ! (Attente de la voix...)")
-				_waiting_for_voice = true
-				_voice_timeout_timer = 15.0
-				_show_status_indicator("Appel de Tama...", Color(0.5, 0.7, 1.0, 0.9))
+			# Silhouette fantôme — se matérialise au premier son de l'IA
+			print("💬 Mode conversation ! (Silhouette fantôme — attente voix IA)")
+			_show_ghost_silhouette()
 		return
 	elif command == "SESSION_COMPLETE":
 		print("🏁 Session complète — fin de session !")
@@ -2861,6 +2862,49 @@ func _setup_glitch_effect() -> void:
 	_glitch_quad.visible = false
 	print("📺 Glitch effect ready on %s (hidden)" % target_cam.name)
 
+
+func _setup_ghost_hologram() -> void:
+	"""Create a second camera quad for the ghost hologram shader.
+	Works like the glitch quad but with the hologram effect."""
+	var target_cam: Camera3D = _tama_cam if _tama_cam else _camera
+	if target_cam == null:
+		push_warning("⚠️ Ghost hologram: No camera found")
+		return
+
+	var holo_shader = load("res://ghost_hologram.gdshader")
+	if not holo_shader:
+		push_warning("⚠️ ghost_hologram.gdshader not found")
+		return
+
+	_ghost_holo_quad = MeshInstance3D.new()
+	_ghost_holo_quad.name = "HologramQuad"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(10.0, 10.0)
+	_ghost_holo_quad.mesh = quad
+	# Slightly closer than glitch quad so hologram renders on top
+	_ghost_holo_quad.position = Vector3(0.0, 0.0, -0.9)
+
+	_ghost_holo_material = ShaderMaterial.new()
+	_ghost_holo_material.shader = holo_shader
+	_ghost_holo_material.set_shader_parameter("intensity", 0.0)
+	_ghost_holo_material.set_shader_parameter("holo_color", Color(0.3, 0.9, 1.0, 1.0))
+	_ghost_holo_material.set_shader_parameter("scanline_count", 180.0)
+	_ghost_holo_material.set_shader_parameter("scanline_strength", 0.35)
+	_ghost_holo_material.set_shader_parameter("flicker_speed", 8.0)
+	_ghost_holo_material.set_shader_parameter("flicker_amount", 0.15)
+	_ghost_holo_material.set_shader_parameter("aberration", 0.003)
+	_ghost_holo_material.set_shader_parameter("glitch_rate", 0.08)
+	_ghost_holo_material.set_shader_parameter("glitch_strength", 0.03)
+	_ghost_holo_material.set_shader_parameter("edge_glow", 1.5)
+	_ghost_holo_material.set_shader_parameter("ghost_alpha", 0.6)
+	_ghost_holo_material.render_priority = 99  # Just below glitch quad
+	_ghost_holo_quad.material_override = _ghost_holo_material
+
+	_ghost_holo_quad.layers = TAMA_LAYER_BIT
+	target_cam.add_child(_ghost_holo_quad)
+	_ghost_holo_quad.visible = false
+	print("👻 Ghost hologram shader ready on %s" % target_cam.name)
+
 func _set_glitch_active(active: bool) -> void:
 	if _glitch_quitting:
 		return  # Don't interrupt quit sequence
@@ -2921,18 +2965,24 @@ func _update_glitch(delta: float) -> void:
 
 func _trigger_entrance() -> void:
 	"""Voice-synced entrance: called when first VISEME arrives or timeout expires.
-	Makes Tama visible and triggers her entrance animation."""
+	If ghost is active, triggers materialization (ghost → solid + glitch + Hello play).
+	Otherwise, does the classic instant entrance."""
 	if not _waiting_for_voice:
 		return
 	_waiting_for_voice = false
 	_hide_status_indicator()
 
+	# ── Ghost materialization path ──
+	if _ghost_active:
+		_materialize_from_ghost()
+		print("✨ Matérialisation ! Tama sort de sa silhouette fantôme.")
+		return
+
+	# ── Classic entrance (fallback if no ghost was shown) ──
 	# 1. Force window visible + position
 	if _tama_window:
 		_tama_window.visible = true
-		_tama_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)  # Always click-through (Tama dodges)
-		# Fix z-order: re-show _ui_window so it stays above _tama_window
-		# This only happens once per entrance, not on every radial open
+		_tama_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
 		if _ui_window:
 			_ui_window.visible = false
 			_ui_window.visible = true
@@ -2969,49 +3019,153 @@ func _setup_greeting_audio() -> void:
 	add_child(_local_greeting_player)
 
 
-func _instant_entrance_with_greeting() -> void:
-	"""Instant entrance with local greeting audio. No waiting for Gemini.
-	Used when tama_hello.wav is available for 0ms latency."""
-	_waiting_for_voice = false  # Don't wait for AI voice
-	_hide_status_indicator()
+func _show_ghost_silhouette() -> void:
+	"""Show Tama as a holographic ghostly silhouette, frozen on Hello frame 0.
+	Tama is rendered at FULL OPACITY — the hologram shader handles the ghostly look
+	(scanlines, tint, reduced alpha). She waits until Gemini's voice → materialization."""
+	_waiting_for_voice = true  # Wait for TAMA_VOICE_READY / first VISEME
+	_voice_timeout_timer = 15.0  # Safety timeout
 
 	# 1. Force window visible + position
 	if _tama_window:
 		_tama_window.visible = true
-		_tama_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)  # Always click-through (Tama dodges)
-		# Fix z-order: re-show _ui_window so it stays above _tama_window
+		_tama_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
 		if _ui_window:
 			_ui_window.visible = false
 			_ui_window.visible = true
 		if not _dodge_active:
 			_reposition_bottom_right()
-	# 2. Force 3D model visible
+
+	# 2. Force 3D model visible at FULL OPACITY
+	# (shader reads screen_texture — Tama must be fully rendered for the shader to process)
 	var tama_node = get_node_or_null("Tama")
 	if tama_node:
 		tama_node.visible = true
-	# 3. Animate arrival
-	if _anim_tree_module and _anim_tree_module.is_off_screen():
-		_teleport_glitch_in()
-	elif not _started:
-		_start_idle_wall()
 
-	# 4. Play local greeting + animate mouth
-	if _local_greeting_player and _local_greeting_player.stream:
-		_local_greeting_player.play()
-		_is_speaking = true
-		_set_mouth("M2")  # Open mouth ("A" shape for "Salut")
-		# Mouth animation sequence: open → mid → close (simulates speech)
-		var mouth_tween = create_tween()
-		mouth_tween.tween_callback(func(): _set_mouth("M2")).set_delay(0.2)   # A ouvert
-		mouth_tween.tween_callback(func(): _set_mouth("M3")).set_delay(0.15)  # teeth "i"
-		mouth_tween.tween_callback(func(): _set_mouth("M1")).set_delay(0.15)  # O rond
-		mouth_tween.tween_callback(func(): _set_mouth("M3")).set_delay(0.15)  # teeth
-		mouth_tween.tween_callback(func(): _set_mouth("M0")).set_delay(0.2)   # close
-		mouth_tween.tween_callback(func():
-			_is_speaking = false
-			_set_mouth(_current_mouth_slot)  # Return to mood face
-		).set_delay(0.3)
-	print("⚡ Entrée instantanée avec greeting local !")
+	# 3. Freeze AnimTree at Hello frame 0
+	if _anim_tree_module and _anim_tree_module._ready_ok:
+		_anim_tree_module.freeze_hello_pose()
+
+	# 4. Activate hologram shader (this does ALL the visual ghosting)
+	if _ghost_holo_material and _ghost_holo_quad:
+		_ghost_holo_material.set_shader_parameter("intensity", 1.0)
+		_ghost_holo_quad.visible = true
+
+	# 5. Activate ghost mode
+	_ghost_active = true
+	_ghost_materializing = false
+
+	# 6. Show status indicator
+	_show_status_indicator("Connexion neuronale...", Color(0.3, 0.9, 1.0, 0.9))
+
+	# Grace period: don't dodge during ghost phase
+	_dodge_cooldown_timer = 10.0
+	_dodge_armed = false
+	print("👻 Hologram fantôme activé — en attente de la voix IA...")
+
+
+func _materialize_from_ghost() -> void:
+	"""Transition from hologram ghost to full materialized Tama.
+	Triggered by TAMA_VOICE_READY or first non-REST VISEME."""
+	_ghost_active = false
+	_ghost_materializing = true  # _update_ghost_fade will smoothly fade to α=1.0
+
+	# 1. Start glitch effect (materialization visual)
+	if _glitch_material and _glitch_quad:
+		_glitch_teleporting = true
+		_glitch_intensity = GLITCH_TELEPORT_START
+		_glitch_target = 0.0
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		_glitch_quad.visible = true
+
+	# 2. Hologram shader will fade out via _update_ghost_fade (intensity 1→0)
+	# (it's already at 1.0 from ghost phase)
+
+	# 3. Unfreeze AnimTree and play Hello
+	if _anim_tree_module and _anim_tree_module._ready_ok:
+		_anim_tree_module.unfreeze_and_play_hello()
+	_started = true
+	_last_anim_command_time = Time.get_unix_time_from_system()
+
+	# Grace period for Hello anim
+	_dodge_cooldown_timer = 5.0
+	_dodge_armed = false
+
+	# Reset spring bone physics to prevent velocity explosion
+	if _spring_bones_node and _spring_bones_node.has_method("reset_physics"):
+		_spring_bones_node.reset_physics()
+
+	print("✨ MATÉRIALISATION ! Glitch + hologram fade-out + Hello anim")
+
+
+func _collect_tama_materials() -> void:
+	"""Scan Tama's mesh hierarchy and collect all StandardMaterial3D refs.
+	Also stores original transparency mode for correct restore after ghost."""
+	_ghost_materials.clear()
+	_ghost_original_transparency.clear()
+	var tama = get_node_or_null("Tama")
+	if not tama:
+		return
+	_scan_materials_recursive(tama)
+	print("👻 Collected %d materials for ghost effect" % _ghost_materials.size())
+
+
+var _ghost_original_transparency: Dictionary = {}  # Material → original BaseMaterial3D.Transparency
+
+
+func _scan_materials_recursive(node: Node) -> void:
+	"""Recursively find all StandardMaterial3D on MeshInstance3D nodes."""
+	if node is MeshInstance3D:
+		var mesh_inst: MeshInstance3D = node as MeshInstance3D
+		for i in range(mesh_inst.get_surface_override_material_count()):
+			var mat = mesh_inst.get_surface_override_material(i)
+			if mat is StandardMaterial3D and mat not in _ghost_materials:
+				_ghost_materials.append(mat)
+				_ghost_original_transparency[mat] = (mat as StandardMaterial3D).transparency
+		# Also check mesh materials (if no override)
+		if mesh_inst.mesh:
+			for i in range(mesh_inst.mesh.get_surface_count()):
+				var mat = mesh_inst.mesh.surface_get_material(i)
+				if mat is StandardMaterial3D and mat not in _ghost_materials:
+					_ghost_materials.append(mat)
+					_ghost_original_transparency[mat] = (mat as StandardMaterial3D).transparency
+	for child in node.get_children():
+		_scan_materials_recursive(child)
+
+
+func _set_tama_alpha(alpha: float) -> void:
+	"""Set the alpha of all Tama materials. 0.0 = invisible, 1.0 = fully opaque."""
+	for mat in _ghost_materials:
+		if mat is StandardMaterial3D:
+			var std_mat: StandardMaterial3D = mat as StandardMaterial3D
+			if alpha < 0.99:
+				# Enable alpha blending for translucency
+				std_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				std_mat.albedo_color.a = alpha
+			else:
+				# Restore original transparency mode
+				var orig = _ghost_original_transparency.get(mat, BaseMaterial3D.TRANSPARENCY_DISABLED)
+				std_mat.transparency = orig
+				std_mat.albedo_color.a = 1.0
+
+
+func _update_ghost_fade(delta: float) -> void:
+	"""Fade hologram shader intensity during materialization (1→0).
+	During ghost phase: shader is static at intensity=1.0, nothing to update."""
+	if _ghost_materializing:
+		# Fade hologram shader intensity from 1→0
+		if _ghost_holo_material:
+			var holo_intensity: float = _ghost_holo_material.get_shader_parameter("intensity")
+			holo_intensity = maxf(holo_intensity - GHOST_HOLO_FADE_SPEED * delta, 0.0)
+			_ghost_holo_material.set_shader_parameter("intensity", holo_intensity)
+			if holo_intensity < 0.001:
+				_ghost_materializing = false
+				_ghost_holo_material.set_shader_parameter("intensity", 0.0)
+				if _ghost_holo_quad:
+					_ghost_holo_quad.visible = false
+				print("👻 Hologram fade complete — Tama fully solid")
+		else:
+			_ghost_materializing = false
 
 func _teleport_glitch_in() -> void:
 	"""Primary arrival: Tama materializes with a glitch effect + Hello animation.
