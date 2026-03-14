@@ -49,6 +49,7 @@ var _arm2_base_rot: Quaternion = Quaternion.IDENTITY
 # ─── Spring Bones Reference ──────────────────────────────
 # If set, spring bones update() will be called after gaze (same post-anim timing)
 var spring_bones_node: Node = null
+var ghost_freeze: bool = false  # When true, skip spring bones (ghost BS_Appear conflict)
 
 # ─── Debug callback (optional, set by main.gd) ───────────
 var debug_callback: Callable = Callable()
@@ -73,7 +74,7 @@ func _process_modification_with_delta(delta: float) -> void:
 		_update_arm_ik(skel, delta)
 
 	# ─── Spring Bones ─────────────────────────────────────
-	if spring_bones_node and spring_bones_node.has_method("update"):
+	if not ghost_freeze and spring_bones_node and spring_bones_node.has_method("update"):
 		spring_bones_node.update(delta)
 
 	# ─── Debug Callback ──────────────────────────────────

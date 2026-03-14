@@ -99,6 +99,7 @@ var _bs_eyebrow_question: int = -1
 var _bs_eyebrow_sad: int = -1
 var _bs_eyebrow_angry: int = -1
 var _bs_eyebrow_surprise: int = -1
+var _bs_appear: int = -1  # BS_Appear: flat pancake at 1.0, normal at 0.0
 
 
 
@@ -118,7 +119,7 @@ const JAW_OPEN_MAP = {
 # Neutral face is in A1 (x: 0.00-0.25, y: 0.00-0.25)
 # Offset = target_cell_origin - neutral_cell_origin
 const EYE_OFFSETS = {
-	"E0": Vector3(0, 0, 0),           # Neutral (body default) — no offset
+	"E0": Vector3(0, 0.5, 0),         # A3: Neutral (swapped with wink)
 	"E1": Vector3(0.5, 0, 0),         # C1: Plissés fort suspicieux
 	"E2": Vector3(0.75, 0, 0),        # D1: Fermés
 	"E3": Vector3(0.5, 0.25, 0),      # C2: Wide/grands ouverts
@@ -127,7 +128,7 @@ const EYE_OFFSETS = {
 	"E6": Vector3(0.75, 0.5, 0),      # D3: Semi-closed (blink frame)
 	"E7": Vector3(0.5, 0.75, 0),      # C4: Plissés léger malicieux
 	"E8": Vector3(0.75, 0.75, 0),     # D4: Furieux
-	"E9": Vector3(0, 0.5, 0),         # A3: Happy Wink (clin d'œil complice)
+	"E9": Vector3(0, 0, 0),           # A1: Happy Wink (swapped — home position, fully opaque)
 }
 
 const MOUTH_OFFSETS = {
@@ -200,6 +201,13 @@ var _blink_phase: int = 0     # 0=idle, 1=closing, 2=closed, 3=opening
 var _blink_frame_timer: float = 0.0
 const BLINK_FRAME_DURATION: float = 0.03
 
+# ─── Wink System (ghost entrance + post-hello) ────────────
+var _wink_active: bool = false           # True while winking
+var _wink_delay_timer: float = -1.0      # Countdown before wink starts (<0 = inactive)
+var _wink_hold_timer: float = 0.0        # How long to hold the wink
+const WINK_GHOST_DELAY: float = 1.0      # Delay before wink during ghost freeze
+const WINK_HOLD_DURATION: float = 1.5    # How long to hold wink after materialization
+
 # ─── Eye Follow (Blend Shapes: LookLeft/Right/Up/Down) ───
 var _bs_look_left: int = -1
 var _bs_look_right: int = -1
@@ -250,17 +258,23 @@ const GLITCH_TELEPORT_START: float = 2.5      # Starting intensity (snappy, not 
 const GLITCH_TELEPORT_FADE_SPEED: float = 8.0  # Fast fade to 0 (~0.3s — DBZ instant transmission)
 var _glitch_teleporting: bool = false        # True during teleport-in sequence
 
+# ─── Ghost Materialization Glitch (slower, more dramatic than teleport) ───
+const GLITCH_MATERIALIZE_START: float = 3.5   # Higher starting intensity for drama
+const GLITCH_MATERIALIZE_FADE_SPEED: float = 3.0  # Slower fade (∼1.2s) for visible transition
+var _glitch_materializing_ghost: bool = false  # True during ghost→solid glitch (separate from teleport)
+
 # ─── Ghost Silhouette (Tama appears as hologram, frozen, waiting for voice) ───
 var _ghost_active: bool = false              # True while ghost hologram is showing
 var _ghost_alpha: float = 0.0               # Current ghost opacity (0→TARGET during ghost, →1.0 during materialize)
 var _ghost_materializing: bool = false       # True during ghost→solid fade
+var _ghost_fade_in: float = 0.0             # 0→1 fade-in for ghost appearance (shader param)
 var _ghost_materials: Array = []             # All StandardMaterial3D refs on Tama mesh
 var _ghost_holo_quad: MeshInstance3D = null   # Full-screen quad for hologram shader
 var _ghost_holo_material: ShaderMaterial = null  # Hologram shader material
 const GHOST_ALPHA_TARGET: float = 0.5        # Hologram alpha (higher since shader provides visual)
-const GHOST_FADE_IN_SPEED: float = 2.0       # Speed to fade ghost silhouette in
+const GHOST_FADE_IN_SPEED: float = 2.0       # Speed to fade ghost silhouette in (BS_Appear 1→0)
 const GHOST_MATERIALIZE_SPEED: float = 3.0   # Speed to fade from ghost to solid
-const GHOST_HOLO_FADE_SPEED: float = 2.5     # Speed hologram intensity fades to 0 during materialization
+const GHOST_HOLO_FADE_SPEED: float = 1.2     # Slower hologram fade for smooth transition (∼0.8s)
 
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
@@ -1765,6 +1779,8 @@ func _process(delta: float) -> void:
 
 	# Blink system
 	_update_blink(delta)
+	# Wink system (ghost entrance + post-hello)
+	_update_wink(delta)
 
 	# ── Project head bone to 2D for session timer ──
 	if _skeleton and _head_bone_idx >= 0 and _tama_cam:
@@ -2656,6 +2672,10 @@ func _scan_for_materials(node: Node) -> void:
 					_bs_white_glasses = bs_i
 					_body_mesh = mesh_inst
 					print("  🔥 BS_WhiteGlasses found (index %d) — IMBA ready!" % bs_i)
+				elif bs_name == "BS_Appear":
+					_bs_appear = bs_i
+					_body_mesh = mesh_inst
+					print("  ✨ BS_Appear found (index %d) — ghost unfold ready!" % bs_i)
 	for child in node.get_children():
 		_scan_for_materials(child)
 
@@ -2759,6 +2779,9 @@ func _set_pupil_hide(amount: float) -> void:
 func _update_blink(delta: float) -> void:
 	if not _expression_ready:
 		return
+	# Don't blink while winking
+	if _wink_active:
+		return
 
 	if _blink_phase == 0:
 		# Waiting for next blink
@@ -2787,6 +2810,43 @@ func _update_blink(delta: float) -> void:
 				_set_pupil_hide(hide_val)
 				_apply_eye_offset(_current_eye_slot)  # Back to mood expression
 
+
+func _update_wink(delta: float) -> void:
+	"""Handles timed wink: delay → activate → hold → restore."""
+	if not _expression_ready:
+		return
+
+	# Phase 1: Countdown delay before wink starts
+	if _wink_delay_timer > 0.0:
+		_wink_delay_timer -= delta
+		if _wink_delay_timer <= 0.0:
+			_wink_delay_timer = -1.0
+			_wink_active = true
+			_wink_hold_timer = 999.0  # Hold indefinitely until materialization resets it
+			# Apply wink expression (E9 + hide left iris)
+			_apply_eye_offset("E9")
+			if _body_mesh:
+				if _bs_hide_left_eye >= 0:
+					_body_mesh.set_blend_shape_value(_bs_hide_left_eye, 1.0)   # Left: hidden (wink)
+				if _bs_hide_right_eye >= 0:
+					_body_mesh.set_blend_shape_value(_bs_hide_right_eye, 0.0)  # Right: visible
+			if _mouth_material and MOUTH_OFFSETS.has("M4"):
+				_mouth_material.uv1_offset = MOUTH_OFFSETS["M4"]
+			print("😉 Clin d'œil (E9 + hide left iris)")
+		return
+
+	# Phase 2: Wink is active — count down hold timer
+	if _wink_active:
+		_wink_hold_timer -= delta
+		if _wink_hold_timer <= 0.0:
+			# Wink done — restore normal expression
+			_wink_active = false
+			_apply_eye_offset(_current_eye_slot)
+			var hide_val: float = PUPIL_HIDE_AMOUNT.get(_current_eye_slot, 0.0)
+			_set_pupil_hide(hide_val)
+			if _mouth_material and MOUTH_OFFSETS.has(_current_mouth_slot):
+				_mouth_material.uv1_offset = MOUTH_OFFSETS[_current_mouth_slot]
+			print("😉 Clin d'œil terminé — retour expression normale")
 
 
 # ─── Headphones (deaf mode indicator) ───────────────────
@@ -2888,15 +2948,19 @@ func _setup_ghost_hologram() -> void:
 	_ghost_holo_material.shader = holo_shader
 	_ghost_holo_material.set_shader_parameter("intensity", 0.0)
 	_ghost_holo_material.set_shader_parameter("holo_color", Color(0.3, 0.9, 1.0, 1.0))
+	_ghost_holo_material.set_shader_parameter("desaturation", 0.85)
 	_ghost_holo_material.set_shader_parameter("scanline_count", 180.0)
-	_ghost_holo_material.set_shader_parameter("scanline_strength", 0.35)
+	_ghost_holo_material.set_shader_parameter("scanline_strength", 0.25)
 	_ghost_holo_material.set_shader_parameter("flicker_speed", 8.0)
-	_ghost_holo_material.set_shader_parameter("flicker_amount", 0.15)
-	_ghost_holo_material.set_shader_parameter("aberration", 0.003)
-	_ghost_holo_material.set_shader_parameter("glitch_rate", 0.08)
-	_ghost_holo_material.set_shader_parameter("glitch_strength", 0.03)
-	_ghost_holo_material.set_shader_parameter("edge_glow", 1.5)
-	_ghost_holo_material.set_shader_parameter("ghost_alpha", 0.6)
+	_ghost_holo_material.set_shader_parameter("flicker_amount", 0.08)
+	_ghost_holo_material.set_shader_parameter("aberration", 0.002)
+	_ghost_holo_material.set_shader_parameter("glitch_rate", 0.05)
+	_ghost_holo_material.set_shader_parameter("glitch_strength", 0.02)
+	_ghost_holo_material.set_shader_parameter("edge_glow", 1.2)
+	_ghost_holo_material.set_shader_parameter("ghost_alpha", 0.35)
+	_ghost_holo_material.set_shader_parameter("tint_strength", 0.5)
+	_ghost_holo_material.set_shader_parameter("fade_in", 1.0)
+	_ghost_holo_material.set_shader_parameter("scan_edge", 0.03)
 	_ghost_holo_material.render_priority = 99  # Just below glitch quad
 	_ghost_holo_quad.material_override = _ghost_holo_material
 
@@ -2940,8 +3004,19 @@ func _update_glitch(delta: float) -> void:
 		if _glitch_intensity >= GLITCH_QUIT_MAX - 0.01:
 			print("👋 Glitch max — fermeture.")
 			get_tree().quit()
+	elif _glitch_materializing_ghost:
+		# Ghost materialization: slower, more dramatic fade from high→0
+		_glitch_intensity = maxf(_glitch_intensity - GLITCH_MATERIALIZE_FADE_SPEED * delta, 0.0)
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		if _glitch_intensity < 0.001:
+			_glitch_materializing_ghost = false
+			_glitch_intensity = 0.0
+			_glitch_target = 0.0
+			if _glitch_quad:
+				_glitch_quad.visible = false
+			print("📺 Ghost glitch complete — Tama materialized")
 	elif _glitch_teleporting:
-		# Teleport arrival: fade from high intensity → 0 (materialization)
+		# Teleport arrival: fast fade from high intensity → 0
 		_glitch_intensity = maxf(_glitch_intensity - GLITCH_TELEPORT_FADE_SPEED * delta, 0.0)
 		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
 		if _glitch_intensity < 0.001:
@@ -3021,10 +3096,9 @@ func _setup_greeting_audio() -> void:
 
 func _show_ghost_silhouette() -> void:
 	"""Show Tama as a holographic ghostly silhouette, frozen on Hello frame 0.
-	Tama is rendered at FULL OPACITY — the hologram shader handles the ghostly look
-	(scanlines, tint, reduced alpha). She waits until Gemini's voice → materialization."""
-	_waiting_for_voice = true  # Wait for TAMA_VOICE_READY / first VISEME
-	_voice_timeout_timer = 15.0  # Safety timeout
+	Uses ALPHA_HASH on materials for noise dissolve + hologram shader for CRT look."""
+	_waiting_for_voice = true
+	_voice_timeout_timer = 15.0
 
 	# 1. Force window visible + position
 	if _tama_window:
@@ -3036,50 +3110,79 @@ func _show_ghost_silhouette() -> void:
 		if not _dodge_active:
 			_reposition_bottom_right()
 
-	# 2. Force 3D model visible at FULL OPACITY
-	# (shader reads screen_texture — Tama must be fully rendered for the shader to process)
+	# 3. Tama visible but FLAT (BS_Appear=1.0) — hologram shader does ghostly look
 	var tama_node = get_node_or_null("Tama")
 	if tama_node:
 		tama_node.visible = true
+	if _body_mesh and _bs_appear >= 0:
+		_body_mesh.set_blend_shape_value(_bs_appear, 1.0)  # Flat like a pancake
+	_ghost_alpha = 0.0  # Tracks unfold progress (0=flat, 1=full 3D)
 
-	# 3. Freeze AnimTree at Hello frame 0
+	# Freeze spring bones during ghost (conflict with flat geometry)
+	if _gaze_modifier:
+		_gaze_modifier.ghost_freeze = true
+
+	# 4. Freeze AnimTree at Hello frame 0
 	if _anim_tree_module and _anim_tree_module._ready_ok:
 		_anim_tree_module.freeze_hello_pose()
 
-	# 4. Activate hologram shader (this does ALL the visual ghosting)
+	# 5. Activate hologram shader at full intensity
 	if _ghost_holo_material and _ghost_holo_quad:
 		_ghost_holo_material.set_shader_parameter("intensity", 1.0)
+		_ghost_holo_material.set_shader_parameter("fade_in", 1.0)
 		_ghost_holo_quad.visible = true
 
-	# 5. Activate ghost mode
+	# 6. Activate ghost mode — _update_ghost_fade will animate BS_Appear 1→0
 	_ghost_active = true
 	_ghost_materializing = false
 
-	# 6. Show status indicator
+	# 7. Show status indicator
 	_show_status_indicator("Connexion neuronale...", Color(0.3, 0.9, 1.0, 0.9))
 
-	# Grace period: don't dodge during ghost phase
+	# Grace period
 	_dodge_cooldown_timer = 10.0
 	_dodge_armed = false
-	print("👻 Hologram fantôme activé — en attente de la voix IA...")
+	print("👻 Hologram ALPHA_HASH activé — dissolution progressive...")
+
+	# 8. Wink immédiat (E9 + hide left iris)
+	_wink_delay_timer = -1.0
+	_wink_active = true
+	_wink_hold_timer = 999.0
+	_apply_eye_offset("E9")  # Wink (A1, home position)
+	if _body_mesh:
+		if _bs_hide_left_eye >= 0:
+			_body_mesh.set_blend_shape_value(_bs_hide_left_eye, 1.0)   # Left iris: hidden (wink)
+		if _bs_hide_right_eye >= 0:
+			_body_mesh.set_blend_shape_value(_bs_hide_right_eye, 0.0)  # Right iris: visible
+	if _mouth_material and MOUTH_OFFSETS.has("M4"):
+		_mouth_material.uv1_offset = MOUTH_OFFSETS["M4"]  # Smile
+	print("😉 Clin d'œil (E9 texture only, no blend shapes)")
 
 
 func _materialize_from_ghost() -> void:
 	"""Transition from hologram ghost to full materialized Tama.
 	Triggered by TAMA_VOICE_READY or first non-REST VISEME."""
 	_ghost_active = false
-	_ghost_materializing = true  # _update_ghost_fade will smoothly fade to α=1.0
+	_ghost_materializing = true  # Hologram shader fades via _update_ghost_fade
 
-	# 1. Start glitch effect (materialization visual)
+	# 1. Ensure Tama is fully unfolded
+	if _body_mesh and _bs_appear >= 0:
+		_body_mesh.set_blend_shape_value(_bs_appear, 0.0)
+
+	# Unfreeze spring bones + reset physics
+	if _gaze_modifier:
+		_gaze_modifier.ghost_freeze = false
+	if _spring_bones_node and _spring_bones_node.has_method("reset_physics"):
+		_spring_bones_node.reset_physics()
+
+	# 2. Start glitch effect (fast teleport style)
 	if _glitch_material and _glitch_quad:
 		_glitch_teleporting = true
+		_glitch_materializing_ghost = false
 		_glitch_intensity = GLITCH_TELEPORT_START
 		_glitch_target = 0.0
 		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
 		_glitch_quad.visible = true
-
-	# 2. Hologram shader will fade out via _update_ghost_fade (intensity 1→0)
-	# (it's already at 1.0 from ghost phase)
 
 	# 3. Unfreeze AnimTree and play Hello
 	if _anim_tree_module and _anim_tree_module._ready_ok:
@@ -3091,11 +3194,16 @@ func _materialize_from_ghost() -> void:
 	_dodge_cooldown_timer = 5.0
 	_dodge_armed = false
 
-	# Reset spring bone physics to prevent velocity explosion
+	# Reset spring bone physics
 	if _spring_bones_node and _spring_bones_node.has_method("reset_physics"):
 		_spring_bones_node.reset_physics()
 
 	print("✨ MATÉRIALISATION ! Glitch + hologram fade-out + Hello anim")
+
+	# Keep wink active during materialization, hold for WINK_HOLD_DURATION
+	_wink_delay_timer = -1.0  # Cancel any pending delay
+	_wink_active = true
+	_wink_hold_timer = WINK_HOLD_DURATION
 
 
 func _collect_tama_materials() -> void:
@@ -3150,9 +3258,15 @@ func _set_tama_alpha(alpha: float) -> void:
 
 
 func _update_ghost_fade(delta: float) -> void:
-	"""Fade hologram shader intensity during materialization (1→0).
-	During ghost phase: shader is static at intensity=1.0, nothing to update."""
-	if _ghost_materializing:
+	"""Handles:
+	1. Ghost appearance: BS_Appear 1→0 (unfold from flat to 3D)
+	2. Materialization: hologram intensity 1→0"""
+	if _ghost_active:
+		# Animate BS_Appear from 1→0 (unfold)
+		if _ghost_alpha < 1.0 and _body_mesh and _bs_appear >= 0:
+			_ghost_alpha = minf(_ghost_alpha + GHOST_FADE_IN_SPEED * delta, 1.0)
+			_body_mesh.set_blend_shape_value(_bs_appear, 1.0 - _ghost_alpha)
+	elif _ghost_materializing:
 		# Fade hologram shader intensity from 1→0
 		if _ghost_holo_material:
 			var holo_intensity: float = _ghost_holo_material.get_shader_parameter("intensity")

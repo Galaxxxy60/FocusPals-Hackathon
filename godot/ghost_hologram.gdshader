@@ -1,10 +1,10 @@
 /*
 	Ghost Hologram Shader — FocusPals
-	Old computer / wireframe hologram effect for Tama's ghost silhouette.
+	Old computer / hologram effect for Tama's ghost silhouette.
 	Applied as a spatial post-process on a camera quad (same as glitch_effect).
 
 	intensity = 0.0: passthrough (no effect)
-	intensity = 1.0: full hologram ghost (scanlines, flicker, tint)
+	intensity = 1.0: full hologram ghost (desaturated, scanlines, flicker, tint)
 	Transition from 1→0 = materialization (hologram dissolves into solid Tama)
 */
 
@@ -15,21 +15,30 @@ render_mode unshaded, blend_mix, depth_test_disabled, depth_draw_never, cull_dis
 uniform float intensity : hint_range(0.0, 1.0) = 0.0;
 // Hologram color tint (cyan = old computer monitor)
 uniform vec4 holo_color : source_color = vec4(0.3, 0.9, 1.0, 1.0);
+// Desaturation: 0 = keep original colors, 1 = fully grayscale before tinting
+uniform float desaturation : hint_range(0.0, 1.0) = 0.85;
 // Scanline frequency and intensity
 uniform float scanline_count : hint_range(50.0, 500.0) = 180.0;
-uniform float scanline_strength : hint_range(0.0, 1.0) = 0.35;
+uniform float scanline_strength : hint_range(0.0, 1.0) = 0.25;
 // Flicker speed and amount
 uniform float flicker_speed : hint_range(1.0, 20.0) = 8.0;
-uniform float flicker_amount : hint_range(0.0, 0.5) = 0.15;
+uniform float flicker_amount : hint_range(0.0, 0.5) = 0.08;
 // Chromatic aberration (RGB split)
-uniform float aberration : hint_range(0.0, 0.01) = 0.003;
+uniform float aberration : hint_range(0.0, 0.01) = 0.002;
 // Random glitch block probability
-uniform float glitch_rate : hint_range(0.0, 1.0) = 0.08;
-uniform float glitch_strength : hint_range(0.0, 0.1) = 0.03;
+uniform float glitch_rate : hint_range(0.0, 1.0) = 0.05;
+uniform float glitch_strength : hint_range(0.0, 0.1) = 0.02;
 // Edge glow boost (makes silhouette edges brighter)
-uniform float edge_glow : hint_range(0.0, 3.0) = 1.5;
-// Overall ghost alpha (how transparent the hologram is)
-uniform float ghost_alpha : hint_range(0.0, 1.0) = 0.6;
+uniform float edge_glow : hint_range(0.0, 3.0) = 1.2;
+// Overall ghost alpha (how transparent the hologram is — lower = more ghostly)
+uniform float ghost_alpha : hint_range(0.0, 1.0) = 0.35;
+// Scan reveal: 0 = fully invisible, 1 = fully visible
+// Sweeps top→bottom like a CRT powering on
+uniform float fade_in : hint_range(0.0, 1.0) = 1.0;
+// Scan line edge thickness (how soft the reveal edge is)
+uniform float scan_edge : hint_range(0.001, 0.1) = 0.03;
+// How much to tint vs keep original (0 = full original, 1 = full hologram color)
+uniform float tint_strength : hint_range(0.0, 1.0) = 0.5;
 // Screen texture
 uniform sampler2D screen_texture : hint_screen_texture;
 
@@ -72,28 +81,32 @@ void fragment() {
 			final_color = vec3(0.0);
 			final_alpha = 0.0;
 		} else {
-			// ── Luminance for edge/brightness detection ──
+			// ── Desaturation (wash out original colors → grayscale) ──
 			float luma = dot(color, vec3(0.299, 0.587, 0.114));
+			vec3 gray = vec3(luma);
+			vec3 desaturated = mix(color, gray, desaturation * intensity);
 
 			// ── Scanlines (horizontal CRT lines) ──
 			float scanline = sin(SCREEN_UV.y * scanline_count * 3.14159) * 0.5 + 0.5;
 			scanline = mix(1.0, scanline, scanline_strength * intensity);
 
-			// ── Flicker (temporal brightness variation) ──
+			// ── Flicker (temporal brightness variation — subtle) ──
 			float flicker = 1.0 - flicker_amount * intensity * sin(TIME * flicker_speed) * sin(TIME * flicker_speed * 0.7 + 1.3);
 
-			// ── Color tinting (mix original with hologram color) ──
-			vec3 tinted = mix(color, holo_color.rgb * luma * edge_glow, intensity * 0.8);
+			// ── Color tinting (mix desaturated with hologram color) ──
+			// tint_strength controls how much cyan vs original grayscale
+			vec3 tinted = mix(desaturated, holo_color.rgb * luma * edge_glow, tint_strength * intensity);
 
-			// ── Random horizontal noise lines (old TV interference) ──
+			// ── Random horizontal noise lines (old TV interference — subtle) ──
 			float noise_line = random2(vec2(trunc(SCREEN_UV.y * 400.0), trunc(TIME * 15.0)));
-			float noise_mask = float(noise_line > 0.97) * 0.15 * intensity;
+			float noise_mask = float(noise_line > 0.98) * 0.08 * intensity;
 
 			// ── Combine everything ──
-			final_color = tinted * scanline * flicker + vec3(noise_mask);
+			vec3 holo_result = tinted * scanline * flicker + vec3(noise_mask);
 
-			// ── Alpha: ghost is more transparent at higher intensity ──
-			final_alpha = a * mix(1.0, ghost_alpha, intensity);
+			// ── Output holographic color, alpha passthrough (ALPHA_HASH controls visibility) ──
+			final_color = mix(color, holo_result, intensity);
+			final_alpha = a;  // Let ALPHA_HASH on the materials control pixel visibility
 		}
 	}
 
