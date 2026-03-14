@@ -298,6 +298,7 @@ const GHOST_HOLO_FADE_SPEED: float = 1.2     # Slower hologram fade for smooth t
 # ─── User Speaking Acknowledgment ───
 var _ack_audio_player: AudioStreamPlayer = null
 var _session_ding_player: AudioStreamPlayer = null
+var _strike_sfx_player: AudioStreamPlayer = null  # UfoStrike.ogg — synced to impact
 var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
 var _ack_gaze_timer: float = 0.0 # Countdown to restore head gaze after ack
 
@@ -420,6 +421,7 @@ func _ready() -> void:
 	call_deferred("_setup_headphones")
 	_setup_ack_audio()
 	_setup_session_ding()
+	_setup_strike_sfx()
 	_setup_greeting_audio()
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_glitch_effect")  # After _setup_gaze (needs _camera)
@@ -705,6 +707,11 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 
 
 func _on_tree_strike_fire() -> void:
+	# Guard: if drone is already striking, don't fire again
+	# (can happen if play_strike() forced restart → _strike_fired resets → re-emits)
+	if _drone_state == "STRIKING":
+		print("🎯 STRIKE_FIRE skipped — drone already striking")
+		return
 	# Spawn hand window + arm IK + notify Python (same as existing strike fire logic)
 	if _gaze_modifier:
 		var aim: Vector2i
@@ -936,12 +943,41 @@ func _spawn_drone_strike() -> void:
 			style.border_color = Color(1.0, 0.2, 0.2, 0.9)
 			style.shadow_color = Color(1.0, 0.0, 0.0, 0.5)
 
-	# Anim: dash pendant le vol
-	_drone_play("dash", 0.1)
+	# Phase 1: Angry hover — drone stays in place, turns red, "charges up"
+	# This gives the user time to SEE the drone before it charges
+	_drone_play("idle", 0.1)  # Menacing idle hover
 
-	# Le drone fonce vers l'onglet, strike à l'impact !
+	# ── Strike SFX: end of sound = moment of impact ──
+	# Total time to impact: 0.4s (hover) + 1.2s (flight) = 1.6s
+	const IMPACT_TIME: float = 1.6
+	if _strike_sfx_player and _strike_sfx_player.stream:
+		var sfx_duration: float = _strike_sfx_player.stream.get_length()
+		if sfx_duration > IMPACT_TIME:
+			# Sound is longer than flight — start with offset so END = impact
+			var offset: float = sfx_duration - IMPACT_TIME
+			_strike_sfx_player.play(offset)
+			print("🔊 Strike SFX: playing from %.1fs (dur=%.1fs, offset=%.1fs)" % [offset, sfx_duration, offset])
+		else:
+			# Sound is shorter — delay start so END = impact
+			var delay: float = IMPACT_TIME - sfx_duration
+			var sfx_tween := create_tween()
+			sfx_tween.tween_interval(delay)
+			sfx_tween.tween_callback(func():
+				if _strike_sfx_player:
+					_strike_sfx_player.play()
+			)
+			print("🔊 Strike SFX: delayed %.1fs then full play (dur=%.1fs)" % [delay, sfx_duration])
+
+	# Phase 2: After 0.4s, dash toward the target (dramatic approach)
+	var drone_tween := create_tween()
+	drone_tween.tween_interval(0.4)  # Angry hover delay
+	drone_tween.tween_callback(func():
+		_drone_play("dash", 0.1)  # Switch to dash animation mid-flight
+	)
+
+	# Phase 3: Fly to target (1.2s — slow enough to see, fast enough to feel punchy)
 	_animate_pooled_window(_drone_window, aim, "Ò_Ó", "💥", 240, 36,
-		Tween.EASE_IN_OUT, Tween.TRANS_CUBIC, 0.6, func():
+		Tween.EASE_IN, Tween.TRANS_EXPO, 1.2, func():
 			# Anim: strike à l'impact
 			_drone_play("strike", 0.0)
 			_deactivate_imba()
@@ -1253,6 +1289,12 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 
 			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 				ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "start_session"}))
+
+			# ── Organic reaction: Tama looks at user + releases arm ──
+			set_gaze(GazeTarget.USER, GAZE_SPEED_QUICK)
+			_eye_follow_active = false
+			if _gaze_modifier:
+				_gaze_modifier.arm_ik_blend_target = 0.0
 
 			_drone_exit_glitch()
 
@@ -2166,6 +2208,33 @@ func _handle_message(raw: String) -> void:
 		var ty := int(data.get("y", -1))
 		_strike_target = Vector2i(tx, ty)
 		print("🎯 STRIKE_TARGET received: (%d, %d)" % [tx, ty])
+		# ── Teleport Tama to the screen where the distraction is ──
+		# So the user sees her when she strikes (not stuck on another monitor)
+		if _tama_window and is_instance_valid(_tama_window) and tx >= 0 and ty >= 0:
+			var screen_count := DisplayServer.get_screen_count()
+			var target_screen := 0
+			for i in range(screen_count):
+				var screen_rect := DisplayServer.screen_get_usable_rect(i)
+				if tx >= screen_rect.position.x and tx < screen_rect.position.x + screen_rect.size.x \
+				   and ty >= screen_rect.position.y and ty < screen_rect.position.y + screen_rect.size.y:
+					target_screen = i
+					break
+			var target_rect := DisplayServer.screen_get_usable_rect(target_screen)
+			var win_size := _tama_window.size
+			var new_x := target_rect.position.x + target_rect.size.x - win_size.x
+			var new_y := target_rect.position.y + target_rect.size.y - win_size.y
+			var old_pos := _tama_window.position
+			if old_pos != Vector2i(new_x, new_y):
+				_tama_window.position = Vector2i(new_x, new_y)
+				# Glitch effect for teleport
+				_glitch_teleporting = true
+				_glitch_intensity = GLITCH_TELEPORT_START
+				_glitch_target = 0.0
+				if _glitch_quad:
+					_glitch_quad.visible = true
+				if _glitch_material:
+					_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+				print("⚡ STRIKE TELEPORT! Tama → screen %d (%d, %d)" % [target_screen, new_x, new_y])
 		return
 	elif command == "JARVIS_TAP":
 		# Jarvis mode: Tama's hand gently taps the target (not a strike — an assist)
@@ -2400,11 +2469,8 @@ func _handle_message(raw: String) -> void:
 			# Reset cooldown so periodic glance doesn't fight
 			_scan_glance_cooldown = SCAN_GLANCE_MAX_CD
 		return
-	elif command == "PLAY_STRIKE":
-		if _anim_tree_module:
-			print("🥊 PYTHON TRIGGERED STRIKE!")
-			_anim_tree_module.play_strike()
-		return
+	# NOTE: PLAY_STRIKE removed — Python sends TAMA_ANIM with anim="Strike" instead.
+	# The old handler was dead code (never sent by Python) and risked double-triggers.
 	elif command == "CONNECTION_STATUS":
 		var conn_status = data.get("status", "")
 		_gemini_status = conn_status
@@ -3279,6 +3345,52 @@ func _materialize_from_ghost() -> void:
 
 	print("✨ MATÉRIALISATION ! Glitch + hologram fade-out + Hello anim")
 
+	# ── Onboarding: gaze + point at drone, nudge if no click ──
+	# The drone is a separate Window but we convert its screen position
+	# to 3D via _screen_to_world / _screen_to_arm_target (same as strikes)
+	if _drone_state == "WAITING_START" and _drone_window and _drone_window.visible:
+		var tw = create_tween()
+		tw.tween_interval(2.0)  # Beat after Hello anim
+		tw.tween_callback(func():
+			if _drone_state != "WAITING_START" or not _drone_window or not _drone_window.visible:
+				return
+			# Drone center in screen coords
+			var dc = _drone_window.position + Vector2i(_drone_window.size.x / 2, _drone_window.size.y / 2)
+			var sx: float = float(dc.x)
+			var sy: float = float(dc.y)
+
+			# Head gaze → drone screen position
+			_look_at_world_point(_screen_to_world(sx, sy), GAZE_SPEED_NATURAL)
+			_gaze_blend_target = 0.8
+
+			# Arm IK → point at drone (same conversion as strikes)
+			if _gaze_modifier:
+				_gaze_modifier.arm_ik_target = _screen_to_arm_target(sx, sy)
+				_gaze_modifier.arm_ik_active = true
+				_gaze_modifier.arm_ik_blend_target = 0.7
+
+			# Eyes → drone
+			_look_eyes_at_screen_point(sx, sy)
+			print("☝️ Tama montre le drone (screen→3D)")
+		)
+		# Gaze drifts back to user — arm stays up until click
+		tw.tween_interval(3.0)
+		tw.tween_callback(func():
+			set_gaze(GazeTarget.USER, GAZE_SPEED_DRIFT)
+			_eye_follow_active = false
+		)
+		# Nudge after 30s if user still hasn't clicked
+		tw.tween_interval(25.0)  # 2 + 3 + 25 = 30s total
+		tw.tween_callback(func():
+			if _drone_state == "WAITING_START":
+				if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+					ws.send_text(JSON.stringify({
+						"command": "ONBOARDING_NUDGE",
+						"context": "user_not_clicked_start"
+					}))
+					print("⏰ Onboarding nudge — user hasn't clicked Start")
+		)
+
 	# Keep wink active during materialization, hold for WINK_HOLD_DURATION
 	_wink_delay_timer = -1.0  # Cancel any pending delay
 	_wink_active = true
@@ -3408,6 +3520,17 @@ func _setup_session_ding() -> void:
 	else:
 		push_warning("⚠️ session_ding.wav not found")
 	add_child(_session_ding_player)
+
+func _setup_strike_sfx() -> void:
+	_strike_sfx_player = AudioStreamPlayer.new()
+	var audio_file = load("res://UfoStrike.ogg")
+	if audio_file:
+		_strike_sfx_player.stream = audio_file
+		_strike_sfx_player.volume_db = -3.0  # Prominent but not overwhelming
+		print("🔊 UfoStrike.ogg loaded (%.1fs)" % audio_file.get_length())
+	else:
+		push_warning("⚠️ UfoStrike.ogg not found")
+	add_child(_strike_sfx_player)
 
 func _on_user_speaking_ack() -> void:
 	# Only block the ack SOUND when Tama is speaking (avoid audio clash)

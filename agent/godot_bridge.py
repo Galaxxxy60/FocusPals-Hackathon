@@ -439,6 +439,10 @@ async def ws_handler(websocket):
                     from gemini_session import fire_hand_animation
                     print("🎯 STRIKE_FIRE reçu de Godot — fermeture de l'onglet")
                     await asyncio.to_thread(fire_hand_animation)
+                elif cmd == "ONBOARDING_NUDGE":
+                    # User hasn't clicked Start — flag for Gemini to nudge organically
+                    state["_onboarding_nudge_pending"] = True
+                    print("⏰ ONBOARDING_NUDGE — user hasn't clicked Start")
             except Exception as e:
                 print(f"⚠️ [WS] Erreur commande: {e}")
                 import traceback; traceback.print_exc()

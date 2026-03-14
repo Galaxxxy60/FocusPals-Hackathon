@@ -650,31 +650,12 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             state["_strike_in_progress"] = False
             state["_strike_requested"] = False
 
-            state["force_speech"] = True
-            await asyncio.sleep(4)
-
-            # Tell Gemini the close succeeded — re-evaluate with fresh context
-            try:
-                new_windows = [w.title for w in get_cached_windows()]
-                await session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[types.Part(text=(
-                            f"[SYSTEM] close_distracting_tab SUCCEEDED — '{target_window}' "
-                            f"is now CLOSED. S has been reset to 3.0. "
-                            f"New active window: '{new_active}'. "
-                            f"Current open_windows: {new_windows}. "
-                            f"Do NOT try to close '{target_window}' again. "
-                            f"The EYES system will re-evaluate soon."
-                        ))]
-                    ),
-                    turn_complete=True
-                )
-            except Exception:
-                pass
-
-            await asyncio.sleep(2)
-            state["force_speech"] = False
+            # NOTE: No force_speech / send_client_content here!
+            # The old code waited 4s then force-fed Gemini a "strike succeeded" message,
+            # which caused it to hallucinate a late punchline + ghost fire_strike + angry
+            # mood report — making Tama stand up angry even though the user was working.
+            # The regular pulse system will naturally tell Gemini on the next scan that
+            # the tab is gone and S has dropped. Clean, organic, no interruption.
             print("  ✅ Strike terminé — Tama continue de surveiller.")
         else:
             print(f"  ⚠️ close bloqué: {result.get('message', '?')}")
@@ -882,10 +863,13 @@ async def run_gemini_loop(pya):
                 if state["current_mode"] == "conversation":
                     state["_last_speech_ended"] = time.time()  # Init timer so nudge doesn't fire instantly
                     state["_convo_nudge_sent"] = False
+                    # ── Onboarding: situation context, not instructions ──
                     greeting_text = (
-                        "L'utilisateur vient de t'appeler (\"Hey Tama\"). Salue-le naturellement ! Tu es dispo pour discuter et pour l'aider."
+                        "L'utilisateur vient de t'appeler. La session de travail n'a pas encore commencé — "
+                        "il doit d'abord cliquer sur le bouton Start sur le drone au-dessus de ta tête. Salue-le."
                         if state.get("language") != "en" else
-                        "The user just called you (\"Hey Tama\"). Greet them naturally! You're available to chat and to help."
+                        "The user just called you. The work session hasn't started yet — "
+                        "they need to click the Start button on the drone above your head first. Greet them."
                     )
                     try:
                         await session.send_client_content(
@@ -1122,6 +1106,26 @@ async def run_gemini_loop(pya):
                         await asyncio.sleep(3)
                         state["force_speech"] = False
 
+                    elif state.get("just_started_session"):
+                        # Fresh session start — MUST come before stealth check!
+                        # Otherwise stealth reconnection (which matches when is_session_active
+                        # flips current_mode to deep_work) muzzles Tama instead of letting
+                        # her react to the session start.
+                        state["just_started_session"] = False
+                        await asyncio.sleep(1.5)
+                        session_min = state.get("session_duration_minutes", 50)
+                        try:
+                            if state.get("language") == "en":
+                                await session.send_realtime_input(
+                                    text=f"[SYSTEM] Session just started. {session_min} minutes."
+                                )
+                            else:
+                                await session.send_realtime_input(
+                                    text=f"[SYSTEM] La session vient de commencer. {session_min} minutes."
+                                )
+                        except Exception:
+                            pass
+
                     elif _is_stealth and state["current_mode"] == "deep_work":
                         # Stealth reconnection → tell Gemini to stay silent + inject context
                         try:
@@ -1152,24 +1156,46 @@ async def run_gemini_loop(pya):
                         except Exception:
                             pass
 
-                    elif state.get("just_started_session"):
-                        # Fresh session (not a reconnection) → Tama greets naturally
-                        state["just_started_session"] = False
-                        await asyncio.sleep(1.5)
-                        try:
-                            if state.get("language") == "en":
-                                await session.send_realtime_input(
-                                    text="[SYSTEM] Session just started. Say ONE word or a very short sentence to signal the start. Be natural — 'go', 'let's do this', 'alright', or anything that feels right. Don't ask what they're working on yet."
-                                )
-                            else:
-                                await session.send_realtime_input(
-                                    text="[SYSTEM] La session vient de commencer. Dis UN mot ou une toute petite phrase pour signaler le debut. Sois naturelle — 'go', 'c'est parti', 'allez', ou ce qui te vient. Ne demande PAS encore sur quoi il travaille."
-                                )
-                        except Exception:
-                            pass
-
                     while True:
                         if state["current_mode"] == "conversation":
+                            # ── Session upgrade: user clicked Start during conversation ──
+                            if state.get("just_started_session"):
+                                state["just_started_session"] = False
+                                state["current_mode"] = "deep_work"
+                                session_min = state.get("session_duration_minutes", 50)
+                                try:
+                                    if state.get("language") == "en":
+                                        await session.send_realtime_input(
+                                            text=f"[SYSTEM] User clicked Start. Session: {session_min} minutes."
+                                        )
+                                    else:
+                                        await session.send_realtime_input(
+                                            text=f"[SYSTEM] L'utilisateur a cliqué Start. Session : {session_min} minutes."
+                                        )
+                                    print(f"  🚀 Session upgrade mid-conversation! ({session_min}min)")
+                                except Exception:
+                                    pass
+                                # Keep the Gemini connection alive — just switch mode
+                                # The loop will now fall through to deep_work pulse logic
+                                await asyncio.sleep(2.0)
+                                continue
+
+                            # ── Onboarding nudge: user hasn't clicked Start ──
+                            if state.get("_onboarding_nudge_pending"):
+                                state["_onboarding_nudge_pending"] = False
+                                try:
+                                    if state.get("language") == "en":
+                                        await session.send_realtime_input(
+                                            text="[SYSTEM] He hasn't pressed the Start button yet."
+                                        )
+                                    else:
+                                        await session.send_realtime_input(
+                                            text="[SYSTEM] Il n'a pas appuyé sur le bouton Start."
+                                        )
+                                    print("  ⏰ Onboarding nudge sent to Gemini")
+                                except Exception:
+                                    pass
+
                             # Check user speech, Tama speech end, AND active audio playback
                             # This prevents killing the conversation while Tama is mid-response
                             last_activity = max(
@@ -1393,9 +1419,16 @@ async def run_gemini_loop(pya):
                             # ── Escalation (highest priority first) ──
                             # STRIKE/ULTIMATUM: forced directives (genuine emergency)
                             # WARNING/SUSPICIOUS: contextual — Gemini decides
-                            if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 15):
+                            # Confidence modulates escalation speed:
+                            #   C=1.0 (full trust) → 15s/8s (patient)
+                            #   C=0.5 (low trust)  → 7.5s/4s (fast)
+                            #   C=0.1 (zero trust)  → 1.5s/0.8s (instant)
+                            C = state.get("_confidence", 1.0)
+                            _strike_delay = 15.0 * C
+                            _ultimatum_delay = 8.0 * C
+                            if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > _strike_delay):
                                 speak_directive = "STRIKE: close_distracting_tab NOW."
-                            elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > 8):
+                            elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > _ultimatum_delay):
                                 speak_directive = "ULTIMATUM"
                             elif state["suspicion_above_3_start"]:
                                 # ── Organic mode: give Gemini context, let it decide ──
@@ -1802,43 +1835,36 @@ async def run_gemini_loop(pya):
                                                 print(f"  🥊🔥 GEMINI INITIATED STRIKE: {timing}")
 
                                                 # ── Ghost strike guard ──
-                                                # If S is already low and no close_distracting_tab is pending,
-                                                # this fire_strike is a phantom (Gemini re-generated after deferred
-                                                # tool response). Ignore it silently.
-                                                si_now = state["current_suspicion_index"]
-                                                is_ghost = si_now < 5 and not state.get("_strike_in_progress")
+                                                # A ghost strike = Gemini re-generated fire_strike after a
+                                                # deferred tool response purge, with no actual strike flow.
+                                                # FIX: check FLOW STATE, not S (which is volatile — reset to
+                                                # 3.0 by close_distracting_tab before fire_strike is processed).
+                                                is_ghost = not state.get("_strike_in_progress") and not state.get("_strike_requested")
                                                 if is_ghost:
-                                                    print(f"  🥊👻 Ghost strike ignored (S={si_now:.0f}, no close pending)")
+                                                    si_now = state["current_suspicion_index"]
+                                                    print(f"  🥊👻 Ghost strike ignored (S={si_now:.0f}, no strike flow active)")
                                                 elif state.get("_strike_in_progress"):
                                                     # ── Anti-doublon: block re-fires during an active strike flow ──
                                                     print("  🥊 Strike already in progress — ignoring duplicate fire_strike")
                                                 else:
                                                     state["_strike_in_progress"] = True
 
-                                                    # Don't send PLAY_STRIKE yet!
-                                                    # The target isn't ready until close_distracting_tab calls
-                                                    # prepare_close_tab. Set a flag so grace_then_close knows
-                                                    # to send the animation after preparing the target coords.
-                                                    if state.get("_pending_strike"):
-                                                        # Target already prepared (rare: close came before fire_strike)
-                                                        # → send animation immediately
-                                                        send_anim_to_godot("Strike", False)
-                                                        print("  🥊 Target was already ready — Strike anim sent")
-                                                    else:
-                                                        # Normal case: fire_strike arrives before close_distracting_tab
-                                                        # → flag it, grace_then_close will send the anim after preparing target
-                                                        state["_strike_requested"] = True
-                                                        state["_strike_requested_at"] = time.time()
-                                                        print("  🥊 Strike requested — waiting for close_distracting_tab to prepare target")
+                                                    # Don't send Strike anim here!
+                                                    # grace_then_close() ALWAYS sends the anim after preparing
+                                                    # the target coords. Sending here too = double animation.
+                                                    # Just flag it so grace_then_close knows fire_strike was called.
+                                                    state["_strike_requested"] = True
+                                                    state["_strike_requested_at"] = time.time()
+                                                    print("  🥊 Strike requested — grace_then_close will send anim after target prep")
 
-                                                        # ── Auto-timeout: if close_distracting_tab never arrives, clean up ──
-                                                        async def strike_request_timeout():
-                                                            await asyncio.sleep(4.0)
-                                                            if state.get("_strike_requested"):
-                                                                print("  🥊⏰ Strike request timed out (4s) — close_distracting_tab never came")
-                                                                state["_strike_requested"] = False
-                                                                state["_strike_in_progress"] = False
-                                                        asyncio.create_task(strike_request_timeout())
+                                                    # ── Auto-timeout: if close_distracting_tab never arrives, clean up ──
+                                                    async def strike_request_timeout():
+                                                        await asyncio.sleep(4.0)
+                                                        if state.get("_strike_requested"):
+                                                            print("  🥊⏰ Strike request timed out (4s) — close_distracting_tab never came")
+                                                            state["_strike_requested"] = False
+                                                            state["_strike_in_progress"] = False
+                                                    asyncio.create_task(strike_request_timeout())
 
                                                 # ALWAYS send tool response — Gemini requires responses to
                                                 # ALL function calls before it can call close_distracting_tab.
@@ -2278,6 +2304,25 @@ async def run_gemini_loop(pya):
                                     strike_msg = json.dumps({"command": "STRIKE_TARGET", "x": pending.get("target_x", 960), "y": pending.get("target_y", 540)})
                                     broadcast_to_godot(strike_msg)
                                     send_anim_to_godot("Strike", False)
+                                    # FIX: STRIKE_FIRE timeout — same as grace_then_close.
+                                    # Without this, _strike_in_progress stays True forever
+                                    # and blocks ALL future strikes when the API reconnects.
+                                    async def spare_tire_fire_timeout():
+                                        TIMEOUT = 5.0
+                                        t0 = time.time()
+                                        while state.get("_pending_strike") is not None:
+                                            if time.time() - t0 > TIMEOUT:
+                                                print("  🛞⏰ Spare tire STRIKE_FIRE timeout — firing fallback")
+                                                fire_hand_animation()
+                                                break
+                                            await asyncio.sleep(0.1)
+                                        # Always reset — even if STRIKE_FIRE came from Godot
+                                        state["_strike_in_progress"] = False
+                                        state["_strike_requested"] = False
+                                        state["_spare_tire_strike_spoke"] = False  # Allow re-strike
+                                        await asyncio.to_thread(refresh_window_cache)
+                                        print("  🛞✅ Spare tire strike complete — flags reset")
+                                    asyncio.create_task(spare_tire_fire_timeout())
                                     # No distraction_closed — Gemini will speak when it reconnects
                             elif _can_speak:
                                 # Distraction spotted (mid priority)

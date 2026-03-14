@@ -770,19 +770,26 @@ func _process(delta: float) -> void:
 			print("🎬 → idle_wall_hair (random trigger, next in %.0fs)" % _idle_hair_timer)
 
 	# ── Strike fire detection (animation position trigger) ──
-	if current_state == State.STRIKING and not _strike_fired:
-		var fire_at: float = STRIKE_FIRE_AT.get(cur_node, STRIKE_FIRE_FALLBACK)
-		var pos: float = _playback.get_current_play_position()
-		if pos >= fire_at:
-			_strike_fired = true
-			strike_fire_point.emit()
-			print("🎬 🎯 STRIKE_FIRE at %.2fs (configured: %.2fs in '%s')" % [pos, fire_at, cur_node])
+	if current_state == State.STRIKING:
+		_strike_time += delta  # Track how long we've been in STRIKING
+		if not _strike_fired:
+			var fire_at: float = STRIKE_FIRE_AT.get(cur_node, STRIKE_FIRE_FALLBACK)
+			var pos: float = _playback.get_current_play_position()
+			if pos >= fire_at:
+				_strike_fired = true
+				strike_fire_point.emit()
+				print("🎬 🎯 STRIKE_FIRE at %.2fs (configured: %.2fs in '%s')" % [pos, fire_at, cur_node])
 
 	# ── Detect when strike finishes → choose next state ──
 	if current_state == State.STRIKING and cur_node == "strike_base":
 		var pos: float = _playback.get_current_play_position()
 		var length: float = _playback.get_current_length()
 		if length > 0 and pos >= length - 0.05:
+			_on_strike_complete()
+		# Safety timeout: if position-check never triggers (low FPS, crossfade,
+		# animation mismatch), force-complete after 3s to prevent being stuck.
+		elif _strike_time > 3.0:
+			print("🎬 ⚠️ STRIKING safety timeout (%.1fs) — forcing completion" % _strike_time)
 			_on_strike_complete()
 
 

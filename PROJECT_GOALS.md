@@ -50,3 +50,50 @@ L'interaction magique "Bon, t'es retourné au code, c'est déjà ça" est née p
 - **Patterns sur plusieurs sessions** : "Tu commences toujours par Discord avant de bosser, c'est ton rituel ?"
 - **Conscience du projet** : Savoir sur quoi l'utilisateur travaille et commenter les progrès
 - **Mémoire inter-session** : Se souvenir de ce qui s'est passé hier
+
+---
+
+## 2. Messages `[SYSTEM]` : contexte, jamais de directives
+
+### Règle absolue
+
+Les messages injectés à Gemini en runtime décrivent **ce qui s'est passé**. Jamais ce que Tama doit dire, comment elle doit réagir, ni quel ton adopter.
+
+#### ❌ Directive (scripté)
+```
+"Dis quelque chose comme 'C'est parti pour 50 minutes de concentration ! Je te surveille' — 
+sois naturelle et dynamique. Tu DOIS mentionner la durée."
+```
+
+#### ✅ Contexte (organique)
+```
+"La session vient de commencer. 50 minutes."
+```
+
+### Règles
+
+1. **`[SYSTEM]` = faits.** Ce qui s'est passé, ce qui est à l'écran, ce qui a changé. Jamais "dis X" ou "réagis comme Y".
+2. **Le system prompt définit la personnalité.** Le caractère de Tama, son ton, ses comportements vivent dans le system prompt. Les messages runtime ne font pas de rappels de personnalité.
+3. **Les nudges = nouveaux faits.** Si l'utilisateur n'a pas fait quelque chose, le message est "il n'a pas appuyé sur Start" — pas "rappelle-lui d'appuyer sur Start."
+4. **Le body language suit l'architecture.** Si Tama ne peut pas physiquement interagir avec un élément (ex: le drone est une fenêtre OS séparée), elle ne fait pas semblant.
+
+### Exemples
+
+| Événement | Le système envoie | Tama décide |
+|-----------|-------------------|-------------|
+| User appelle Tama | "Il y a un bouton Start sur le drone au-dessus de ta tête — c'est comme ça qu'il lance une session." | Comment saluer, si elle mentionne le Start |
+| User clique Start | "La session vient de commencer. 50 minutes." | Sa réaction, si elle mentionne la durée |
+| 15s sans clic Start | "Il n'a pas appuyé sur le bouton Start." | Si elle relance, taquine, ou attend |
+| Pause suggérée | "Ça fait 50 minutes de travail." | Comment proposer la pause |
+| Distraction | "Fenêtre active : YouTube. Catégorie : DISTRACTION." | Si elle intervient, à quel degré |
+| Retour au travail | "Fenêtre active : VS Code. Catégorie : PRODUCTIVE." | Si elle commente ou reste silencieuse |
+
+### Anti-patterns
+
+- **"Dis UN mot ou une toute petite phrase"** → prescrit la longueur
+- **"Sois naturelle et dynamique"** → prescrit le ton (déjà dans le system prompt)
+- **"Ne demande PAS encore sur quoi il travaille"** → prescrit ce qu'il ne faut PAS dire
+- **"MUST mention the duration"** → force le contenu
+- **"Keep it SHORT (1 sentence)"** → prescrit le format
+
+Tous ces patterns rendent Tama prévisible. Prévisible ≠ organique.
