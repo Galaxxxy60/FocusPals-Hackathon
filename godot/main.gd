@@ -344,6 +344,34 @@ var _spring_bones_node: Node3D = null  # spring_bones.gd instance
 var _anim_tree_module = null  # tama_anim_tree.gd instance
 
 
+# ─── Gaze Speed Presets (B2: named speeds, no more magic numbers) ───
+# These replace raw float values throughout the gaze system
+const GAZE_SPEED_SNAP: float = 12.0    # Instant snap (strike fire, suspicion lock)
+const GAZE_SPEED_QUICK: float = 7.0    # Fast reaction (scan glance, acknowledgment)
+const GAZE_SPEED_NATURAL: float = 4.0  # Normal conversational (talking, looking at user)
+const GAZE_SPEED_DRIFT: float = 2.0    # Gentle drift (idle gaze, returning to neutral)
+const GAZE_SPEED_LAZY: float = 1.0     # Ultra-slow (bored/tired, deep thought)
+
+# ─── Eyes-Lead-Head (E1: eyes dart ~150ms before head follows) ───
+# In real humans, eyes saccade to target in ~20ms, head follows ~100-200ms later
+var _eyes_lead_timer: float = 0.0      # Countdown before head starts following
+var _eyes_lead_target: GazeTarget = GazeTarget.NEUTRAL  # Deferred head target
+var _eyes_lead_speed: float = 4.0      # Deferred head speed
+var _eyes_lead_blend: float = 1.0      # Deferred head blend
+var _eyes_lead_pending: bool = false    # True when eyes have moved but head hasn't
+const EYES_LEAD_DELAY: float = 0.12    # ~120ms delay (natural saccade-head lag)
+
+# ─── Strike Gaze Lock (F2: gaze locked during strike animations) ───
+var _strike_gaze_locked: bool = false   # True during strike — blocks idle gaze, overrides
+var _strike_gaze_target: GazeTarget = GazeTarget.SCREEN_CENTER
+
+# ─── Conversation Gaze Patterns (C3: organic look patterns during chat) ───
+# During conversation: 60% USER, 20% AWAY (thinking), 15% BOOK, 5% drift
+var _conv_gaze_timer: float = 0.0       # Countdown to next conversation gaze shift
+var _conv_gaze_active: bool = false     # True when conversation gaze is directing head
+const CONV_GAZE_MIN_INTERVAL: float = 2.0  # Min seconds between gaze shifts
+const CONV_GAZE_MAX_INTERVAL: float = 5.0  # Max seconds
+
 # ─── Screen Scan Glance (periodic "checking" look) ────────
 var _scan_glance_timer: float = 0.0       # Countdown: when >0, head is turned
 var _scan_glance_cooldown: float = 0.0    # Time until next glance is allowed
@@ -597,6 +625,8 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 
 	if old_state == "STRIKING":
 		_deactivate_imba()
+		# F2: Release strike gaze lock
+		_strike_gaze_locked = false
 		# Fade out arm IK — AnimTree state changes don't auto-release IK
 		# so we must explicitly release it here
 		if _gaze_modifier:
@@ -604,18 +634,21 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 
 	if new_state == "STRIKING":
 		_activate_imba(1)
+		# F2: Lock gaze on screen during strike animation
+		_strike_gaze_locked = true
+		set_gaze(GazeTarget.SCREEN_CENTER, GAZE_SPEED_SNAP)
 
 	# ── Gaze follows animation state ──
 	if new_state == "WALL_TALK":
 		if _suspicion_staring:
 			# Suspicion-triggered wall_talk — stare at screen with full side-eye
-			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
+			set_gaze_with_lead(GazeTarget.SCREEN_CENTER, GAZE_SPEED_NATURAL)
 			_look_eyes_at_screen_center()
 			_scan_eye_active = true
 		elif conversation_active:
-			set_gaze(GazeTarget.USER, 4.0)
+			set_gaze_with_lead(GazeTarget.USER, GAZE_SPEED_NATURAL)
 		else:
-			set_gaze(GazeTarget.SCREEN_CENTER, 3.0)
+			set_gaze_with_lead(GazeTarget.SCREEN_CENTER, GAZE_SPEED_NATURAL)
 	elif new_state == "ON_WALL" and old_state == "RETURNING_WALL":
 		# Returned from wall_talk — check if we need to immediately leave
 		if _pending_leave_wall:
@@ -1834,9 +1867,15 @@ func _process(delta: float) -> void:
 		_scan_glance_timer -= delta
 		if _scan_glance_timer <= 0 and not _suspicion_staring:
 			# Glance over — smoothly return to book + eyes to center
-			set_gaze(GazeTarget.NEUTRAL, 2.0)
+			set_gaze(GazeTarget.NEUTRAL, GAZE_SPEED_DRIFT)
 			_eye_follow_active = false
 			_scan_eye_active = false
+
+	# ─── Eyes-Lead-Head (E1: deferred head follows eyes) ───
+	_update_eyes_lead_head(delta)
+
+	# ─── Conversation Gaze (C3: organic shifts during chat) ───
+	_update_conversation_gaze(delta)
 
 	# ─── Idle Gaze (A2: organic life — BOOK/USER only, NEVER screen) ───
 	_update_idle_gaze(delta)
@@ -3430,6 +3469,10 @@ func _is_idle_gaze_eligible() -> bool:
 		return false
 	if _is_speaking or _suspicion_staring:
 		return false
+	if _strike_gaze_locked:         # F2: gaze locked during strike
+		return false
+	if _eyes_lead_pending:           # E1: eyes-lead-head in progress
+		return false
 	if conversation_active:
 		return false
 	if _scan_glance_timer > 0 or _scan_eye_active:
@@ -3479,15 +3522,101 @@ func _update_idle_gaze(delta: float) -> void:
 	var roll: float = randf()
 	if roll < 0.70:
 		# BOOK — she's reading, gentle downward look toward Jnt_L_thumb
-		set_gaze_subtle(GazeTarget.BOOK, 1.5, 0.35)
+		set_gaze_subtle(GazeTarget.BOOK, GAZE_SPEED_DRIFT, 0.35)
 	elif roll < 0.95:
-		# USER — subtle awareness glance (not full head turn!)
-		set_gaze_subtle(GazeTarget.USER, 2.0, 0.25)
+		# USER — eyes dart first, head follows (E1 eyes-lead-head)
+		set_gaze_with_lead(GazeTarget.USER, GAZE_SPEED_DRIFT, 0.25)
 	else:
 		# MICRO-DRIFT — tiny random head offset (musculature noise)
 		var tiny_yaw: float = randf_range(-3.0, 3.0)
 		var tiny_pitch: float = randf_range(-2.0, 2.0)
 		_set_gaze_from_angles(tiny_yaw, tiny_pitch, 1.0, 0.15)
+	_sync_gaze_to_modifier()
+
+# ─── Eyes-Lead-Head System (E1) ─────────────────────────────
+# Human eyes saccade to target in ~20ms, head follows ~120ms later.
+# This creates the "eyes dart, then head follows" look.
+
+func _update_eyes_lead_head(delta: float) -> void:
+	"""Process deferred head movement after eyes have already darted."""
+	if not _eyes_lead_pending:
+		return
+	_eyes_lead_timer -= delta
+	if _eyes_lead_timer > 0:
+		return
+	# Timer expired — fire the deferred head gaze
+	_eyes_lead_pending = false
+	if _eyes_lead_target == GazeTarget.NEUTRAL:
+		_gaze_blend_target = 0.0
+	else:
+		# Replay the gaze command with head-only (eyes already there)
+		if _eyes_lead_blend < 1.0:
+			set_gaze_subtle(_eyes_lead_target, _eyes_lead_speed, _eyes_lead_blend)
+		else:
+			set_gaze(_eyes_lead_target, _eyes_lead_speed)
+	_sync_gaze_to_modifier()
+
+func set_gaze_with_lead(target: GazeTarget, speed: float = GAZE_SPEED_NATURAL, blend: float = 1.0) -> void:
+	"""Eyes dart immediately, head follows after EYES_LEAD_DELAY.
+	For screen targets, eyes saccade to the screen pixel instantly."""
+	if not _gaze_active:
+		return
+	# 1. Eyes dart IMMEDIATELY
+	if target in [GazeTarget.SCREEN_CENTER, GazeTarget.SCREEN_TOP, GazeTarget.SCREEN_BOTTOM, GazeTarget.OTHER_MONITOR]:
+		var pt = _get_dynamic_target_point(target)
+		if target == GazeTarget.SCREEN_CENTER and _subject_target.x >= 0:
+			pt = Vector2(float(_subject_target.x), float(_subject_target.y))
+		_look_eyes_at_screen_point(pt.x, pt.y)
+	elif target == GazeTarget.USER:
+		_look_eyes_at_webcam()
+	elif target == GazeTarget.NEUTRAL:
+		_eye_follow_active = false
+
+	# 2. Queue head movement after delay
+	_eyes_lead_target = target
+	_eyes_lead_speed = speed
+	_eyes_lead_blend = blend
+	_eyes_lead_timer = EYES_LEAD_DELAY
+	_eyes_lead_pending = true
+
+# ─── Conversation Gaze Patterns (C3) ───────────────────────
+# During conversation: organic shifts between USER/AWAY/BOOK
+# Makes Tama feel engaged and thoughtful instead of staring blankly.
+
+func _update_conversation_gaze(delta: float) -> void:
+	"""Organic gaze shifts during active conversation."""
+	if not conversation_active or not _gaze_active or not _started:
+		_conv_gaze_active = false
+		return
+	if _strike_gaze_locked or _suspicion_staring:
+		return  # Don't override strike/suspicion
+	if not _is_speaking and not conversation_active:
+		return
+
+	_conv_gaze_timer -= delta
+	if _conv_gaze_timer > 0:
+		return
+
+	# ─── New conversation gaze shift ───
+	_conv_gaze_timer = randf_range(CONV_GAZE_MIN_INTERVAL, CONV_GAZE_MAX_INTERVAL)
+	_conv_gaze_active = true
+
+	# Weighted random: USER 60%, AWAY 20%, BOOK 15%, drift 5%
+	var roll: float = randf()
+	if roll < 0.60:
+		# Look at user — active listening/speaking
+		set_gaze_subtle(GazeTarget.USER, GAZE_SPEED_NATURAL, 0.5)
+	elif roll < 0.80:
+		# Look away — "thinking" (averts gaze while formulating thoughts)
+		set_gaze_subtle(GazeTarget.AWAY, GAZE_SPEED_DRIFT, 0.3)
+	elif roll < 0.95:
+		# Glance at book — brief reference
+		set_gaze_subtle(GazeTarget.BOOK, GAZE_SPEED_DRIFT, 0.25)
+	else:
+		# Micro-drift — processing
+		var tiny_yaw: float = randf_range(-4.0, 4.0)
+		var tiny_pitch: float = randf_range(-2.0, 2.0)
+		_set_gaze_from_angles(tiny_yaw, tiny_pitch, GAZE_SPEED_LAZY, 0.2)
 	_sync_gaze_to_modifier()
 
 # ─── Gaze System ────────────────────────────────────────
