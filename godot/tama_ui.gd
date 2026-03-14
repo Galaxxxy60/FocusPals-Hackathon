@@ -1,8 +1,7 @@
 extends Node
-## Tama UI — Status indicator + Session timer (above head) + Break overlay
+## Tama UI — Status indicator + Break overlay
 ##
 ## Manages overlay UI elements that are independent of character behavior.
-## The session timer floats ABOVE Tama's head using the projected head bone position.
 
 # ─── State ───────────────────────────────────────────────
 var _status_label: Label
@@ -11,8 +10,7 @@ var _status_visible: bool = false
 var _status_dots: int = 0
 var _status_timer: float = 0.0
 
-var _session_canvas: CanvasLayer
-var _session_control: Control
+
 
 # Break overlay
 var _break_canvas: CanvasLayer
@@ -31,14 +29,10 @@ func setup(parent: Node, render_target: Node = null) -> void:
 	_parent = parent
 	_render_target = render_target if render_target else parent
 	_setup_status_indicator()
-	_setup_session_display()
 	_setup_break_overlay()
 
 func update(delta: float) -> void:
 	_update_status_indicator(delta)
-	# Session timer UI désactivé — le drone affiche le timer maintenant
-	#if _session_control and _parent:
-	#	_session_control.queue_redraw()
 	# Break overlay redraw
 	if _break_visible and _break_control:
 		_break_control.queue_redraw()
@@ -103,119 +97,6 @@ func _update_status_indicator(delta: float) -> void:
 	var alpha = 0.5 + 0.4 * sin(Time.get_ticks_msec() * 0.004)
 	_status_label.modulate = Color(1, 1, 1, alpha)
 
-# ─── Session Timer Display (Above Tama's Head) ──────────
-# Uses the projected head bone position from main.gd (head_screen_pos).
-# Draws a compact timer + mini arc that floats above her head.
-
-func _setup_session_display() -> void:
-	_session_canvas = CanvasLayer.new()
-	_session_canvas.layer = 50
-	_render_target.add_child(_session_canvas)
-	_session_control = Control.new()
-	_session_control.name = "SessionDisplay"
-	_session_control.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_session_control.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_session_control.connect("draw", _draw_session_display)
-	_session_canvas.add_child(_session_control)
-
-func _draw_session_display() -> void:
-	# Désactivé : le drone Sentinelle affiche le timer de session
-	return
-
-	var vp_size: Vector2
-	if _render_target and _render_target is Window:
-		vp_size = Vector2(_render_target.size)
-	elif _parent:
-		vp_size = _parent.get_viewport().get_visible_rect().size
-	else:
-		return
-
-	var elapsed: int = _parent.session_elapsed_secs
-	var total: int = _parent.session_duration_secs
-	var remaining: int = maxi(total - elapsed, 0)
-	var progress := clampf(float(elapsed) / float(total), 0.0, 1.0)
-	var font := ThemeDB.fallback_font
-
-	# ── Get head position (projected from 3D bone) ──
-	var head_pos: Vector2 = _parent.head_screen_pos
-	var center_x: float
-	var timer_y: float
-
-	if head_pos.x > 0 and head_pos.y > 0:
-		# Head bone found — position ABOVE the head
-		center_x = clampf(head_pos.x, 40.0, vp_size.x - 40.0)
-		timer_y = head_pos.y - 110.0  # 110px above head bone (well above her head)
-		# Clamp so it doesn't go off-screen
-		timer_y = maxf(timer_y, 20.0)
-	else:
-		# Fallback: top-center of window
-		center_x = vp_size.x * 0.5
-		timer_y = 25.0
-
-	# ════════════════════════════════════════════
-	# FLOATING SESSION TIMER
-	# ════════════════════════════════════════════
-
-	# ── Time remaining text ──
-	var r_min: int = remaining / 60
-	var r_sec: int = remaining % 60
-	var time_str: String = "%d:%02d" % [r_min, r_sec]
-	var time_font_size: int = 14
-	var ts := font.get_string_size(time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, time_font_size)
-
-	# Color shifts based on progress
-	var accent_color: Color
-	if progress > 0.9:
-		accent_color = Color(0.3, 1.0, 0.5, 0.9)   # Green — almost done!
-	elif progress > 0.75:
-		accent_color = Color(0.4, 0.85, 0.6, 0.85)  # Teal
-	else:
-		accent_color = Color(0.4, 0.7, 1.0, 0.85)   # Blue
-
-	var text_x: float = center_x - ts.x * 0.5
-	var text_y: float = timer_y
-
-	# ── Pill background (rounded rect behind text) ──
-	var pill_padding_h: float = 12.0
-	var pill_padding_v: float = 5.0
-	var pill_rect := Rect2(
-		text_x - pill_padding_h,
-		text_y - ts.y - pill_padding_v,
-		ts.x + pill_padding_h * 2.0,
-		ts.y + pill_padding_v * 2.0
-	)
-	# Dark semi-transparent background
-	_session_control.draw_rect(pill_rect, Color(0.05, 0.08, 0.14, 0.55), true)
-	# Subtle border
-	_session_control.draw_rect(pill_rect, Color(accent_color.r, accent_color.g, accent_color.b, 0.2), false, 1.0)
-
-	# ── Draw time text ──
-	_session_control.draw_string(font, Vector2(text_x, text_y),
-		time_str, HORIZONTAL_ALIGNMENT_LEFT, -1, time_font_size, accent_color)
-
-	# ── Mini progress bar under the pill ──
-	var bar_w: float = pill_rect.size.x - 8.0
-	var bar_h: float = 2.5
-	var bar_x: float = pill_rect.position.x + 4.0
-	var bar_y: float = pill_rect.position.y + pill_rect.size.y + 3.0
-
-	# Track
-	_session_control.draw_rect(
-		Rect2(bar_x, bar_y, bar_w, bar_h),
-		Color(0.15, 0.2, 0.3, 0.3)
-	)
-	# Fill
-	if progress > 0.005:
-		_session_control.draw_rect(
-			Rect2(bar_x, bar_y, bar_w * progress, bar_h),
-			accent_color
-		)
-		# Tiny glow dot at progress tip
-		var tip_x := bar_x + bar_w * progress
-		_session_control.draw_circle(
-			Vector2(tip_x, bar_y + bar_h * 0.5), 2.0,
-			Color(accent_color.r, accent_color.g, accent_color.b, 0.6)
-		)
 
 
 # ─── Break Overlay ───────────────────────────────────────
