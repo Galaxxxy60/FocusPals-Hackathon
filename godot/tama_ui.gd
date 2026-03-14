@@ -36,9 +36,9 @@ func setup(parent: Node, render_target: Node = null) -> void:
 
 func update(delta: float) -> void:
 	_update_status_indicator(delta)
-	# Session timer redraw every frame (follows head bone)
-	if _session_control and _parent:
-		_session_control.queue_redraw()
+	# Session timer UI désactivé — le drone affiche le timer maintenant
+	#if _session_control and _parent:
+	#	_session_control.queue_redraw()
 	# Break overlay redraw
 	if _break_visible and _break_control:
 		_break_control.queue_redraw()
@@ -119,8 +119,8 @@ func _setup_session_display() -> void:
 	_session_canvas.add_child(_session_control)
 
 func _draw_session_display() -> void:
-	if _parent == null or not _parent.session_active or _parent.session_duration_secs <= 0:
-		return
+	# Désactivé : le drone Sentinelle affiche le timer de session
+	return
 
 	var vp_size: Vector2
 	if _render_target and _render_target is Window:
