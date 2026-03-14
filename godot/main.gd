@@ -9,7 +9,7 @@ var reconnect_timer: float = 0.0
 var suspicion_index: float = 0.0
 var state: String = "CALM"
 var alignment: float = 1.0
-var current_task: String = "..."
+var current_task: String = "travail"
 var active_window: String = "Loading..."
 var active_duration: int = 0
 
@@ -220,9 +220,7 @@ var _eye_follow_h: float = 0.0        # Current horizontal: -1=left, 0=center, +
 var _eye_follow_v: float = 0.0        # Current vertical: -1=down, 0=center, +1=up
 var _eye_target_h: float = 0.0        # Target horizontal
 var _eye_target_v: float = 0.0        # Target vertical
-var _eye_saccade_timer: float = 0.0   # Timer between saccades
-const EYE_SACCADE_INTERVAL: float = 0.08  # Snap every ~80ms (like real saccades)
-const EYE_SACCADE_THRESHOLD: float = 0.03 # Dead zone: ignore tiny changes
+# (dead code removed: _eye_saccade_timer, EYE_SACCADE_INTERVAL, EYE_SACCADE_THRESHOLD — unused)
 const EYE_RETURN_SPEED: float = 8.0       # Speed to return to center when deactivated
 
 # ─── Micro-saccades (A1: subtle eye tremor — eyes are NEVER perfectly still) ───
@@ -401,6 +399,16 @@ var _dodge_cooldown_timer: float = 3.0     # Start with grace period so Tama doe
 var _dodge_departing: bool = false          # True during departure animation (glitch playing)
 var _dodge_armed: bool = false             # Must be true before dodge can trigger (armed when mouse LEAVES area)
 
+# ─── Desktop Awareness (Python Radar) ───
+# Python scans all visible OS windows and sends their positions via DESKTOP_MAP.
+# Tama uses this to perch on windows, fall when they close/move, etc.
+var _desktop_windows: Array = []            # Array of { title, x, y, w, h }
+var _perched_on: String = ""                # Title of the window Tama is sitting on ("" = taskbar)
+var _perch_check_timer: float = 0.0         # Timer for perch validity checks
+const PERCH_CHECK_INTERVAL: float = 0.5     # How often to check if perched window moved/closed
+const PERCH_MOVE_THRESHOLD: float = 50.0    # Pixels — if window moved more than this, Tama falls
+var _perch_last_rect: Dictionary = {}       # {x, y, w, h} of the window when Tama perched
+
 # ─── Tama Window (separate rendering window) ───
 var _tama_window: Window = null
 var _tama_cam: Camera3D = null              # Clone camera inside _tama_window
@@ -528,7 +536,7 @@ func _setup_tama_window() -> void:
 	add_child(_tama_window)
 
 	# Position at bottom-right BEFORE showing (avoid flash at 0,0)
-	var usable := DisplayServer.screen_get_usable_rect()
+	var usable := DisplayServer.screen_get_usable_rect(DisplayServer.get_primary_screen())  # Initial position — will be corrected on first reposition
 	var x := usable.position.x + usable.size.x - _BASE_WIN_SIZE.x
 	var y := usable.position.y + usable.size.y - _BASE_WIN_SIZE.y
 	_tama_window.position = Vector2i(x, y)
@@ -757,13 +765,11 @@ func _on_tree_off_wall_done() -> void:
 func _setup_radial_menu() -> void:
 	# All UI menus are children of _ui_window
 	var ui_parent: Node = _ui_window if _ui_window else self
-	radial_menu = CanvasLayer.new()
-	radial_menu.set_script(RadialMenuScript)
+	radial_menu = RadialMenuScript.new()
 	ui_parent.add_child(radial_menu)
 	radial_menu.action_triggered.connect(_on_radial_action)
 	radial_menu.request_hide.connect(_on_radial_hide)
-	settings_panel = CanvasLayer.new()
-	settings_panel.set_script(SettingsPanelScript)
+	settings_panel = SettingsPanelScript.new()
 	ui_parent.add_child(settings_panel)
 	settings_panel.mic_selected.connect(_on_mic_selected)
 	settings_panel.panel_closed.connect(_on_settings_panel_closed)
@@ -775,8 +781,7 @@ func _setup_radial_menu() -> void:
 	settings_panel.mic_toggled.connect(_on_mic_toggled)
 	settings_panel.tama_scale_changed.connect(_on_tama_scale_changed)
 	# Debug tweaks (hidden, F2)
-	debug_tweaks = CanvasLayer.new()
-	debug_tweaks.set_script(DebugTweaksScript)
+	debug_tweaks = DebugTweaksScript.new()
 	ui_parent.add_child(debug_tweaks)
 	print("🎛️ Menus attachés à %s" % ui_parent.name)
 
@@ -841,7 +846,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
 			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
-	# F7 = Debug Strike: trigger strike via AnimTree + drone strike →
+	# F7 = Debug Strike: trigger strike via AnimTree + drone strike
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F7:
+		print("🎯 [DEBUG] F7 → Debug Strike")
+		if _anim_tree_module and _anim_tree_module._ready_ok:
+			_anim_tree_module.play_strike()
+			_show_status_indicator("🎯 Debug Strike (F7)", Color(1, 0.3, 0.3))
+
 # ─── Widget Drone (Remplace la Main Magique) ──────────────────
 var _drone_window: Window = null
 var _drone_state: String = "HIDDEN"  # États : HIDDEN, WAITING_START, STRIKING
@@ -882,7 +893,7 @@ func _animate_pooled_window(win: Window, target_pos: Vector2i, start_emoji: Stri
 	# Kill any running animation on this window
 	if win.has_meta("tween"):
 		var old_tween = win.get_meta("tween") as Tween
-		if is_instance_valid(old_tween) and old_tween.is_running():
+		if old_tween and old_tween.is_valid() and old_tween.is_running():
 			old_tween.kill()
 
 	var start := _get_hand_bone_screen_pos()
@@ -960,7 +971,7 @@ func _spawn_drone_strike() -> void:
 		else:
 			# Sound is shorter — delay start so END = impact
 			var delay: float = IMPACT_TIME - sfx_duration
-			var sfx_tween := create_tween()
+			var sfx_tween := create_tween().bind_node(self)
 			sfx_tween.tween_interval(delay)
 			sfx_tween.tween_callback(func():
 				if _strike_sfx_player:
@@ -969,7 +980,7 @@ func _spawn_drone_strike() -> void:
 			print("🔊 Strike SFX: delayed %.1fs then full play (dur=%.1fs)" % [delay, sfx_duration])
 
 	# Phase 2: After 0.4s, dash toward the target (dramatic approach)
-	var drone_tween := create_tween()
+	var drone_tween := create_tween().bind_node(self)
 	drone_tween.tween_interval(0.4)  # Angry hover delay
 	drone_tween.tween_callback(func():
 		_drone_play("dash", 0.1)  # Switch to dash animation mid-flight
@@ -1006,6 +1017,7 @@ func _setup_drone_window() -> void:
 	_drone_window.transparent = true
 	_drone_window.gui_embed_subwindows = false
 	_drone_window.size = Vector2i(240, 180)
+	_drone_window.process_mode = Node.PROCESS_MODE_ALWAYS  # Ne jamais stopper le processing
 
 	# ── Load Wings.glb 3D model ──
 	var wings_scene = load("res://Wings.glb") as PackedScene
@@ -1066,12 +1078,15 @@ func _setup_drone_window() -> void:
 	# On hardcode les 3 anims spécifiques au drone pour éviter les collisions de noms.
 	_drone_anim = wings_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _drone_anim:
+		# Force l'AnimationPlayer à toujours processer (même Window non-focusée)
+		_drone_anim.process_callback = AnimationPlayer.ANIMATION_PROCESS_IDLE
+		_drone_anim.process_mode = Node.PROCESS_MODE_ALWAYS
 		var anims = _drone_anim.get_animation_list()
 		print("🛸 Wings animations (%d): %s" % [anims.size(), str(anims)])
 		# Drone-specific anims (lowercase "idle" = Wings idle, not Tama's "Idle")
 		_drone_anim_names = {"idle": "idle", "dash": "Dash", "strike": "Strike_Dab"}
 		# Verify they exist
-		for key in _drone_anim_names:
+		for key in _drone_anim_names.keys():
 			if not _drone_anim.has_animation(_drone_anim_names[key]):
 				print("⚠️ Drone anim '%s' → '%s' NOT FOUND" % [key, _drone_anim_names[key]])
 				_drone_anim_names.erase(key)
@@ -1254,7 +1269,7 @@ func _drone_entrance_glitch() -> void:
 		return
 	_drone_glitch_quad.visible = true
 	_drone_glitch_mat.set_shader_parameter("intensity", 0.0)
-	var tw = create_tween()
+	var tw = create_tween().bind_node(self)
 	tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 0.0, 1.2, 0.15)
 	tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 1.2, 0.0, 0.4)
 	tw.tween_callback(func():
@@ -1269,7 +1284,7 @@ func _drone_exit_glitch() -> void:
 		return
 	_drone_glitch_quad.visible = true
 	_drone_glitch_mat.set_shader_parameter("intensity", 0.0)
-	var tw = create_tween()
+	var tw = create_tween().bind_node(self)
 	tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 0.0, 1.5, 0.25)
 	tw.tween_callback(func():
 		_drone_window.visible = false
@@ -1283,7 +1298,8 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if _drone_state == "WAITING_START":
 			print("▶️ Drone cliqué ! Démarrage de la session...")
-			_drone_state = "HIDDEN"
+			# Passer en mode Timer (le drone reste visible)
+			_drone_state = "TIMER"
 			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
 			_drone_window.unfocusable = true
 
@@ -1296,7 +1312,42 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 			if _gaze_modifier:
 				_gaze_modifier.arm_ik_blend_target = 0.0
 
-			_drone_exit_glitch()
+			# Afficher le timer au lieu de START
+			if _drone_screen_label:
+				_drone_screen_label.text = "--:--"
+				_drone_screen_label.add_theme_font_size_override("font_size", 32)
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+			if _drone_screen_mat:
+				_drone_screen_mat.emission = Color(0.1, 0.3, 0.6)
+				_drone_screen_mat.emission_energy_multiplier = 1.2
+			# Relancer idle (peut avoir été stoppé)
+			_drone_play("idle")
+			print("🛸 Drone → mode TIMER (anims: %s)" % str(_drone_anim_names))
+
+func _update_drone_timer() -> void:
+	"""Update drone position (follows Tama) and display remaining session time."""
+	if _drone_state != "TIMER":
+		return
+	if not _drone_window or not is_instance_valid(_drone_window):
+		return
+	# Suivre Tama
+	var tama_center = _get_tama_screen_center()
+	_drone_window.position = Vector2i(tama_center.x - _drone_window.size.x / 2, tama_center.y - 280)
+	# Mettre à jour le texte du timer
+	var remaining = max(session_duration_secs - session_elapsed_secs, 0)
+	var mins = remaining / 60
+	var secs = remaining % 60
+	var time_str = "%02d:%02d" % [mins, secs]
+	if _drone_screen_label:
+		_drone_screen_label.text = time_str
+
+func _hide_drone_timer() -> void:
+	"""Masque le drone avec glitch de sortie (fin de session)."""
+	if _drone_state == "HIDDEN":
+		return
+	_drone_state = "HIDDEN"
+	_drone_exit_glitch()
+	print("🛸 Drone timer masqué")
 
 
 # ─── Jarvis Hand (Gentle Tap Animation) ─────────────────────
@@ -1368,7 +1419,7 @@ func _on_radial_action(action_id: String) -> void:
 	# 🟢 Appeler Tama : elle et le drone apparaissent ensemble
 	if action_id == "call_tama":
 		# Déjà active ? Ignore
-		if _drone_state == "WAITING_START" or session_active or conversation_active:
+		if _drone_state == "WAITING_START" or _drone_state == "TIMER" or session_active or conversation_active:
 			print("🛸 Tama déjà là — appel ignoré")
 			if radial_menu:
 				radial_menu.close()
@@ -1581,12 +1632,20 @@ func _sync_and_show_ui() -> void:
 	No visible toggle (avoids DWM lag). Just position change = instant.
 	Z-order was fixed once at entrance (see _trigger_entrance)."""
 	if _ui_window:
-		var usable := DisplayServer.screen_get_usable_rect()
+		var scr_idx := _get_tama_screen_idx()
+		var usable := DisplayServer.screen_get_usable_rect(scr_idx)
 		var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
 		var x := usable.position.x + usable.size.x - win_size.x
 		var y := usable.position.y + usable.size.y - win_size.y
 		_ui_window.size = win_size
 		_ui_window.position = Vector2i(x, y)
+
+func _get_tama_screen_idx() -> int:
+	"""Return the screen index where Tama's window currently lives.
+	Uses DisplayServer (reliable) instead of Window.current_screen (can misreport on borderless windows)."""
+	if _tama_window and is_instance_valid(_tama_window):
+		return DisplayServer.window_get_current_screen(_tama_window.get_window_id())
+	return DisplayServer.window_get_current_screen()
 
 func _position_window() -> void:
 	_reposition_bottom_right()
@@ -1596,7 +1655,8 @@ func _reposition_bottom_right() -> void:
 	## Anchor Tama window to bottom-right of usable screen area (excludes taskbar)
 	if not _tama_window or not is_instance_valid(_tama_window):
 		return
-	var usable := DisplayServer.screen_get_usable_rect()
+	var scr_idx := _get_tama_screen_idx()
+	var usable := DisplayServer.screen_get_usable_rect(scr_idx)
 	var win_size := _tama_window.size
 	var x := usable.position.x + usable.size.x - win_size.x
 	var y := usable.position.y + usable.size.y - win_size.y
@@ -1662,7 +1722,7 @@ func _start_dodge_departure() -> void:
 	if _glitch_material:
 		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
 	# Wait 300ms so user sees the dissolve, then teleport
-	var tw := create_tween()
+	var tw := create_tween().bind_node(self)
 	tw.tween_interval(0.15)
 	tw.tween_callback(func():
 		_dodge_departing = false
@@ -1679,7 +1739,7 @@ func _start_dodge_return() -> void:
 		_glitch_quad.visible = true
 	if _glitch_material:
 		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
-	var tw := create_tween()
+	var tw := create_tween().bind_node(self)
 	tw.tween_interval(0.15)
 	tw.tween_callback(func():
 		_dodge_departing = false
@@ -1687,7 +1747,7 @@ func _start_dodge_return() -> void:
 	)
 
 func _dodge_to_taskbar() -> void:
-	"""Move Tama's window to taskbar area (bottom-left) + arrival glitch."""
+	"""Move Tama's window to a perch (desktop window) or taskbar fallback + arrival glitch."""
 	_dodge_active = true
 	_dodge_cooldown_timer = DODGE_COOLDOWN
 
@@ -1716,11 +1776,61 @@ func _dodge_to_taskbar() -> void:
 				_anim_tree_module._tree.advance(0)
 				_anim_tree_module._set_state(_anim_tree_module.State.ON_GROUND)
 
-	var usable := DisplayServer.screen_get_usable_rect()
+	var scr_idx := _get_tama_screen_idx()
+	var usable := DisplayServer.screen_get_usable_rect(scr_idx)
 	var win_size := _tama_window.size
-	var x := usable.position.x + 20
-	var y := usable.position.y + usable.size.y - win_size.y
-	_tama_window.position = Vector2i(x, y)
+
+	var target_x: int
+	var target_y: int
+	var found_window := false
+
+	# 🎯 PERCH ON A DESKTOP WINDOW
+	if _desktop_windows.size() > 0:
+		# Collect valid perch candidates
+		var candidates: Array = []
+		for dwin in _desktop_windows:
+			var wx := float(dwin.get("x", 0))
+			var wy := float(dwin.get("y", 0))
+			var ww := float(dwin.get("w", 0))
+			var wh := float(dwin.get("h", 0))
+			# Must be wide enough for Tama and not flush with the top of the screen
+			# (otherwise Tama would be off-screen above the window)
+			if wy > 60 and ww > win_size.x and wh > 100:
+				# Check that the perch position is within the usable screen area
+				var perch_y := int(wy - win_size.y + 40)
+				if perch_y >= usable.position.y - 50:  # Allow slight overflow above
+					candidates.append(dwin)
+
+		if candidates.size() > 0:
+			# Pick a random window to perch on (variety!)
+			var chosen = candidates[randi() % candidates.size()]
+			var cx := float(chosen.get("x", 0))
+			var cy := float(chosen.get("y", 0))
+			var cw := float(chosen.get("w", 0))
+
+			# Center horizontally on the chosen window
+			target_x = int(cx + (cw / 2.0) - (win_size.x / 2.0))
+			# Place Tama's feet on the title bar of the window
+			# +40px adjustment so her feet visually rest on the bar
+			target_y = int(cy - win_size.y + 40)
+
+			found_window = true
+			_perched_on = str(chosen.get("title", ""))
+			_perch_last_rect = {
+				"x": int(cx), "y": int(cy),
+				"w": int(chosen.get("w", 0)), "h": int(chosen.get("h", 0))
+			}
+			print("⚡ Dodge! Tama se perche sur : %s" % _perched_on)
+
+	# 🏠 FALLBACK: Taskbar (bottom-left)
+	if not found_window:
+		target_x = usable.position.x + 20
+		target_y = usable.position.y + usable.size.y - win_size.y
+		_perched_on = ""
+		_perch_last_rect = {}
+		print("⚡ Dodge! Retour taskbar classique.")
+
+	_tama_window.position = Vector2i(target_x, target_y)
 
 	# Arrival glitch: fade from high intensity → 0 (materialization)
 	_glitch_teleporting = true
@@ -1730,13 +1840,86 @@ func _dodge_to_taskbar() -> void:
 		_glitch_quad.visible = true
 	if _glitch_material:
 		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
-	print("⚡ Dodge! Tama window → (%d, %d)" % [x, y])
+
+func _update_perch_check(delta: float) -> void:
+	"""Check if the window Tama is perched on still exists and hasn't moved.
+	If it disappeared or moved, Tama 'falls' to the taskbar."""
+	if not _dodge_active or _perched_on == "" or _perch_last_rect.is_empty():
+		return
+	if not _tama_window or not is_instance_valid(_tama_window):
+		return
+
+	_perch_check_timer -= delta
+	if _perch_check_timer > 0:
+		return
+	_perch_check_timer = PERCH_CHECK_INTERVAL
+
+	# Find the window Tama is sitting on in the current desktop map
+	var found := false
+	for dwin in _desktop_windows:
+		if str(dwin.get("title", "")) == _perched_on:
+			# Window still exists — check if it moved
+			var dx := absf(float(dwin.get("x", 0)) - float(_perch_last_rect.get("x", 0)))
+			var dy := absf(float(dwin.get("y", 0)) - float(_perch_last_rect.get("y", 0)))
+			if dx > PERCH_MOVE_THRESHOLD or dy > PERCH_MOVE_THRESHOLD:
+				# Window moved significantly — Tama falls!
+				print("💨 Perch window '%s' moved! Tama tombe !" % _perched_on)
+				_fall_to_taskbar()
+				return
+			else:
+				# Window is stable — Tama stays. Update rect in case of small drift.
+				_perch_last_rect = {
+					"x": int(dwin.get("x", 0)), "y": int(dwin.get("y", 0)),
+					"w": int(dwin.get("w", 0)), "h": int(dwin.get("h", 0))
+				}
+			found = true
+			break
+
+	if not found:
+		# Window was closed or minimized — Tama falls!
+		print("💨 Perch window '%s' disparue ! Tama tombe !" % _perched_on)
+		_fall_to_taskbar()
+
+func _fall_to_taskbar() -> void:
+	"""Tama falls from her perch to the taskbar area (with glitch effect)."""
+	_perched_on = ""
+	_perch_last_rect = {}
+
+	if not _tama_window or not is_instance_valid(_tama_window):
+		return
+
+	# Departure glitch
+	_glitch_intensity = GLITCH_TELEPORT_START
+	_glitch_target = GLITCH_TELEPORT_START
+	if _glitch_quad:
+		_glitch_quad.visible = true
+	if _glitch_material:
+		_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+
+	# Brief delay for the glitch, then teleport to taskbar
+	var tw := create_tween().bind_node(self)
+	tw.tween_interval(0.15)
+	tw.tween_callback(func():
+		var scr_idx := _get_tama_screen_idx()
+		var usable := DisplayServer.screen_get_usable_rect(scr_idx)
+		var win_size := _tama_window.size
+		var x := usable.position.x + 20
+		var y := usable.position.y + usable.size.y - win_size.y
+		_tama_window.position = Vector2i(x, y)
+		# Arrival glitch
+		_glitch_teleporting = true
+		_glitch_intensity = GLITCH_TELEPORT_START
+		_glitch_target = 0.0
+		print("⚡ Fall! Tama atterrit à la taskbar (%d, %d)" % [x, y])
+	)
 
 func _dodge_return() -> void:
 	"""Move Tama's window back to home (bottom-right) + arrival glitch."""
 	_dodge_active = false
 	_dodge_armed = false  # Require mouse to leave area again before re-dodge
 	_dodge_cooldown_timer = DODGE_COOLDOWN
+	_perched_on = ""       # Clear perch state on return
+	_perch_last_rect = {}
 
 	# FORCE pose BEFORE moving window (glitch is covering her)
 	if _anim_tree_module and _anim_tree_module._playback:
@@ -1764,7 +1947,7 @@ func _apply_camera_zoom() -> void:
 	## Live preview: zoom camera while slider is dragged (CanvasLayers unaffected)
 	if _camera == null or _base_cam_size <= 0:
 		return
-	var factor := float(_tama_scale_pct) / 100.0
+	var factor := maxf(float(_tama_scale_pct) / 100.0, 0.01)
 	if factor >= 1.0:
 		# Above 100%: keep camera at default (window resize happens on close)
 		_camera.size = _base_cam_size
@@ -1791,7 +1974,7 @@ func _apply_tama_scale_full() -> void:
 	## Apply final scale: camera zoom for ≤100%, window resize for >100%
 	if _camera == null or _base_cam_size <= 0:
 		return
-	var factor := float(_tama_scale_pct) / 100.0
+	var factor := maxf(float(_tama_scale_pct) / 100.0, 0.01)
 	if factor > 1.0:
 		# Bigger Tama: enlarge window, reset camera to default
 		var new_w := int(_BASE_WIN_SIZE.x * factor)
@@ -1938,11 +2121,18 @@ func _process(delta: float) -> void:
 	if _is_speaking and (Time.get_unix_time_from_system() - _last_viseme_time) > VISEME_TIMEOUT:
 		print("⚠️ VISEME timeout (%.1fs) — forcing mouth reset" % VISEME_TIMEOUT)
 		_is_speaking = false
-		_set_mouth("M0")
+		var _mood_mouth_slot = MOOD_MOUTH.get(_current_mood, "M0")
+		_set_mouth(_mood_mouth_slot)
 		_set_jaw_open(0.0)
 
 	# ─── Mouse Dodge ───────────────────────────────────────────
 	_update_mouse_dodge(delta)
+
+	# ─── Perch Check (fall detection) ─────────────────────────
+	_update_perch_check(delta)
+
+	# ─── Drone Timer ──────────────────────────────────────────
+	_update_drone_timer()
 
 	# ─── Strike Fire ──────────────────────────────────────────
 	# Handled by AnimTree module (strike_fire_point signal → _on_tree_strike_fire)
@@ -1986,9 +2176,7 @@ func _set_eye_target_from_screen(screen_x: float, screen_y: float) -> void:
 	var dx: float = screen_x - eye_sx
 	var dy: float = screen_y - eye_sy
 	# Use the correct screen (important for multi-monitors)
-	var screen_idx = DisplayServer.window_get_current_screen()
-	if _tama_window and is_instance_valid(_tama_window):
-		screen_idx = DisplayServer.window_get_current_screen(_tama_window.get_window_id())
+	var screen_idx = _get_tama_screen_idx()
 	var screen_w: float = float(DisplayServer.screen_get_size(screen_idx).x)
 	var ref: float = screen_w * 0.4
 	_eye_target_h = clampf(dx / ref, -1.0, 1.0)
@@ -2081,6 +2269,7 @@ func _handle_message(raw: String) -> void:
 		print("🏁 Session complète — fin de session !")
 		session_active = false
 		_was_on_break = false
+		_hide_drone_timer()
 		if _tama_ui:
 			_tama_ui.hide_break_overlay()
 		if _anim_tree_module:
@@ -2242,7 +2431,7 @@ func _handle_message(raw: String) -> void:
 		var jty := int(data.get("y", -1))
 		var jaction: String = data.get("action", "")
 		print("🤖 JARVIS_TAP: (%d, %d) action=%s" % [jtx, jty, jaction])
-		if jtx > 0 and jty > 0:
+		if jtx >= 0 and jty >= 0:
 			_spawn_jarvis_hand(Vector2i(jtx, jty), jaction)
 			# Arm IK: point toward the tap target (gentle, not aggressive)
 			if _gaze_modifier:
@@ -2413,6 +2602,10 @@ func _handle_message(raw: String) -> void:
 			# Jaw open = base amount per viseme × amplitude
 			var base_jaw: float = JAW_OPEN_MAP.get(shape, 0.3)
 			_set_jaw_open(base_jaw * clampf(amp, 0.2, 1.0))
+		return
+	elif command == "DESKTOP_MAP":
+		# Python sends a map of all visible OS windows
+		_desktop_windows = data.get("windows", [])
 		return
 	elif command == "SCREEN_SCAN":
 		# Tama just analyzed the screen — visually show she's looking
@@ -3220,9 +3413,12 @@ func _trigger_entrance() -> void:
 func _setup_greeting_audio() -> void:
 	"""Load local greeting audio (tama_hello.wav or .mp3). If found, instant entrance is used."""
 	_local_greeting_player = AudioStreamPlayer.new()
-	var audio_file = load("res://tama_hello.wav")
-	var file_name = "tama_hello.wav"
-	if not audio_file:
+	var audio_file = null
+	var file_name = ""
+	if FileAccess.file_exists("res://tama_hello.wav"):
+		audio_file = load("res://tama_hello.wav")
+		file_name = "tama_hello.wav"
+	elif FileAccess.file_exists("res://tama_hello.mp3"):
 		audio_file = load("res://tama_hello.mp3")
 		file_name = "tama_hello.mp3"
 	if audio_file:
@@ -3349,7 +3545,7 @@ func _materialize_from_ghost() -> void:
 	# The drone is a separate Window but we convert its screen position
 	# to 3D via _screen_to_world / _screen_to_arm_target (same as strikes)
 	if _drone_state == "WAITING_START" and _drone_window and _drone_window.visible:
-		var tw = create_tween()
+		var tw = create_tween().bind_node(self)
 		tw.tween_interval(2.0)  # Beat after Hello anim
 		tw.tween_callback(func():
 			if _drone_state != "WAITING_START" or not _drone_window or not _drone_window.visible:
@@ -3432,20 +3628,7 @@ func _scan_materials_recursive(node: Node) -> void:
 		_scan_materials_recursive(child)
 
 
-func _set_tama_alpha(alpha: float) -> void:
-	"""Set the alpha of all Tama materials. 0.0 = invisible, 1.0 = fully opaque."""
-	for mat in _ghost_materials:
-		if mat is StandardMaterial3D:
-			var std_mat: StandardMaterial3D = mat as StandardMaterial3D
-			if alpha < 0.99:
-				# Enable alpha blending for translucency
-				std_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-				std_mat.albedo_color.a = alpha
-			else:
-				# Restore original transparency mode
-				var orig = _ghost_original_transparency.get(mat, BaseMaterial3D.TRANSPARENCY_DISABLED)
-				std_mat.transparency = orig
-				std_mat.albedo_color.a = 1.0
+# _set_tama_alpha() REMOVED — dead code. Ghost alpha is managed by _update_ghost_fade() directly.
 
 
 func _update_ghost_fade(delta: float) -> void:
@@ -3891,9 +4074,7 @@ func _get_book_world_pos() -> Vector3:
 # ─── Dynamic Subject Gaze Helpers ───────────────────────────
 func _get_dynamic_target_point(target: GazeTarget) -> Vector2:
 	"""Compute the screen pixel for a gaze target based on Tama's actual screen."""
-	var screen_idx = DisplayServer.window_get_current_screen()
-	if _tama_window and is_instance_valid(_tama_window):
-		screen_idx = DisplayServer.window_get_current_screen(_tama_window.get_window_id())
+	var screen_idx = _get_tama_screen_idx()
 	var usable = DisplayServer.screen_get_usable_rect(screen_idx)
 	var cx = float(usable.position.x) + float(usable.size.x) / 2.0
 	var cy = float(usable.position.y) + float(usable.size.y) / 2.0

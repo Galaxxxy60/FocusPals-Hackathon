@@ -15,6 +15,7 @@ import time
 import threading
 
 import websockets
+import pygetwindow as gw
 
 from config import application_path, state, tweaks, BREAK_CHECKPOINTS, BREAK_DURATIONS, get_dynamic_break_checkpoints
 from audio import get_available_mics, refresh_mic_cache, select_mic, resolve_default_mic
@@ -459,6 +460,53 @@ async def ws_handler(websocket):
         state["connected_ws_clients"].discard(websocket)
 
 
+# ─── Desktop Window Scanner (Radar) ─────────────────────────
+# Python scans all visible OS windows and sends their geometry to Godot.
+# Godot uses this "map" so Tama can perch on windows, fall when they
+# close, peek from edges, etc.  Runs every ~2s inside broadcast_ws_state.
+
+# Titles to exclude from the desktop map (Tama's own windows + system noise)
+_DESKTOP_MAP_EXCLUDE = {
+    "TamaMain", "TamaUI", "TamaHand_Jarvis", "TamaDrone",
+    "focuspals", "FocusPals",
+    "Program Manager",           # Windows desktop
+    "Windows Input Experience",  # IME popups
+}
+
+_last_desktop_map: list = []      # Cached for change-detection
+_desktop_map_counter: int = 0     # Ticks since last scan
+_DESKTOP_MAP_INTERVAL: int = 4    # Send every N broadcast ticks (=~2s at 0.5s tick)
+
+
+def _scan_desktop_windows() -> list[dict]:
+    """Scan all visible windows and return a list of {title, x, y, w, h}.
+    Uses pygetwindow (already a project dependency)."""
+    windows_data = []
+    try:
+        for win in gw.getAllWindows():
+            # Skip invisible, minimized, untitled, or excluded
+            if not win.visible or win.isMinimized:
+                continue
+            title = (win.title or "").strip()
+            if not title:
+                continue
+            if title in _DESKTOP_MAP_EXCLUDE:
+                continue
+            # Skip tiny windows (tooltips, tray icons, etc.)
+            if win.width < 200 or win.height < 100:
+                continue
+            windows_data.append({
+                "title": title,
+                "x": win.left,
+                "y": win.top,
+                "w": win.width,
+                "h": win.height,
+            })
+    except Exception as e:
+        print(f"⚠️ Desktop scan error: {e}")
+    return windows_data
+
+
 # ─── WebSocket State Broadcaster ────────────────────────────
 
 async def broadcast_ws_state():
@@ -582,6 +630,19 @@ async def broadcast_ws_state():
                     "gemini_connected": state["gemini_connected"],
                 }
                 websockets.broadcast(state["connected_ws_clients"], json.dumps(state_data))
+
+                # ── Desktop Map Radar (periodic) ──────────────
+                global _desktop_map_counter, _last_desktop_map
+                _desktop_map_counter += 1
+                if _desktop_map_counter >= _DESKTOP_MAP_INTERVAL:
+                    _desktop_map_counter = 0
+                    new_map = _scan_desktop_windows()
+                    # Only broadcast if the map changed (avoids flooding)
+                    if new_map != _last_desktop_map:
+                        _last_desktop_map = new_map
+                        map_msg = json.dumps({"command": "DESKTOP_MAP", "windows": new_map})
+                        websockets.broadcast(state["connected_ws_clients"], map_msg)
+
             except Exception:
                 pass
         await asyncio.sleep(0.5)
