@@ -627,6 +627,7 @@ def prepare_close_tab(reason: str, target_window: str = None):
             "reason": reason,
             "target_x": target_x,
             "target_y": target_y,
+            "monitors": monitors,
         }
 
         action = "Ctrl+W (onglet)" if mode == "browser" else "WM_CLOSE (app)"
@@ -670,9 +671,23 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             tx = pending.get("target_x", 0)
             ty = pending.get("target_y", 0)
             strike_title = pending.get("title", "")
-            target_msg = json.dumps({"command": "STRIKE_TARGET", "x": tx, "y": ty, "title": strike_title})
+            # Determine screen index
+            screen_idx = 0
+            monitors = pending.get("monitors", [])
+            for i, m in enumerate(monitors):
+                if m['l'] <= tx <= m['r'] and m['t'] <= ty <= m['b']:
+                    screen_idx = i
+                    break
+
+            target_msg = json.dumps({
+                "command": "STRIKE_TARGET", 
+                "x": tx, 
+                "y": ty, 
+                "screen_index": screen_idx,
+                "title": strike_title
+            })
             broadcast_to_godot(target_msg)
-            print(f"  🎯 STRIKE_TARGET sent to Godot: ({tx}, {ty}) title='{strike_title[:40]}'")
+            print(f"  🎯 STRIKE_TARGET sent to Godot: ({tx}, {ty}) Screen:{screen_idx} title='{strike_title[:40]}'")
 
             # ── Now that target is ready, send the Strike anim ──
             # If fire_strike already requested it, the flag is already True.
@@ -720,6 +735,46 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
         print(f"  ❌ Grace period error: {e}")
         state["_strike_in_progress"] = False
         state["_strike_requested"] = False
+
+
+async def send_approach_to_godot():
+    """Trouve la fenêtre active et demande à Godot de déplacer Tama sur la barre des tâches de cet écran."""
+    try:
+        import pygetwindow as gw
+        active_win = gw.getActiveWindow()
+        if active_win and active_win.width > 50:
+            # Check cooldown (don't spam approaches)
+            now = time.time()
+            if now - state.get("_last_approach_time", 0) < 10.0:
+                return
+
+            # Determine screen index
+            screen_idx = 0
+            monitors = pending.get("monitors", []) if "pending" in locals() else state.get("monitors", [])
+            
+            # If coming from APPROACH_TARGET (no pending strike), we need to get monitors differently or fallback
+            if not monitors:
+                # Basic fallback if monitors wasn't fetched
+                monitors = [{'l': 0, 't': 0, 'r': 2560, 'b': 1440}]
+                
+            for i, m in enumerate(monitors):
+                if m['l'] <= (active_win.left + active_win.width//2) <= m['r'] and \
+                   m['t'] <= (active_win.top + 20) <= m['b']:
+                    screen_idx = i
+                    break
+
+            state["_last_approach_time"] = now
+            msg = json.dumps({
+                "command": "APPROACH_TARGET",
+                "x": active_win.left + active_win.width // 2,
+                "y": active_win.top + 20,
+                "screen_index": screen_idx,
+                "title": active_win.title
+            })
+            broadcast_to_godot(msg)
+            print(f"  🐾 Déplacement préventif vers l'écran de la distraction : '{active_win.title[:30]}'")
+    except Exception as e:
+        print(f"  ⚠️ Approach failed: {e}")
 
 
 # ─── Main Gemini Live Loop ──────────────────────────────────
@@ -1508,6 +1563,10 @@ async def run_gemini_loop(pya):
                             scan_msg = json.dumps(scan_data)
                             broadcast_to_godot(scan_msg)
 
+                            # C2: If highly suspicious, approach the target screen pre-emptively
+                            if s_int >= 6 and ali < 0.8:
+                                asyncio.create_task(send_approach_to_godot())
+
                             state["_api_screen_pulses"] += 1
 
                         if active_title != state["last_active_window_title"]:
@@ -2007,18 +2066,16 @@ async def run_gemini_loop(pya):
                                                 print(f"  🎭 Mood: {mood} ({intensity:.1f})")
 
                                                 # Always send facial expression (UV swap eyes/mouth)
-                                                # This is lightweight — doesn't make Tama appear/disappear
                                                 mood_msg = json.dumps({"command": "TAMA_MOOD", "mood": mood, "intensity": intensity})
                                                 broadcast_to_godot(mood_msg)
 
-                                                # Only change body animation if Tama is speaking
-                                                # When muzzled (S<3, no audio), don't make her appear/disappear
-                                                if is_speaking:
-                                                    # AnimTree handles wall_talk vs standing logic.
-                                                    # All moods go through — Godot decides the right anim.
-                                                    send_mood_to_godot(mood, intensity)
+                                                # 🐾 Approach distraction if feeling angry/annoyed
+                                                if mood in ("angry", "annoyed") and intensity > 0.4 and state["current_alignment"] < 0.8:
+                                                     asyncio.create_task(send_approach_to_godot())
 
-                                                # Gemini requires a FunctionResponse for ALL tool calls.
+                                                # Only change body animation if Tama is speaking
+                                                if is_speaking:
+                                                    send_mood_to_godot(mood, intensity)
                                                 # Without it, 1011 crashes occur. The deferred system
                                                 # ensures this only gets sent AFTER turn_complete,
                                                 # preventing ghost audio re-generation.

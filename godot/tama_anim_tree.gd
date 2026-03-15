@@ -225,6 +225,14 @@ func _build_tree() -> void:
 	_add_trans(sm, "strike_base", "suspicious", XFADE_MOOD)
 	_add_trans(sm, "strike_base", "angry", XFADE_MOOD)
 	_add_trans(sm, "strike_base", "return_wall", XFADE_TRANSITION)
+	
+	# Ground → strike
+	if _names.has("idle_ground"):
+		_add_trans(sm, "idle_ground", "strike_base", XFADE_STRIKE)
+		_add_trans(sm, "strike_base", "idle_ground", XFADE_MOOD)
+		if _names.has("idle_ground_talk"):
+			_add_trans(sm, "idle_ground_talk", "strike_base", XFADE_STRIKE)
+
 
 	# WalkIn (entrance from off-screen → idle → idle_wall)
 	if _names.has("walk_in"):
@@ -489,36 +497,42 @@ func set_standing_anim(key: String) -> void:
 
 	if current_state == State.OFF_SCREEN:
 		# Need to arrive first — teleport in (primary) + queue the mood
-		_queued_standing = key
+		if _queued_standing not in ["strike", "go_away"]:
+			_queued_standing = key
 		teleport_in()
 		return
 
 	if current_state == State.ON_WALL:
 		# Need to leave wall first — queue the mood
-		_queued_standing = key
+		if _queued_standing not in ["strike", "go_away"]:
+			_queued_standing = key
 		leave_wall()
 		return
 
 	if current_state == State.ON_GROUND or current_state == State.GROUND_TALK:
 		# Need to stand from ground first — queue the mood
-		_queued_standing = key
+		if _queued_standing not in ["strike", "go_away"]:
+			_queued_standing = key
 		stand_from_ground()
 		return
 
 	if current_state == State.LEAVING_WALL or current_state == State.LEAVING_GROUND:
 		# Still transitioning — queue it
-		_queued_standing = key
+		if _queued_standing not in ["strike", "go_away"]:
+			_queued_standing = key
 		return
 
 	if current_state == State.SITTING_GROUND:
 		# Sitting down animation in progress — queue it
-		_queued_standing = key
+		if _queued_standing not in ["strike", "go_away"]:
+			_queued_standing = key
 		return
 
 	if current_state == State.STRIKING:
 		# Don't interrupt a strike in progress, but queue the mood!
 		print("🎬 Mood '%s' queued (currently STRIKING)" % key)
-		_queued_standing = key
+		if _queued_standing not in ["strike", "go_away"]:
+			_queued_standing = key
 		return
 
 	# Already standing — travel directly
@@ -528,6 +542,7 @@ func set_standing_anim(key: String) -> void:
 
 var _current_standing: String = "idle"
 var _queued_standing: String = ""
+var _was_on_ground_before_strike: bool = false
 
 
 func play_wall_talk() -> void:
@@ -624,19 +639,21 @@ func play_strike() -> void:
 		strike_sequence_started.emit()
 		return
 
-	if not is_standing():
-		print("🎬 play_strike() queued — currently %s, ensuring standing first" % State.keys()[current_state])
-		_queued_standing = "strike"
+	_was_on_ground_before_strike = is_on_ground()
+
+	if not is_standing() and not is_on_ground():
+		print("🎬 play_strike() queued — currently %s, ensuring standing/ground first" % State.keys()[current_state])
+		if _queued_standing not in ["strike", "go_away"]:
+			_queued_standing = "strike"
 		if current_state == State.OFF_SCREEN:
 			teleport_in()
 		elif current_state == State.ON_WALL or current_state == State.WALL_TALK:
 			leave_wall()
-		elif current_state == State.ON_GROUND or current_state == State.GROUND_TALK:
-			stand_from_ground()
-		# Si en cours de LEAVING_WALL/LEAVING_GROUND/etc, la file d'attente s'en chargera
+		# If leaving ground or sitting ground, it will process the queue when finished
 		return
 
 	_set_state(State.STRIKING)
+
 	_strike_fired = false
 	_strike_frames = 0
 	_strike_time = 0.0
@@ -773,17 +790,19 @@ func _process(delta: float) -> void:
 	if current_state == State.STRIKING:
 		_strike_time += delta  # Track how long we've been in STRIKING
 		if not _strike_fired:
-			var fire_at: float = STRIKE_FIRE_AT.get(cur_node, STRIKE_FIRE_FALLBACK)
+			var fire_at: float = STRIKE_FIRE_AT.get("strike_base", STRIKE_FIRE_FALLBACK)
 			var pos: float = _playback.get_current_play_position()
 			if pos >= fire_at:
 				_strike_fired = true
 				strike_fire_point.emit()
-				print("🎬 🎯 STRIKE_FIRE at %.2fs (configured: %.2fs in '%s')" % [pos, fire_at, cur_node])
+				print("🎬 🎯 STRIKE_FIRE at %.2fs (configured: %.2fs)" % [pos, fire_at])
 
 	# ── Detect when strike finishes → choose next state ──
-	if current_state == State.STRIKING and cur_node == "strike_base":
+	if current_state == State.STRIKING:
 		var pos: float = _playback.get_current_play_position()
 		var length: float = _playback.get_current_length()
+		# When a transition happens immediately, get_current_length() might return 0
+		# So we must rely heavily on _strike_time for safety.
 		if length > 0 and pos >= length - 0.05:
 			_on_strike_complete()
 		# Safety timeout: if position-check never triggers (low FPS, crossfade,
@@ -925,20 +944,33 @@ func _on_strike_complete() -> void:
 	# Don't process more than once
 	if current_state != State.STRIKING:
 		return
-	_set_state(State.STANDING)
-	
-	if _queued_standing != "":
-		var q := _queued_standing
-		_queued_standing = ""
-		print("🎬 Strike complete → Applying queued mood '%s'" % q)
-		if q == "strike":
-			play_strike()
+		
+	if _was_on_ground_before_strike:
+		_set_state(State.ON_GROUND)
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike": play_strike()
+			else: 
+				print("🎬 Strike complete → Staying on ground, ignoring standing mood request: " + q)
+				_playback.travel("idle_ground")
 		else:
-			set_standing_anim(q)
+			_playback.travel("idle_ground")
+			print("🎬 Strike complete → Back to sitting")
 	else:
-		_current_standing = "angry"
-		_playback.travel("angry")
-		print("🎬 Strike complete → Standing (angry)")
+		_set_state(State.STANDING)
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			print("🎬 Strike complete → Applying queued mood '%s'" % q)
+			if q == "strike":
+				play_strike()
+			else:
+				set_standing_anim(q)
+		else:
+			_current_standing = "angry"
+			_playback.travel("angry")
+			print("🎬 Strike complete → Standing (angry)")
 
 
 func _set_state(new_state: int) -> void:

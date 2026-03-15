@@ -75,6 +75,7 @@ var _imba_tween: Tween = null          # For smooth transitions
 
 # Strike target coordinates from Python (tab/window close button position)
 var _strike_target: Vector2i = Vector2i(-99999, -99999)  # sentinel = use mouse fallback (NOT -1: left monitors have negative coords!)
+var _pending_strike: bool = false  # ⏳ Queue strike during teleport — released when glitch fades
 
 # ─── Dynamic Subject Gaze ───
 # Point of interest set by Python (e.g. a video playing, a browser tab).
@@ -869,10 +870,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			print("🛸 [DEBUG] F8 → Drone follows mouse OFF")
 			_hide_status_indicator()
+	# F9 = Debug: Force break celebration / confetti display
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
+		print("🎉 [DEBUG] F9 → Triggering Celebration / Confetti!")
+		_show_break_popup() # Simulate break
 	# F10 = Force pause Pomodoro (même effet que cliquer sur le drone ☕)
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F10:
 		print("⏸️ F10 → Pause Pomodoro manuelle !")
-		
 		# Activer le drone en mode BREAK_TIMER (feedback visuel immédiat)
 		if _drone_window and is_instance_valid(_drone_window):
 			_drone_state = "BREAK_TIMER"
@@ -890,10 +894,25 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _confetti_window:
 			_confetti_window.visible = false
 		
-		# 🍅 Envoyer prepare_break — Tama va dire au revoir AVANT de disparaître
-		# (Python enverra BREAK_STARTED quand elle aura fini de parler)
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "prepare_break"}))
+		return
+
+	# F11 = Debug: Force Teleport Tama to Screen #0 (usually right)
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F11:
+		print("⚡ [DEBUG] F11 → Force Teleport test (Screen 0)")
+		_show_status_indicator("⚡ Teleport Test (F11)", Color(1, 0.8, 0.2))
+		var rect = DisplayServer.screen_get_usable_rect(0)
+		_teleport_to_screen_of_target(Vector2(rect.position.x + 100, rect.position.y + 100))
+		return
+
+	# F12 = Debug: Force Teleport Tama to Screen #1 (usually left)
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F12:
+		print("⚡ [DEBUG] F12 → Force Teleport test (Screen 1)")
+		_show_status_indicator("⚡ Teleport Test (F12)", Color(1, 0.8, 0.2))
+		var rect = DisplayServer.screen_get_usable_rect(1)
+		_teleport_to_screen_of_target(Vector2(rect.position.x + 100, rect.position.y + 100))
+		return
 
 # ─── Widget Drone (Remplace la Main Magique) ──────────────────
 var _drone_window: Window = null
@@ -1929,7 +1948,10 @@ func _get_tama_screen_idx() -> int:
 	"""Return the screen index where Tama's window currently lives.
 	Uses DisplayServer (reliable) instead of Window.current_screen (can misreport on borderless windows)."""
 	if _tama_window and is_instance_valid(_tama_window):
-		return DisplayServer.window_get_current_screen(_tama_window.get_window_id())
+		if _tama_window.visible:
+			return DisplayServer.window_get_current_screen(_tama_window.get_window_id())
+		else:
+			return _tama_window.current_screen # Safe fallback for hidden windows
 	return DisplayServer.window_get_current_screen()
 
 func _position_window() -> void:
@@ -2070,75 +2092,65 @@ func _dodge_to_taskbar() -> void:
 	var target_x: int
 	var target_y: int
 	var found_window := false
+	var target_usable = usable
 
-	# 🎯 PERCH ON A DESKTOP WINDOW
+	# 🎯 PERCH ON A DESKTOP WINDOW (Désactivé temporairement à la demande de l'utilisateur)
 	# Only try if we have a desktop map from Python
-	if _desktop_windows.size() > 0:
-		# Collect valid perch candidates (non-maximized windows with enough room)
+	if false and _desktop_windows.size() > 0:
 		var candidates: Array = []
 		for dwin in _desktop_windows:
 			var wx := float(dwin.get("x", 0))
 			var wy := float(dwin.get("y", 0))
 			var ww := float(dwin.get("w", 0))
 			var wh := float(dwin.get("h", 0))
-			var title := str(dwin.get("title", ""))
 
-			# Skip: fullscreen/maximized windows (top touches screen edge)
-			# These cover the whole screen — perching on top is off-screen
-			if wy <= 5:
-				continue
-			# Skip: too narrow for Tama
-			if ww < win_size.x:
-				continue
-			# Skip: too small vertically (tooltips, thin bars)
-			if wh < 150:
-				continue
+			if wy <= 5: continue
+			if ww < win_size.x: continue
+			if wh < 150: continue
 
-			# Compute perch Y: Tama sits ON TOP of the window title bar
-			# Her window bottom aligns with the window's top + a small offset
-			# so her feet visually rest on the bar
+			# 🌟 FIX MULTI-MONITOR: Trouver l'écran REEL de cette fenêtre candidate
+			var win_center = Vector2(wx + ww / 2.0, wy + wh / 2.0)
+			var win_screen = _get_screen_for_point(win_center)
+			var win_usable = DisplayServer.screen_get_usable_rect(win_screen)
+
 			var perch_y := int(wy - win_size.y + 50)
 
-			# Must be on-screen (above usable area = off-screen)
-			if perch_y < usable.position.y - 30:
+			# On vérifie avec le "usable" de son écran à elle
+			if perch_y < win_usable.position.y - 30:
 				continue
 
-			candidates.append({"data": dwin, "perch_y": perch_y})
+			candidates.append({"data": dwin, "perch_y": perch_y, "usable": win_usable})
 
 		if candidates.size() > 0:
-			# Pick a random candidate
 			var pick = candidates[randi() % candidates.size()]
 			var chosen = pick["data"]
 			var cx := float(chosen.get("x", 0))
 			var cw := float(chosen.get("w", 0))
 
-			# Center Tama horizontally on the chosen window
 			target_x = int(cx + (cw / 2.0) - (win_size.x / 2.0))
 			target_y = pick["perch_y"]
+			target_usable = pick["usable"] # 🌟 ON ADOPTE LES LIMITES DE CET ECRAN !
 
 			found_window = true
 			_perched_on = str(chosen.get("title", ""))
-			_perch_last_rect = {
-				"x": int(cx), "y": int(chosen.get("y", 0)),
-				"w": int(chosen.get("w", 0)), "h": int(chosen.get("h", 0))
-			}
+			_perch_last_rect = {"x": int(cx), "y": int(chosen.get("y", 0)), "w": int(chosen.get("w", 0)), "h": int(chosen.get("h", 0))}
 			print("⚡ Dodge! Tama se perche sur '%s' → (%d, %d)" % [_perched_on, target_x, target_y])
 		else:
 			print("🖥️ Desktop map: %d fenêtres, mais aucune perchable" % _desktop_windows.size())
 	else:
-		print("🖥️ Desktop map vide — pas de radar Python ?")
+		if false: print("🖥️ Desktop map vide — pas de radar Python ?")
 
 	# 🏠 FALLBACK: Taskbar area (bottom-left of screen)
 	if not found_window:
-		target_x = usable.position.x + 20
-		target_y = usable.position.y + usable.size.y - win_size.y
+		target_x = target_usable.position.x + 20
+		target_y = target_usable.position.y + target_usable.size.y - win_size.y
 		_perched_on = ""
 		_perch_last_rect = {}
 		print("⚡ Dodge! Taskbar classique → (%d, %d)" % [target_x, target_y])
 
 	# Safety clamp: never go off-screen
-	target_x = clampi(target_x, usable.position.x, usable.position.x + usable.size.x - win_size.x)
-	target_y = clampi(target_y, usable.position.y - 30, usable.position.y + usable.size.y - win_size.y)
+	target_x = clampi(target_x, target_usable.position.x, target_usable.position.x + target_usable.size.x - win_size.x)
+	target_y = clampi(target_y, target_usable.position.y - 30, target_usable.position.y + target_usable.size.y - win_size.y)
 
 	_tama_window.position = Vector2i(target_x, target_y)
 
@@ -2760,96 +2772,61 @@ func _handle_message(raw: String) -> void:
 				"away": set_gaze(GazeTarget.AWAY, spd)
 				"neutral": set_gaze(GazeTarget.NEUTRAL, spd)
 		return
-	elif command == "STRIKE_TARGET":
+	elif command == "APPROACH_TARGET" or command == "STRIKE_TARGET":
 		# Python sends target coordinates (tab/window close button) + window title
 		var tx := int(data.get("x", -99999))
 		var ty := int(data.get("y", -99999))
 		var strike_title := str(data.get("title", ""))
-		_strike_target = Vector2i(tx, ty)
-		print("🎯 STRIKE_TARGET received: (%d, %d) title='%s'" % [tx, ty, strike_title.left(40)])
+		
+		if command == "STRIKE_TARGET":
+			_strike_target = Vector2i(tx, ty)
+			print("🎯 STRIKE_TARGET received: (%d, %d) title='%s'" % [tx, ty, strike_title.left(40)])
+		else:
+			print("🐾 APPROACH_TARGET received: (%d, %d)" % [tx, ty])
 
 		# ── Multi-monitor diagnostic (Godot side) ──
-		var scr_count := DisplayServer.get_screen_count()
-		for si in range(scr_count):
-			var sr := DisplayServer.screen_get_usable_rect(si)
-			print("  📐 Godot screen %d: pos=(%d,%d) size=%dx%d" % [si, sr.position.x, sr.position.y, sr.size.x, sr.size.y])
+		if command == "STRIKE_TARGET":
+			var scr_count := DisplayServer.get_screen_count()
+			for si in range(scr_count):
+				var sr := DisplayServer.screen_get_usable_rect(si)
+				print("  📐 Godot screen %d: pos=(%d,%d) size=%dx%d" % [si, sr.position.x, sr.position.y, sr.size.x, sr.size.y])
 
 		# ── Desktop Awareness: find the distraction window in our map ──
-		# The desktop map gives us reliable coordinates that are consistent
-		# with Godot's screen layout (same pygetwindow source as the radar).
 		var map_window: Dictionary = {}
 		if strike_title != "" and _desktop_windows.size() > 0:
 			for dwin in _desktop_windows:
 				var dtitle := str(dwin.get("title", ""))
-				# Partial match: window titles can be slightly different
 				if strike_title.left(30).to_lower() in dtitle.to_lower() or dtitle.to_lower() in strike_title.to_lower():
 					map_window = dwin
-					print("  🖥️ Found in desktop map: '%s' at (%d,%d) %dx%d" % [
-						dtitle.left(30),
-						int(dwin.get("x", 0)), int(dwin.get("y", 0)),
-						int(dwin.get("w", 0)), int(dwin.get("h", 0))
-					])
 					break
 
-		# If we found the window in the desktop map, REPLACE the strike target
-		# with coordinates from the map (same coordinate space as Godot).
-		# Python's GetWindowRect uses Win32 DPI-physical coords which can differ
-		# from Godot's DisplayServer coords on hi-DPI monitors.
 		if not map_window.is_empty():
 			var mx := int(map_window.get("x", 0))
 			var my := int(map_window.get("y", 0))
 			var mw := int(map_window.get("w", 0))
-			var mh := int(map_window.get("h", 0))
-			# Close button = top-right corner of the window (25px from right, 15px from top)
 			tx = mx + mw - 25
 			ty = my + 15
-			_strike_target = Vector2i(tx, ty)
-			print("  🎯 Strike target FROM DESKTOP MAP: (%d, %d) [was Python raw, now map-derived]" % [tx, ty])
+			if command == "STRIKE_TARGET":
+				_strike_target = Vector2i(tx, ty)
+				print("  🎯 Strike target FROM DESKTOP MAP: (%d, %d)" % [tx, ty])
+			
+			# 🔥 NOUVEAU: On perche Tama DIRECTEMENT sur la distraction avec le système d'esquive
+			# DESACTIVE TEMPORAIREMENT : L'utilisateur préfère la barre des tâches
+			# _perch_on_distraction(map_window)
+			# return
 
-		# ── Teleport Tama to the screen where the distraction is ──
-		# The drone will naturally follow onto this screen since it spawns above her.
-		if _tama_window and is_instance_valid(_tama_window) and tx > -99990 and ty > -99990:
-			var screen_count := DisplayServer.get_screen_count()
-			var target_screen := -1
-			var target_pos := Vector2(tx, ty)
-
-			# Strategy: Find the Godot screen visually closest to the target coordinates.
-			# Using distance to rect: if point is inside, dist is 0. If outside due to
-			# DPI scaling stretching the coordinates into the void, it snaps to the nearest screen!
-			var min_dist := 9999999.0
-			for i in range(screen_count):
-				var rect := DisplayServer.screen_get_usable_rect(i)
-				var dx := maxf(0.0, maxf(rect.position.x - target_pos.x, target_pos.x - (rect.position.x + rect.size.x)))
-				var dy := maxf(0.0, maxf(rect.position.y - target_pos.y, target_pos.y - (rect.position.y + rect.size.y)))
-				var dist := sqrt(dx * dx + dy * dy)
-				print("  📐 Screen %d rect:(%d,%d %dx%d) — dist to target: %.1f" % [i, rect.position.x, rect.position.y, rect.size.x, rect.size.y, dist])
-				if dist < min_dist:
-					min_dist = dist
-					target_screen = i
-
-			# Fallback: primary screen
-			if target_screen < 0:
-				target_screen = DisplayServer.get_primary_screen()
-				print("  ⚠️ No closest screen found — fallback to primary (%d)" % target_screen)
-
-			var target_rect := DisplayServer.screen_get_usable_rect(target_screen)
-			var win_size := _tama_window.size
-			# Bottom-right of the TARGET screen
-			var new_x := target_rect.position.x + target_rect.size.x - win_size.x
-			var new_y := target_rect.position.y + target_rect.size.y - win_size.y
-
-			var old_pos := _tama_window.position
-			if old_pos != Vector2i(new_x, new_y):
-				_tama_window.position = Vector2i(new_x, new_y)
-				# Glitch effect for teleport
-				_glitch_teleporting = true
-				_glitch_intensity = GLITCH_TELEPORT_START
-				_glitch_target = 0.0
-				if _glitch_quad:
-					_glitch_quad.visible = true
-				if _glitch_material:
-					_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
-				print("⚡ STRIKE TELEPORT! Tama → screen %d (%d, %d)" % [target_screen, new_x, new_y])
+		# ── Fallback si la fenêtre n'est pas dans le radar ──
+		var force_scr = int(data.get("screen_index", -1))
+		_teleport_to_screen_of_target(Vector2(tx, ty), force_scr)
+		
+		# If it's a strike, we might need to reset gaze toward the new target point
+		if command == "STRIKE_TARGET":
+			# Hand IK for the strike
+			if _gaze_modifier:
+				var target_3d := _screen_to_arm_target(float(tx), float(ty))
+				_gaze_modifier.arm_ik_target = target_3d
+				_gaze_modifier.arm_ik_active = true
+				_gaze_modifier.arm_ik_blend_target = 1.0 # Max aggressive for strike
 		return
 	elif command == "JARVIS_TAP":
 		# Jarvis mode: Tama's hand gently taps the target (not a strike — an assist)
@@ -2865,10 +2842,8 @@ func _handle_message(raw: String) -> void:
 				_gaze_modifier.arm_ik_target = target_3d
 				_gaze_modifier.arm_ik_active = true
 				_gaze_modifier.arm_ik_blend_target = 0.7  # Softer than Strike (which uses 1.0)
-			# Brief gaze toward the target
-			set_gaze_at_screen_point(float(jtx), float(jty), 4.0)
-			_look_eyes_at_screen_point(float(jtx), float(jty))  # Eyes follow the tap
 		return
+
 	elif command == "TAMA_ANIM":
 		var anim_name = data.get("anim", "")
 		_last_anim_command_time = Time.get_unix_time_from_system()
@@ -2905,8 +2880,13 @@ func _handle_message(raw: String) -> void:
 			elif key in ["walk_in"]:
 				_anim_tree_module.walk_in()
 			elif key in ["strike", "strike_base"]:
-				_anim_tree_module.play_strike()
-				_activate_imba(1)
+				# 🛑 If Tama is mid-teleport or mid-dodge, queue the strike
+				if _glitch_teleporting or _dodge_departing:
+					_pending_strike = true
+					print("⏳ Téléportation en cours, strike mis en attente...")
+				else:
+					_anim_tree_module.play_strike()
+					_activate_imba(1)
 			elif key in ["idle_wall_talk"]:
 				if _anim_tree_module.is_on_wall():
 					_anim_tree_module.play_wall_talk()
@@ -3834,6 +3814,13 @@ func _update_glitch(delta: float) -> void:
 			if _glitch_quad:
 				_glitch_quad.visible = false
 			print("📺 Teleport glitch complete — Tama materialized")
+			# 🎯 Release queued strike now that Tama has fully materialized
+			if _pending_strike:
+				_pending_strike = false
+				print("💥 Matérialisation terminée : lancement du Strike en attente !")
+				if _anim_tree_module:
+					_anim_tree_module.play_strike()
+				_activate_imba(1)
 	else:
 		# Normal glitch fade in/out
 		if _glitch_intensity < _glitch_target:
@@ -5028,3 +5015,136 @@ func _on_break_refuse() -> void:
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "REFUSE_BREAK"}))
 
+func _teleport_to_screen_of_target(target_pos: Vector2, force_screen: int = -1) -> void:
+	"""Teleport Tama to the bottom-right of the screen closest to target_pos."""
+	if not _tama_window or not is_instance_valid(_tama_window):
+		return
+	if target_pos.x < -99990 or target_pos.y < -99990:
+		return
+
+	var screen_count := DisplayServer.get_screen_count()
+	var target_screen := force_screen
+	
+	if target_screen < 0:
+		# Strategy: Find the Godot screen visually closest to the target coordinates.
+		var min_dist := 9999999.0
+		for i in range(screen_count):
+			var rect := DisplayServer.screen_get_usable_rect(i)
+			var dx := maxf(0.0, maxf(rect.position.x - target_pos.x, target_pos.x - (rect.position.x + rect.size.x)))
+			var dy := maxf(0.0, maxf(rect.position.y - target_pos.y, target_pos.y - (rect.position.y + rect.size.y)))
+			var dist := sqrt(dx * dx + dy * dy)
+			if dist < min_dist:
+				min_dist = dist
+				target_screen = i
+
+	# Fallback/Validation
+	if target_screen < 0 or target_screen >= screen_count:
+		target_screen = DisplayServer.get_primary_screen()
+
+	print("🖥️ Screen detection: target_pos=%s -> target_screen=%d" % [str(target_pos), target_screen])
+
+	var target_rect := DisplayServer.screen_get_usable_rect(target_screen)
+	var win_size := _tama_window.size
+	# Bottom-right of the TARGET screen
+	var new_x := target_rect.position.x + target_rect.size.x - win_size.x
+	var new_y := target_rect.position.y + target_rect.size.y - win_size.y
+
+	var old_pos := _tama_window.position
+	
+	# Only teleport if she's not already there
+	if abs(old_pos.x - new_x) > 50 or abs(old_pos.y - new_y) > 50:
+		_tama_window.position = Vector2i(new_x, new_y)
+		_glitch_teleporting = true
+		_glitch_intensity = GLITCH_TELEPORT_START
+		_glitch_target = 0.0
+		if _glitch_quad: _glitch_quad.visible = true
+		if _glitch_material: _glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		print("⚡ Teleporting Tama to screen %d (%d, %d)" % [target_screen, new_x, new_y])
+
+
+func _get_screen_for_point(pt: Vector2) -> int:
+	"""Trouve l'écran correct pour une coordonnée (corrige les murs invisibles multi-écrans)."""
+	var screen_count := DisplayServer.get_screen_count()
+	var best_screen := -1
+	var min_dist := 9999999.0
+	for i in range(screen_count):
+		var rect := DisplayServer.screen_get_usable_rect(i)
+		if rect.has_point(pt):
+			return i
+		var dx := maxf(0.0, maxf(rect.position.x - pt.x, pt.x - (rect.position.x + rect.size.x)))
+		var dy := maxf(0.0, maxf(rect.position.y - pt.y, pt.y - (rect.position.y + rect.size.y)))
+		var dist := dx * dx + dy * dy
+		if dist < min_dist:
+			min_dist = dist
+			best_screen = i
+	return best_screen if best_screen >= 0 else DisplayServer.get_primary_screen()
+
+
+func _perch_on_distraction(dwin: Dictionary) -> void:
+	"""Téléporte Tama DIRECTEMENT SUR la distraction avec le système d'esquive (Perch)."""
+	if not _tama_window or not is_instance_valid(_tama_window):
+		return
+
+	_dodge_active = true
+	_dodge_cooldown_timer = 5.0 # Empêche Tama de fuir si ta souris est déjà sur la distraction
+	_dodge_armed = false
+
+	# Forcer la pose au sol (assise sur la fenêtre) sauf si elle est en colère
+	if _anim_tree_module and _anim_tree_module._playback:
+		var keep_standing := false
+		if _anim_tree_module.is_standing():
+			var mood = _anim_tree_module._current_standing
+			var queued = _anim_tree_module._queued_standing
+			if mood in ["angry", "suspicious"] or queued in ["angry", "suspicious"]:
+				keep_standing = true
+				if queued != "":
+					_anim_tree_module._queued_standing = ""
+					_anim_tree_module._playback.start(queued)
+					_anim_tree_module._tree.advance(0)
+					_anim_tree_module._current_standing = queued
+					_anim_tree_module._set_state(_anim_tree_module.State.STANDING)
+		if not keep_standing:
+			if _anim_tree_module._names.has("idle_ground"):
+				_anim_tree_module._playback.start("idle_ground")
+				_anim_tree_module._tree.advance(0)
+				_anim_tree_module._set_state(_anim_tree_module.State.ON_GROUND)
+
+	var win_size := _tama_window.size
+	var cx := float(dwin.get("x", 0))
+	var cy := float(dwin.get("y", 0))
+	var cw := float(dwin.get("w", 0))
+	var ch := float(dwin.get("h", 0))
+
+	# Calcul du centre de la fenêtre pour l'asseoir dessus
+	var target_x := int(cx + (cw / 2.0) - (win_size.x / 2.0))
+	var target_y := int(cy - win_size.y + 50)
+
+	# 🌟 FIX MULTI-ÉCRAN : On récupère les limites du NOUVEL écran
+	var center_pt = Vector2(cx + cw / 2.0, cy + ch / 2.0)
+	var target_screen = _get_screen_for_point(center_pt)
+	var usable = DisplayServer.screen_get_usable_rect(target_screen)
+
+	target_x = clampi(target_x, usable.position.x, usable.position.x + usable.size.x - win_size.x)
+	target_y = clampi(target_y, usable.position.y - 30, usable.position.y + usable.size.y - win_size.y)
+
+	_perched_on = str(dwin.get("title", ""))
+	_perch_last_rect = {"x": int(cx), "y": int(cy), "w": int(cw), "h": int(ch)}
+
+	# Glitch de départ (elle disparaît de là où elle est, met le Strike en attente)
+	_dodge_departing = true
+	_glitch_intensity = GLITCH_TELEPORT_START
+	_glitch_target = GLITCH_TELEPORT_START
+	if _glitch_quad: _glitch_quad.visible = true
+	if _glitch_material: _glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+
+	var tw := create_tween().bind_node(self)
+	tw.tween_interval(0.15)
+	tw.tween_callback(func():
+		_dodge_departing = false
+		_tama_window.position = Vector2i(target_x, target_y)
+		_glitch_teleporting = true
+		_glitch_intensity = GLITCH_TELEPORT_START
+		_glitch_target = 0.0
+		if _glitch_material: _glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		print("⚡ Target Perch: Tama s'assoit sur la distraction '%s' !" % _perched_on)
+	)
