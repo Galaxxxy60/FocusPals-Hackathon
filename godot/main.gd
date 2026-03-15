@@ -1026,6 +1026,31 @@ func _spawn_drone_strike() -> void:
 	# Hover position = 80px BELOW the tab (drone stationné en dessous)
 	var hover_pos = tab_pos + Vector2i(0, 80)
 
+	# ── Multi-screen teleport: if target is on a different screen, jump there first ──
+	# Otherwise the drone window tries to animate across screen boundaries (buggy)
+	var drone_center := start_pos + half
+	var target_center := tab_pos + half
+	var drone_screen := -1
+	var target_screen := -1
+	var scr_count := DisplayServer.get_screen_count()
+	for si in range(scr_count):
+		var sr := DisplayServer.screen_get_usable_rect(si)
+		if drone_center.x >= sr.position.x and drone_center.x < sr.position.x + sr.size.x \
+		   and drone_center.y >= sr.position.y and drone_center.y < sr.position.y + sr.size.y:
+			drone_screen = si
+		if target_center.x >= sr.position.x and target_center.x < sr.position.x + sr.size.x \
+		   and target_center.y >= sr.position.y and target_center.y < sr.position.y + sr.size.y:
+			target_screen = si
+
+	if drone_screen != target_screen and target_screen >= 0:
+		# Teleport drone to the TARGET screen: centered horizontally on the tab, at the top
+		var tgt_rect := DisplayServer.screen_get_usable_rect(target_screen)
+		var tp_x := tab_pos.x  # Same X as tab target
+		var tp_y := tgt_rect.position.y + 20  # Top of screen
+		_drone_window.position = Vector2i(tp_x, tp_y)
+		start_pos = _drone_window.position
+		print("⚡ Drone teleported to screen %d for strike (was on screen %d)" % [target_screen, drone_screen])
+
 	# ── Phase 1: Recul (0.4s) — prise d'élan ──
 	var dir = Vector2(hover_pos - start_pos).normalized()
 	var recoil_pos = start_pos - Vector2i(dir * 50.0) + Vector2i(0, -60)
