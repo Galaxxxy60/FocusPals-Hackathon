@@ -2807,26 +2807,30 @@ func _handle_message(raw: String) -> void:
 			print("  🎯 Strike target FROM DESKTOP MAP: (%d, %d) [was Python raw, now map-derived]" % [tx, ty])
 
 		# ── Teleport Tama to the screen where the distraction is ──
-		# RADICAL: use MOUSE POSITION to detect target screen.
-		# The user is looking at the distraction → mouse is on that screen.
-		# This avoids ALL DPI coordinate mismatches between Python and Godot.
-		if _tama_window and is_instance_valid(_tama_window):
+		# The drone will naturally follow onto this screen since it spawns above her.
+		if _tama_window and is_instance_valid(_tama_window) and tx > -99990 and ty > -99990:
 			var screen_count := DisplayServer.get_screen_count()
 			var target_screen := -1
+			var target_pos := Vector2(tx, ty)
 
-			# Strategy: mouse position → which Godot screen is the user on?
-			var mouse_pos := DisplayServer.mouse_get_position()
+			# Strategy: Find the Godot screen visually closest to the target coordinates.
+			# Using distance to rect: if point is inside, dist is 0. If outside due to
+			# DPI scaling stretching the coordinates into the void, it snaps to the nearest screen!
+			var min_dist := 9999999.0
 			for i in range(screen_count):
-				var screen_rect := DisplayServer.screen_get_usable_rect(i)
-				if mouse_pos.x >= screen_rect.position.x and mouse_pos.x < screen_rect.position.x + screen_rect.size.x \
-				   and mouse_pos.y >= screen_rect.position.y and mouse_pos.y < screen_rect.position.y + screen_rect.size.y:
+				var rect := DisplayServer.screen_get_usable_rect(i)
+				var dx := maxf(0.0, maxf(rect.position.x - target_pos.x, target_pos.x - (rect.position.x + rect.size.x)))
+				var dy := maxf(0.0, maxf(rect.position.y - target_pos.y, target_pos.y - (rect.position.y + rect.size.y)))
+				var dist := sqrt(dx * dx + dy * dy)
+				print("  📐 Screen %d rect:(%d,%d %dx%d) — dist to target: %.1f" % [i, rect.position.x, rect.position.y, rect.size.x, rect.size.y, dist])
+				if dist < min_dist:
+					min_dist = dist
 					target_screen = i
-					break
 
 			# Fallback: primary screen
 			if target_screen < 0:
 				target_screen = DisplayServer.get_primary_screen()
-				print("  ⚠️ Mouse screen unknown — fallback to primary (%d)" % target_screen)
+				print("  ⚠️ No closest screen found — fallback to primary (%d)" % target_screen)
 
 			var target_rect := DisplayServer.screen_get_usable_rect(target_screen)
 			var win_size := _tama_window.size
