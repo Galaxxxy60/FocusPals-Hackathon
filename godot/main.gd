@@ -2807,46 +2807,32 @@ func _handle_message(raw: String) -> void:
 			print("  🎯 Strike target FROM DESKTOP MAP: (%d, %d) [was Python raw, now map-derived]" % [tx, ty])
 
 		# ── Teleport Tama to the screen where the distraction is ──
-		# So the user sees her when she strikes (not stuck on another monitor)
-		if _tama_window and is_instance_valid(_tama_window) and tx > -99990 and ty > -99990:
+		# RADICAL: use MOUSE POSITION to detect target screen.
+		# The user is looking at the distraction → mouse is on that screen.
+		# This avoids ALL DPI coordinate mismatches between Python and Godot.
+		if _tama_window and is_instance_valid(_tama_window):
 			var screen_count := DisplayServer.get_screen_count()
 			var target_screen := -1
 
-			# Strategy 1: Use desktop map window center to find screen
-			if not map_window.is_empty():
-				var wcx := int(map_window.get("x", 0)) + int(map_window.get("w", 0)) / 2
-				var wcy := int(map_window.get("y", 0)) + int(map_window.get("h", 0)) / 2
-				for i in range(screen_count):
-					var screen_rect := DisplayServer.screen_get_usable_rect(i)
-					if wcx >= screen_rect.position.x and wcx < screen_rect.position.x + screen_rect.size.x \
-					   and wcy >= screen_rect.position.y and wcy < screen_rect.position.y + screen_rect.size.y:
-						target_screen = i
-						print("  📐 Desktop map → distraction on screen %d" % i)
-						break
+			# Strategy: mouse position → which Godot screen is the user on?
+			var mouse_pos := DisplayServer.mouse_get_position()
+			for i in range(screen_count):
+				var screen_rect := DisplayServer.screen_get_usable_rect(i)
+				if mouse_pos.x >= screen_rect.position.x and mouse_pos.x < screen_rect.position.x + screen_rect.size.x \
+				   and mouse_pos.y >= screen_rect.position.y and mouse_pos.y < screen_rect.position.y + screen_rect.size.y:
+					target_screen = i
+					break
 
-			# Strategy 2: Fall back to raw strike coordinates
-			if target_screen < 0:
-				for i in range(screen_count):
-					var screen_rect := DisplayServer.screen_get_usable_rect(i)
-					if tx >= screen_rect.position.x and tx < screen_rect.position.x + screen_rect.size.x \
-					   and ty >= screen_rect.position.y and ty < screen_rect.position.y + screen_rect.size.y:
-						target_screen = i
-						print("  📐 Raw coords → distraction on screen %d" % i)
-						break
-
-			# Strategy 3: Ultimate fallback = primary screen
+			# Fallback: primary screen
 			if target_screen < 0:
 				target_screen = DisplayServer.get_primary_screen()
-				print("  ⚠️ Could not match any screen — fallback to primary (%d)" % target_screen)
+				print("  ⚠️ Mouse screen unknown — fallback to primary (%d)" % target_screen)
 
 			var target_rect := DisplayServer.screen_get_usable_rect(target_screen)
 			var win_size := _tama_window.size
 			# Bottom-right of the TARGET screen
 			var new_x := target_rect.position.x + target_rect.size.x - win_size.x
 			var new_y := target_rect.position.y + target_rect.size.y - win_size.y
-			# Safety clamp
-			new_x = clampi(new_x, target_rect.position.x, target_rect.position.x + target_rect.size.x - win_size.x)
-			new_y = clampi(new_y, target_rect.position.y, target_rect.position.y + target_rect.size.y - win_size.y)
 
 			var old_pos := _tama_window.position
 			if old_pos != Vector2i(new_x, new_y):
@@ -2859,7 +2845,7 @@ func _handle_message(raw: String) -> void:
 					_glitch_quad.visible = true
 				if _glitch_material:
 					_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
-				print("⚡ STRIKE TELEPORT! Tama → screen %d (%d, %d)" % [target_screen, new_x, new_y])
+				print("⚡ STRIKE TELEPORT! Tama → screen %d (%d, %d) [mouse at (%d,%d)]" % [target_screen, new_x, new_y, mouse_pos.x, mouse_pos.y])
 		return
 	elif command == "JARVIS_TAP":
 		# Jarvis mode: Tama's hand gently taps the target (not a strike — an assist)
