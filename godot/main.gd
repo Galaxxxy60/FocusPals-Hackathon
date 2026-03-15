@@ -2849,7 +2849,7 @@ func _handle_message(raw: String) -> void:
 					_glitch_quad.visible = true
 				if _glitch_material:
 					_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
-				print("⚡ STRIKE TELEPORT! Tama → screen %d (%d, %d) [mouse at (%d,%d)]" % [target_screen, new_x, new_y, mouse_pos.x, mouse_pos.y])
+				print("⚡ STRIKE TELEPORT! Tama → screen %d (%d, %d)" % [target_screen, new_x, new_y])
 		return
 	elif command == "JARVIS_TAP":
 		# Jarvis mode: Tama's hand gently taps the target (not a strike — an assist)
