@@ -1074,6 +1074,9 @@ func _spawn_drone_strike() -> void:
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
 			print("💥 HEADBUTT! STRIKE_FIRE sent — tab closing NOW")
+		# 🔊 Glitch SFX on impact
+		if _glitch_sfx_player and _glitch_sfx_player.stream:
+			_glitch_sfx_player.play()
 		# Screen shake
 		var shake_tw = create_tween()
 		for i in range(4):
