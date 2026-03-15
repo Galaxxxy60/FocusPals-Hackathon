@@ -723,7 +723,7 @@ func _on_tree_strike_fire() -> void:
 	if _drone_state == "STRIKING":
 		print("🎯 STRIKE_FIRE skipped — drone already striking")
 		return
-	# Spawn hand window + arm IK + notify Python (same as existing strike fire logic)
+	# Spawn hand window + arm IK (same as existing strike fire logic)
 	if _gaze_modifier:
 		var aim: Vector2i
 		if _strike_target.x > -99990:
@@ -735,9 +735,9 @@ func _on_tree_strike_fire() -> void:
 		_gaze_modifier.arm_ik_active = true
 		_gaze_modifier.arm_ik_blend_target = 1.0
 	_spawn_drone_strike()
-	print("🎯 STRIKE_FIRE (via AnimTree) — drone strike + arm IK + close signal")
-	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
+	# NOTE: STRIKE_FIRE is sent to Python at IMPACT (Phase 3 inside _spawn_drone_strike),
+	# NOT here — otherwise the tab closes before the drone arrives!
+	print("🎯 STRIKE_FIRE (via AnimTree) — drone launched, tab closes on impact")
 
 
 func _on_tree_strike_started() -> void:
@@ -1040,6 +1040,10 @@ func _spawn_drone_strike() -> void:
 		if _drone_screen_label:
 			_drone_screen_label.text = "💥"
 			_drone_screen_label.add_theme_font_size_override("font_size", 64)
+		# 🎯 NOW close the tab — drone has arrived!
+		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
+			print("💥 IMPACT! STRIKE_FIRE sent to Python — tab closing NOW")
 		# Petit shake de l'écran local
 		var shake_tw = create_tween()
 		for i in range(3):
