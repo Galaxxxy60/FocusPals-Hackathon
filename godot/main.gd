@@ -1051,6 +1051,13 @@ func _spawn_drone_strike() -> void:
 		start_pos = _drone_window.position
 		print("⚡ Drone teleported to screen %d for strike (was on screen %d)" % [target_screen, drone_screen])
 
+	# 🔝 Force Z-order: drone MUST be on top of the distraction window
+	# Windows DWM can reset Z-order when a window moves across screens
+	_drone_window.always_on_top = false
+	_drone_window.always_on_top = true
+	_drone_window.move_to_foreground()
+	_drone_window.visible = true
+
 	# ── Phase 1: Recul (0.4s) — prise d'élan ──
 	var dir = Vector2(hover_pos - start_pos).normalized()
 	var recoil_pos = start_pos - Vector2i(dir * 50.0) + Vector2i(0, -60)
