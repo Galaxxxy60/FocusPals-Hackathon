@@ -998,8 +998,9 @@ func _spawn_drone_strike() -> void:
 
 	_drone_play("idle", 0.1)  # Menacing idle hover
 
-	# ── Strike SFX: end of sound = moment of impact ──
-	const IMPACT_TIME: float = 1.6
+	# ── Strike SFX: end of sound = moment of HEADBUTT impact ──
+	# Total time to impact: 0.4 (recoil) + 0.8 (fly) + 1.5 (hover) + 0.15 (headbutt) ≈ 2.85s
+	const IMPACT_TIME: float = 2.85
 	if _strike_sfx_player and _strike_sfx_player.stream:
 		var sfx_duration: float = _strike_sfx_player.stream.get_length()
 		if sfx_duration > IMPACT_TIME:
@@ -1020,38 +1021,67 @@ func _spawn_drone_strike() -> void:
 
 	var start_pos = _drone_window.position
 	var half = _drone_window.size / 2
-	var dest = Vector2i(aim.x - half.x, aim.y - half.y)
+	# Target = the tab close button position
+	var tab_pos = Vector2i(aim.x - half.x, aim.y - half.y)
+	# Hover position = 80px BELOW the tab (drone stationné en dessous)
+	var hover_pos = tab_pos + Vector2i(0, 80)
 
-	# Phase 1: Anticipation (Recul vers le haut pour prendre de l'élan)
-	var dir = Vector2(dest - start_pos).normalized()
+	# ── Phase 1: Recul (0.4s) — prise d'élan ──
+	var dir = Vector2(hover_pos - start_pos).normalized()
 	var recoil_pos = start_pos - Vector2i(dir * 50.0) + Vector2i(0, -60)
-	drone_tween.tween_property(_drone_window, "position", recoil_pos, 0.5)\
+	drone_tween.tween_property(_drone_window, "position", recoil_pos, 0.4)\
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	drone_tween.tween_callback(func(): _drone_play("dash", 0.1))
 
-	# Phase 2: Plongeon Foudroyant
-	drone_tween.tween_property(_drone_window, "position", dest, 1.1)\
+	# ── Phase 2: Vol vers la cible — 80px en dessous (0.8s) ──
+	drone_tween.tween_property(_drone_window, "position", hover_pos, 0.8)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+
+	# ── Phase 3: Stationnement menaçant (1.5s) — Ò_Ó ──
+	# Le drone plane sous l'onglet, le user comprend ce qui va se passer
+	drone_tween.tween_callback(func():
+		_drone_play("idle", 0.2)  # Back to menacing hover
+		if _drone_screen_label:
+			_drone_screen_label.text = "Ò_Ó"
+			_drone_screen_label.add_theme_font_size_override("font_size", 52)
+		print("😡 Drone stationné sous l'onglet — menace pendant 1.5s...")
+	)
+	# Small intimidating oscillation during hover
+	drone_tween.tween_property(_drone_window, "position", hover_pos + Vector2i(-8, -4), 0.3)\
+		.set_trans(Tween.TRANS_SINE)
+	drone_tween.tween_property(_drone_window, "position", hover_pos + Vector2i(8, 4), 0.3)\
+		.set_trans(Tween.TRANS_SINE)
+	drone_tween.tween_property(_drone_window, "position", hover_pos + Vector2i(-5, -3), 0.25)\
+		.set_trans(Tween.TRANS_SINE)
+	drone_tween.tween_property(_drone_window, "position", hover_pos, 0.15)\
+		.set_trans(Tween.TRANS_SINE)
+	# Brief pause at hover_pos right before strike
+	drone_tween.tween_interval(0.3)
+
+	# ── Phase 4: COUP DE TÊTE ! (0.15s) — headbutt vers le haut 💥 ──
+	drone_tween.tween_callback(func(): _drone_play("dash", 0.0))
+	drone_tween.tween_property(_drone_window, "position", tab_pos, 0.15)\
 		.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_IN)
 
-	# Phase 3: Impact !
+	# Impact !
 	drone_tween.tween_callback(func():
 		_drone_play("strike", 0.0)
 		_deactivate_imba()
 		if _drone_screen_label:
 			_drone_screen_label.text = "💥"
 			_drone_screen_label.add_theme_font_size_override("font_size", 64)
-		# 🎯 NOW close the tab — drone has arrived!
+		# 🎯 NOW close the tab — headbutt landed!
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "STRIKE_FIRE"}))
-			print("💥 IMPACT! STRIKE_FIRE sent to Python — tab closing NOW")
-		# Petit shake de l'écran local
+			print("💥 HEADBUTT! STRIKE_FIRE sent — tab closing NOW")
+		# Screen shake
 		var shake_tw = create_tween()
-		for i in range(3):
-			shake_tw.tween_property(_drone_window, "position", dest + Vector2i(randi_range(-15, 15), randi_range(-15, 15)), 0.04)
-		shake_tw.tween_property(_drone_window, "position", dest, 0.04)
+		for i in range(4):
+			shake_tw.tween_property(_drone_window, "position", tab_pos + Vector2i(randi_range(-20, 20), randi_range(-20, 20)), 0.04)
+		shake_tw.tween_property(_drone_window, "position", tab_pos, 0.05)
 	)
 
-	# Phase 4: Pose de victoire puis retour doux
+	# ── Phase 5: Pose de victoire puis retour doux (1.2s) ──
 	drone_tween.tween_interval(1.2)
 	drone_tween.tween_callback(func():
 		_strike_target = Vector2i(-99999, -99999)
