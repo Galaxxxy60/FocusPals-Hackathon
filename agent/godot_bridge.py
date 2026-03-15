@@ -528,6 +528,23 @@ async def broadcast_ws_state():
     while True:
         if state["connected_ws_clients"]:
             try:
+                # ── Desktop Map Radar (ALWAYS runs — independent of session) ──
+                # Tama needs to see the desktop at all times (dodge, perch, fall)
+                global _desktop_map_counter, _last_desktop_map
+                _desktop_map_counter += 1
+                if _desktop_map_counter >= _DESKTOP_MAP_INTERVAL:
+                    _desktop_map_counter = 0
+                    new_map = _scan_desktop_windows()
+                    # Only broadcast if the map changed (avoids flooding)
+                    if new_map != _last_desktop_map:
+                        was_empty = len(_last_desktop_map) == 0
+                        _last_desktop_map = new_map
+                        map_msg = json.dumps({"command": "DESKTOP_MAP", "windows": new_map})
+                        websockets.broadcast(state["connected_ws_clients"], map_msg)
+                        if was_empty and new_map:
+                            titles = [w["title"][:30] for w in new_map[:5]]
+                            print(f"🖥️ Desktop radar online — {len(new_map)} windows: {titles}")
+
                 if not state["is_session_active"]:
                     # Check if session just ended → generate summary
                     if _session_ended:
@@ -643,18 +660,6 @@ async def broadcast_ws_state():
                     "gemini_connected": state["gemini_connected"],
                 }
                 websockets.broadcast(state["connected_ws_clients"], json.dumps(state_data))
-
-                # ── Desktop Map Radar (periodic) ──────────────
-                global _desktop_map_counter, _last_desktop_map
-                _desktop_map_counter += 1
-                if _desktop_map_counter >= _DESKTOP_MAP_INTERVAL:
-                    _desktop_map_counter = 0
-                    new_map = _scan_desktop_windows()
-                    # Only broadcast if the map changed (avoids flooding)
-                    if new_map != _last_desktop_map:
-                        _last_desktop_map = new_map
-                        map_msg = json.dumps({"command": "DESKTOP_MAP", "windows": new_map})
-                        websockets.broadcast(state["connected_ws_clients"], map_msg)
 
             except Exception:
                 pass

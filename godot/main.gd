@@ -2009,50 +2009,73 @@ func _dodge_to_taskbar() -> void:
 	var found_window := false
 
 	# 🎯 PERCH ON A DESKTOP WINDOW
+	# Only try if we have a desktop map from Python
 	if _desktop_windows.size() > 0:
-		# Collect valid perch candidates
+		# Collect valid perch candidates (non-maximized windows with enough room)
 		var candidates: Array = []
 		for dwin in _desktop_windows:
 			var wx := float(dwin.get("x", 0))
 			var wy := float(dwin.get("y", 0))
 			var ww := float(dwin.get("w", 0))
 			var wh := float(dwin.get("h", 0))
-			# Must be wide enough for Tama and not flush with the top of the screen
-			# (otherwise Tama would be off-screen above the window)
-			if wy > 60 and ww > win_size.x and wh > 100:
-				# Check that the perch position is within the usable screen area
-				var perch_y := int(wy - win_size.y + 40)
-				if perch_y >= usable.position.y - 50:  # Allow slight overflow above
-					candidates.append(dwin)
+			var title := str(dwin.get("title", ""))
+
+			# Skip: fullscreen/maximized windows (top touches screen edge)
+			# These cover the whole screen — perching on top is off-screen
+			if wy <= 5:
+				continue
+			# Skip: too narrow for Tama
+			if ww < win_size.x:
+				continue
+			# Skip: too small vertically (tooltips, thin bars)
+			if wh < 150:
+				continue
+
+			# Compute perch Y: Tama sits ON TOP of the window title bar
+			# Her window bottom aligns with the window's top + a small offset
+			# so her feet visually rest on the bar
+			var perch_y := int(wy - win_size.y + 50)
+
+			# Must be on-screen (above usable area = off-screen)
+			if perch_y < usable.position.y - 30:
+				continue
+
+			candidates.append({"data": dwin, "perch_y": perch_y})
 
 		if candidates.size() > 0:
-			# Pick a random window to perch on (variety!)
-			var chosen = candidates[randi() % candidates.size()]
+			# Pick a random candidate
+			var pick = candidates[randi() % candidates.size()]
+			var chosen = pick["data"]
 			var cx := float(chosen.get("x", 0))
-			var cy := float(chosen.get("y", 0))
 			var cw := float(chosen.get("w", 0))
 
-			# Center horizontally on the chosen window
+			# Center Tama horizontally on the chosen window
 			target_x = int(cx + (cw / 2.0) - (win_size.x / 2.0))
-			# Place Tama's feet on the title bar of the window
-			# +40px adjustment so her feet visually rest on the bar
-			target_y = int(cy - win_size.y + 40)
+			target_y = pick["perch_y"]
 
 			found_window = true
 			_perched_on = str(chosen.get("title", ""))
 			_perch_last_rect = {
-				"x": int(cx), "y": int(cy),
+				"x": int(cx), "y": int(chosen.get("y", 0)),
 				"w": int(chosen.get("w", 0)), "h": int(chosen.get("h", 0))
 			}
-			print("⚡ Dodge! Tama se perche sur : %s" % _perched_on)
+			print("⚡ Dodge! Tama se perche sur '%s' → (%d, %d)" % [_perched_on, target_x, target_y])
+		else:
+			print("🖥️ Desktop map: %d fenêtres, mais aucune perchable" % _desktop_windows.size())
+	else:
+		print("🖥️ Desktop map vide — pas de radar Python ?")
 
-	# 🏠 FALLBACK: Taskbar (bottom-left)
+	# 🏠 FALLBACK: Taskbar area (bottom-left of screen)
 	if not found_window:
 		target_x = usable.position.x + 20
 		target_y = usable.position.y + usable.size.y - win_size.y
 		_perched_on = ""
 		_perch_last_rect = {}
-		print("⚡ Dodge! Retour taskbar classique.")
+		print("⚡ Dodge! Taskbar classique → (%d, %d)" % [target_x, target_y])
+
+	# Safety clamp: never go off-screen
+	target_x = clampi(target_x, usable.position.x, usable.position.x + usable.size.x - win_size.x)
+	target_y = clampi(target_y, usable.position.y - 30, usable.position.y + usable.size.y - win_size.y)
 
 	_tama_window.position = Vector2i(target_x, target_y)
 
