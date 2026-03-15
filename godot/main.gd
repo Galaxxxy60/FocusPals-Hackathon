@@ -1028,8 +1028,8 @@ func _spawn_drone_strike() -> void:
 
 	# ── Multi-screen teleport: if target is on a different screen, jump there first ──
 	# Otherwise the drone window tries to animate across screen boundaries (buggy)
-	var drone_center := start_pos + half
-	var target_center := tab_pos + half
+	var drone_center: Vector2i = start_pos + half
+	var target_center: Vector2i = tab_pos + half
 	var drone_screen := -1
 	var target_screen := -1
 	var scr_count := DisplayServer.get_screen_count()
@@ -1045,8 +1045,8 @@ func _spawn_drone_strike() -> void:
 	if drone_screen != target_screen and target_screen >= 0:
 		# Teleport drone to the TARGET screen: centered horizontally on the tab, at the top
 		var tgt_rect := DisplayServer.screen_get_usable_rect(target_screen)
-		var tp_x := tab_pos.x  # Same X as tab target
-		var tp_y := tgt_rect.position.y + 20  # Top of screen
+		var tp_x: int = tab_pos.x  # Same X as tab target
+		var tp_y: int = tgt_rect.position.y + 20  # Top of screen
 		_drone_window.position = Vector2i(tp_x, tp_y)
 		start_pos = _drone_window.position
 		print("⚡ Drone teleported to screen %d for strike (was on screen %d)" % [target_screen, drone_screen])
