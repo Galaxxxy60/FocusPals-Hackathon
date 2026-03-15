@@ -886,10 +886,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_drone_window.visible = true
 			if _drone_screen_label:
 				_drone_screen_label.add_theme_font_size_override("font_size", 48)
-				_drone_screen_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.7))
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
 			if _drone_screen_mat:
-				_drone_screen_mat.emission = Color(0.1, 0.5, 0.3)
-				_drone_screen_mat.emission_energy_multiplier = 1.2
+				_drone_screen_mat.emission = Color(0.208, 0.165, 0.310)  # #352A4F
+				_drone_screen_mat.emission_energy_multiplier = 2.0
 			_drone_play("idle")
 		if _confetti_window:
 			_confetti_window.visible = false
@@ -1010,6 +1010,9 @@ func _spawn_drone_strike() -> void:
 	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
 
 	var aim: Vector2i = _strike_target if _strike_target.x > -99990 else DisplayServer.mouse_get_position()
+	
+	# DEBUG: Spawn a red dot at the target
+	_spawn_debug_dot(aim)
 
 	# Agrandir le modèle 3D pour l'impact
 	if _drone_model:
@@ -1017,11 +1020,11 @@ func _spawn_drone_strike() -> void:
 
 	# Mode "Colère"
 	if _drone_screen_label:
-		_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+		_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
 		_drone_screen_label.text = "Ò_Ó"
 		_drone_screen_label.add_theme_font_size_override("font_size", 48)
 	if _drone_screen_mat:
-		_drone_screen_mat.emission = Color(0.8, 0.1, 0.1)
+		_drone_screen_mat.emission = Color(0.35, 0.08, 0.12)  # Dark red-purple for strike
 		_drone_screen_mat.emission_energy_multiplier = 3.0
 	if _drone_panel:
 		var style = _drone_panel.get_theme_stylebox("panel") as StyleBoxFlat
@@ -1147,21 +1150,21 @@ func _spawn_drone_strike() -> void:
 	)
 
 func _reset_drone_style() -> void:
-	"""Reset drone screen to friendly blue/cyan look + idle anim."""
+	"""Reset drone screen to purple theme + idle anim."""
 	if _drone_screen_label:
-		_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.7))
+		_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
 		if _drone_state == "TIMER":
 			_drone_screen_label.add_theme_font_size_override("font_size", 56)
 		else:
 			_drone_screen_label.add_theme_font_size_override("font_size", 36)
 	if _drone_screen_mat:
-		_drone_screen_mat.emission = Color(0.1, 0.4, 0.8)
-		_drone_screen_mat.emission_energy_multiplier = 1.5
+		_drone_screen_mat.emission = Color(0.208, 0.165, 0.310)  # #352A4F
+		_drone_screen_mat.emission_energy_multiplier = 2.0
 	if _drone_panel:
 		var style = _drone_panel.get_theme_stylebox("panel") as StyleBoxFlat
 		if style:
-			style.border_color = Color(0.2, 0.8, 1.0, 0.8)
-			style.shadow_color = Color(0, 0.5, 1.0, 0.3)
+			style.border_color = Color(0.208, 0.165, 0.310, 0.8)  # #352A4F
+			style.shadow_color = Color(0.145, 0.114, 0.212, 0.3)  # #251D36
 	_drone_play("idle")
 
 func _setup_drone_window() -> void:
@@ -1281,15 +1284,22 @@ func _setup_drone_window() -> void:
 		print("🛸 Wings mesh: %s | %d surfaces | AABB: %s | size: %s" % [
 			_drone_mesh.name, surface_count, str(aabb.position), str(aabb.size)])
 		if surface_count > 1:
-			_drone_screen_mat = _drone_mesh.get_active_material(1)
-			if not _drone_screen_mat:
-				_drone_screen_mat = _drone_mesh.mesh.surface_get_material(1)
-			if _drone_screen_mat:
-				_drone_screen_mat = _drone_screen_mat.duplicate() as StandardMaterial3D
-				_drone_mesh.set_surface_override_material(1, _drone_screen_mat)
-				print("🛸 Screen material (slot 1): %s" % str(_drone_screen_mat))
-			else:
-				print("⚠️ No material found at slot 1")
+			# Fix Solidify outline in transparent Window:
+			# The inverted normals of the outline shell cause alpha issues
+			# in transparent_bg Windows. CULL_DISABLED renders both sides → always opaque.
+			var wings_mat = _drone_mesh.get_active_material(0)
+			if not wings_mat:
+				wings_mat = _drone_mesh.mesh.surface_get_material(0)
+			if wings_mat and wings_mat is StandardMaterial3D:
+				var wings_dup = wings_mat.duplicate() as StandardMaterial3D
+				wings_dup.cull_mode = BaseMaterial3D.CULL_DISABLED
+				_drone_mesh.set_surface_override_material(0, wings_dup)
+				print("🛸 Wings (slot 0): cull_mode → DISABLED (fix solidify in transparent window)")
+
+			print("🛸 Creating NEW isolated material for Screen (slot 1)")
+			_drone_screen_mat = StandardMaterial3D.new()
+			_drone_screen_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			_drone_mesh.set_surface_override_material(1, _drone_screen_mat)
 		else:
 			print("⚠️ Only %d surface(s) — expected 2+" % surface_count)
 	else:
@@ -1302,10 +1312,31 @@ func _setup_drone_window() -> void:
 	_drone_screen_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_drone_screen_vp.process_mode = Node.PROCESS_MODE_ALWAYS  # Refresh même sans focus
 
-	var screen_bg = ColorRect.new()
-	screen_bg.color = Color(0.02, 0.05, 0.08, 0.9)
+	# ── Gradient background (#171222 → #251D36 → #352A4F) ──
+	var grad = Gradient.new()
+	grad.set_color(0, Color(0.09, 0.07, 0.13, 0.95))    # #171222
+	grad.add_point(0.5, Color(0.145, 0.114, 0.212, 0.95)) # #251D36
+	grad.set_color(grad.get_point_count() - 1, Color(0.208, 0.165, 0.310, 0.95)) # #352A4F
+	var grad_tex = GradientTexture2D.new()
+	grad_tex.gradient = grad
+	grad_tex.fill = GradientTexture2D.FILL_LINEAR
+	grad_tex.fill_from = Vector2(0, 0)
+	grad_tex.fill_to = Vector2(0, 1)
+	grad_tex.width = 256
+	grad_tex.height = 144
+	var screen_bg = TextureRect.new()
+	screen_bg.texture = grad_tex
 	screen_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen_bg.stretch_mode = TextureRect.STRETCH_SCALE
 	_drone_screen_vp.add_child(screen_bg)
+
+	# ── Load Quantico Bold font ──
+	var quantico_font: Font = null
+	if ResourceLoader.exists("res://Quantico-Bold.ttf"):
+		quantico_font = load("res://Quantico-Bold.ttf") as Font
+		print("🛸 Quantico-Bold font loaded")
+	else:
+		push_warning("⚠️ Quantico-Bold.ttf not found — using default font")
 
 	_drone_screen_label = Label.new()
 	_drone_screen_label.name = "EmojiLabel"
@@ -1313,7 +1344,9 @@ func _setup_drone_window() -> void:
 	_drone_screen_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_drone_screen_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_drone_screen_label.add_theme_font_size_override("font_size", 36)
-	_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.7))
+	_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
+	if quantico_font:
+		_drone_screen_label.add_theme_font_override("font", quantico_font)
 	_drone_screen_vp.add_child(_drone_screen_label)
 
 	_drone_window.add_child(_drone_screen_vp)
@@ -1322,8 +1355,8 @@ func _setup_drone_window() -> void:
 	if _drone_screen_mat:
 		_drone_screen_mat.albedo_texture = _drone_screen_vp.get_texture()
 		_drone_screen_mat.emission_enabled = true
-		_drone_screen_mat.emission = Color(0.1, 0.4, 0.8)
-		_drone_screen_mat.emission_energy_multiplier = 1.5
+		_drone_screen_mat.emission = Color(0.208, 0.165, 0.310)  # #352A4F violet
+		_drone_screen_mat.emission_energy_multiplier = 2.0
 		_drone_screen_mat.emission_texture = _drone_screen_vp.get_texture()
 		print("🛸 Screen material linked to SubViewport texture")
 
@@ -1411,13 +1444,13 @@ func _show_drone_start_widget() -> void:
 	_drone_state = "WAITING_START"
 	_drone_window.size = Vector2i(240, 180)
 
-	# Look amical (Bleu/Vert)
+	# Purple theme
 	_reset_drone_style()
 
 	if _drone_screen_label:
 		_drone_screen_label.text = "▶ START"
 		_drone_screen_label.add_theme_font_size_override("font_size", 36)
-		_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.7))
+		_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
 
 	# Positionner juste au-dessus de la tête de Tama
 	var tama_center = _get_tama_screen_center()
@@ -1445,6 +1478,46 @@ func _drone_entrance_glitch() -> void:
 	tw.tween_callback(func():
 		if _drone_glitch_quad:
 			_drone_glitch_quad.visible = false
+	)
+
+func _spawn_debug_dot(pos: Vector2i) -> void:
+	"""Creates a temporary red window at the exact target coordinates for debugging."""
+	var dot_win = Window.new()
+	dot_win.title = "DebugDot"
+	dot_win.size = Vector2i(10, 10)
+	dot_win.position = Vector2i(pos.x - 5, pos.y - 5)
+	dot_win.borderless = true
+	dot_win.transparent_bg = true
+	dot_win.transparent = true
+	dot_win.unresizable = true
+	dot_win.always_on_top = true
+	dot_win.mouse_passthrough = true
+	
+	var rect = ColorRect.new()
+	rect.color = Color.RED
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# make it circular with a simple stylebox
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color.RED
+	style.corner_radius_top_left = 5
+	style.corner_radius_top_right = 5
+	style.corner_radius_bottom_right = 5
+	style.corner_radius_bottom_left = 5
+	var panel = Panel.new()
+	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	panel.add_theme_stylebox_override("panel", style)
+	
+	dot_win.add_child(panel)
+	add_child(dot_win)
+	
+	print("🔴 Debug dot placed at: ", pos)
+	
+	# Kill it after 10 seconds
+	var tw = create_tween()
+	tw.tween_interval(10.0)
+	tw.tween_callback(func():
+		if is_instance_valid(dot_win):
+			dot_win.queue_free()
 	)
 
 func _drone_exit_glitch() -> void:
@@ -1539,13 +1612,13 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 			_drone_window.size = Vector2i(180, 140)  # Familier visible
 			if _confetti_window:
 				_confetti_window.visible = false
-			# Style pause (vert/doré doux)
+			# Style pause (purple theme)
 			if _drone_screen_label:
 				_drone_screen_label.add_theme_font_size_override("font_size", 48)
-				_drone_screen_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.7))
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
 			if _drone_screen_mat:
-				_drone_screen_mat.emission = Color(0.1, 0.5, 0.3)
-				_drone_screen_mat.emission_energy_multiplier = 1.2
+				_drone_screen_mat.emission = Color(0.208, 0.165, 0.310)  # #352A4F
+				_drone_screen_mat.emission_energy_multiplier = 2.0
 			# 🍅 Tama va dire au revoir AVANT de disparaître
 			# Python enverra BREAK_STARTED quand elle aura fini
 			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -1603,9 +1676,9 @@ func _update_drone_timer() -> void:
 		if _drone_screen_label:
 			_drone_screen_label.text = "%02d:%02d" % [mins, secs]
 			if remaining <= 60:
-				_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+				_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.7, 0.75))  # Warm pink warning
 			else:
-				_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
 		# 🎉 Célébration locale quand le timer atteint zéro !
 		if remaining <= 0 and session_elapsed_secs > 0 and not _break_popup_visible:
 			if _session_ding_player and _session_ding_player.stream:
@@ -1639,9 +1712,9 @@ func _update_drone_timer() -> void:
 		var secs = int(remaining_f) % 60
 		if _drone_screen_label:
 			_drone_screen_label.text = "☕ %02d:%02d" % [mins, secs]
-			# Couleur verte qui évolue
+			# Couleur violette qui évolue
 			var progress = clampf(elapsed / _break_timer_duration, 0.0, 1.0)
-			var col = Color(0.5, 1.0, 0.7).lerp(Color(0.3, 0.8, 1.0), progress)
+			var col = Color(0.914, 0.878, 0.961).lerp(Color(0.7, 0.6, 0.9), progress)  # #E9E0F5 → lavender
 			_drone_screen_label.add_theme_color_override("font_color", col)
 
 func _hide_drone_timer() -> void:

@@ -699,14 +699,15 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             send_anim_to_godot("Strike", False)
             print(f"  🥊 Tama agit : fermeture de la distraction ({reason[:40]})")
 
-            # Safety timeout: if Godot doesn't send STRIKE_FIRE within 5s, fire anyway
-            # (handles: animation glitch, Godot disconnected, etc.)
-            STRIKE_FIRE_TIMEOUT = 5.0
+            # ── Wait for Godot's STRIKE_FIRE (drone impact) ──
+            # The tab ONLY closes when the drone physically bumps the target.
+            # No timeout fallback — if the drone doesn't hit, the tab stays open.
+            STRIKE_ABANDON_TIMEOUT = 30.0  # Safety: reset flags after 30s if drone never fires
             timeout_start = time.time()
             while state.get("_pending_strike") is not None:
-                if time.time() - timeout_start > STRIKE_FIRE_TIMEOUT:
-                    print("  ⚠️ STRIKE_FIRE timeout (5s) — lancement fallback de la main")
-                    fire_hand_animation()
+                if time.time() - timeout_start > STRIKE_ABANDON_TIMEOUT:
+                    print("  ⚠️ STRIKE abandoned (30s) — drone never impacted. Tab NOT closed.")
+                    state.pop("_pending_strike", None)  # Clean up without closing
                     break
                 await asyncio.sleep(0.1)
 
@@ -2588,12 +2589,12 @@ async def run_gemini_loop(pya):
                                     # Without this, _strike_in_progress stays True forever
                                     # and blocks ALL future strikes when the API reconnects.
                                     async def spare_tire_fire_timeout():
-                                        TIMEOUT = 5.0
+                                        TIMEOUT = 30.0
                                         t0 = time.time()
                                         while state.get("_pending_strike") is not None:
                                             if time.time() - t0 > TIMEOUT:
-                                                print("  🛞⏰ Spare tire STRIKE_FIRE timeout — firing fallback")
-                                                fire_hand_animation()
+                                                print("  🛞⏰ Spare tire strike abandoned (30s) — drone never impacted. Tab NOT closed.")
+                                                state.pop("_pending_strike", None)  # Clean up without closing
                                                 break
                                             await asyncio.sleep(0.1)
                                         # Always reset — even if STRIKE_FIRE came from Godot

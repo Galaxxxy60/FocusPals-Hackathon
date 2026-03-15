@@ -642,14 +642,21 @@ func play_strike() -> void:
 	_was_on_ground_before_strike = is_on_ground()
 
 	if not is_standing() and not is_on_ground():
-		print("🎬 play_strike() queued — currently %s, ensuring standing/ground first" % State.keys()[current_state])
-		if _queued_standing not in ["strike", "go_away"]:
-			_queued_standing = "strike"
+		print("🎬 play_strike() — currently %s, forcing exit for strike" % State.keys()[current_state])
+		_queued_standing = "strike"
 		if current_state == State.OFF_SCREEN:
 			teleport_in()
-		elif current_state == State.ON_WALL or current_state == State.WALL_TALK:
+		elif current_state == State.WALL_TALK:
+			# Force end talk → leave wall → queue strike
+			end_wall_talk()  # triggers talk_return → idle_wall
+			# But that's slow. Queue will fire on LEAVING_WALL → STANDING transition.
+			# Force leave_wall will be picked up when end_wall_talk completes.
+		elif current_state == State.ON_WALL:
 			leave_wall()
-		# If leaving ground or sitting ground, it will process the queue when finished
+		elif current_state == State.GROUND_TALK:
+			# Force end ground talk — strike will fire from queue when back to ON_GROUND
+			end_ground_talk()
+		# If LEAVING_WALL/LEAVING_GROUND/SITTING_GROUND, the queue will fire when done
 		return
 
 	_set_state(State.STRIKING)
