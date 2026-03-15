@@ -849,12 +849,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			var nudge = Quaternion(Vector3.UP, deg_to_rad(20.0))
 			_skeleton.set_bone_pose_rotation(_head_bone_idx, current * nudge)
 			print("🦴 [DEBUG] F6 → Head bone nudged +20° yaw (current: %s)" % str(current))
-	# F7 = Debug Strike: trigger strike via AnimTree + drone strike
+	# F7 = Debug Strike: FULL strike on active window (Python targets + drone flies + tab closes)
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F7:
-		print("🎯 [DEBUG] F7 → Debug Strike")
-		if _anim_tree_module and _anim_tree_module._ready_ok:
-			_anim_tree_module.play_strike()
-			_show_status_indicator("🎯 Debug Strike (F7)", Color(1, 0.3, 0.3))
+		print("🎯 [DEBUG] F7 → FULL Debug Strike on active window!")
+		_show_status_indicator("🎯 Debug Strike (F7)", Color(1, 0.3, 0.3))
+		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			ws.send_text(JSON.stringify({"command": "DEBUG_STRIKE"}))
 	# F10 = Force pause Pomodoro (même effet que cliquer sur le drone ☕)
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F10:
 		print("⏸️ F10 → Pause Pomodoro manuelle !")

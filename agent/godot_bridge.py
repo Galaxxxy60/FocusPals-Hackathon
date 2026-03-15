@@ -468,6 +468,35 @@ async def ws_handler(websocket):
                     from gemini_session import fire_hand_animation
                     print("🎯 STRIKE_FIRE reçu de Godot — fermeture de l'onglet")
                     await asyncio.to_thread(fire_hand_animation)
+                elif cmd == "DEBUG_STRIKE":
+                    # F7 debug: full strike on the active window (no Gemini needed)
+                    from gemini_session import prepare_close_tab, send_anim_to_godot
+                    print("🎯 [DEBUG] DEBUG_STRIKE — full strike on active window!")
+                    result = await asyncio.to_thread(prepare_close_tab, "Debug strike (F7)", None)
+                    if result.get("status") == "success":
+                        pending = state.get("_pending_strike", {})
+                        tx = pending.get("target_x", 0)
+                        ty = pending.get("target_y", 0)
+                        strike_title = pending.get("title", "")
+                        target_msg = json.dumps({"command": "STRIKE_TARGET", "x": tx, "y": ty, "title": strike_title})
+                        broadcast_to_godot(target_msg)
+                        print(f"  🎯 DEBUG STRIKE_TARGET: ({tx}, {ty}) title='{strike_title[:40]}'")
+                        send_anim_to_godot("Strike", False)
+                        state["_strike_in_progress"] = True
+                        # Safety timeout (same as grace_then_close)
+                        STRIKE_FIRE_TIMEOUT = 8.0  # Longer for new choreography (2.85s + margin)
+                        timeout_start = time.time()
+                        while state.get("_pending_strike") is not None:
+                            if time.time() - timeout_start > STRIKE_FIRE_TIMEOUT:
+                                print("  ⚠️ DEBUG STRIKE_FIRE timeout — fallback close")
+                                from gemini_session import fire_hand_animation
+                                fire_hand_animation()
+                                break
+                            await asyncio.sleep(0.1)
+                        state["_strike_in_progress"] = False
+                        print("  ✅ Debug strike terminé")
+                    else:
+                        print(f"  ⚠️ Debug strike failed: {result.get('message', '?')}")
                 elif cmd == "ONBOARDING_NUDGE":
                     # User hasn't clicked Start — flag for Gemini to nudge organically
                     state["_onboarding_nudge_pending"] = True
