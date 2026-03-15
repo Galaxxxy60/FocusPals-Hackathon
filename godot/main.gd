@@ -2806,18 +2806,20 @@ func _handle_message(raw: String) -> void:
 					])
 					break
 
-		# If we found the window in the desktop map, clamp the strike target
-		# to the window's actual bounds (prevents off-screen strikes)
+		# If we found the window in the desktop map, REPLACE the strike target
+		# with coordinates from the map (same coordinate space as Godot).
+		# Python's GetWindowRect uses Win32 DPI-physical coords which can differ
+		# from Godot's DisplayServer coords on hi-DPI monitors.
 		if not map_window.is_empty():
 			var mx := int(map_window.get("x", 0))
 			var my := int(map_window.get("y", 0))
 			var mw := int(map_window.get("w", 0))
 			var mh := int(map_window.get("h", 0))
-			# Clamp strike target within the window bounds
-			tx = clampi(tx, mx, mx + mw)
-			ty = clampi(ty, my, my + mh)
+			# Close button = top-right corner of the window (25px from right, 15px from top)
+			tx = mx + mw - 25
+			ty = my + 15
 			_strike_target = Vector2i(tx, ty)
-			print("  🎯 Strike target clamped to window: (%d, %d)" % [tx, ty])
+			print("  🎯 Strike target FROM DESKTOP MAP: (%d, %d) [was Python raw, now map-derived]" % [tx, ty])
 
 		# ── Teleport Tama to the screen where the distraction is ──
 		# So the user sees her when she strikes (not stuck on another monitor)
