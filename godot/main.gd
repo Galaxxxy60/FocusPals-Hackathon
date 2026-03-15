@@ -1033,40 +1033,25 @@ func _spawn_drone_strike() -> void:
 	var drone_tween := create_tween().bind_node(_drone_window)
 	_drone_window.set_meta("strike_tween", drone_tween)
 
-	var start_pos = _drone_window.position
 	var half = _drone_window.size / 2
 	# Target = the tab close button position
 	var tab_pos = Vector2i(aim.x - half.x, aim.y - half.y)
 	# Hover position = 80px BELOW the tab (drone stationné en dessous)
 	var hover_pos = tab_pos + Vector2i(0, 80)
 
-	# ── Multi-screen teleport: if target is on a different screen, jump there first ──
-	# Otherwise the drone window tries to animate across screen boundaries (buggy)
-	var drone_center: Vector2i = start_pos + half
-	var target_center: Vector2i = tab_pos + half
-	var drone_screen := -1
-	var target_screen := -1
-	var scr_count := DisplayServer.get_screen_count()
-	for si in range(scr_count):
-		var sr := DisplayServer.screen_get_usable_rect(si)
-		if drone_center.x >= sr.position.x and drone_center.x < sr.position.x + sr.size.x \
-		   and drone_center.y >= sr.position.y and drone_center.y < sr.position.y + sr.size.y:
-			drone_screen = si
-		if target_center.x >= sr.position.x and target_center.x < sr.position.x + sr.size.x \
-		   and target_center.y >= sr.position.y and target_center.y < sr.position.y + sr.size.y:
-			target_screen = si
-
-	if drone_screen != target_screen and target_screen >= 0:
-		# Teleport drone to the TARGET screen: centered horizontally on the tab, at the top
-		var tgt_rect := DisplayServer.screen_get_usable_rect(target_screen)
-		var tp_x: int = tab_pos.x  # Same X as tab target
-		var tp_y: int = tgt_rect.position.y + 20  # Top of screen
-		_drone_window.position = Vector2i(tp_x, tp_y)
-		start_pos = _drone_window.position
-		print("⚡ Drone teleported to screen %d for strike (was on screen %d)" % [target_screen, drone_screen])
+	# ── RADICAL FIX: drone ALWAYS starts from above Tama ──
+	# Tama has already teleported to the target screen (STRIKE_TARGET handler).
+	# So the drone starts on the correct screen automatically. No cross-screen animation.
+	if _tama_window and is_instance_valid(_tama_window):
+		var tama_pos := _tama_window.position
+		var tama_size := _tama_window.size
+		var start_x: int = tama_pos.x + tama_size.x / 2 - half.x
+		var start_y: int = tama_pos.y - _drone_window.size.y - 30
+		_drone_window.position = Vector2i(start_x, start_y)
+		print("🛸 Drone starts above Tama at (%d, %d)" % [start_x, start_y])
+	var start_pos = _drone_window.position
 
 	# 🔝 Force Z-order: drone MUST be on top of the distraction window
-	# Windows DWM can reset Z-order when a window moves across screens
 	_drone_window.always_on_top = false
 	_drone_window.always_on_top = true
 	_drone_window.move_to_foreground()
