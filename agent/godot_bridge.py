@@ -88,17 +88,32 @@ def _handle_menu_action(action: str):
         # Settings panel is handled via WebSocket GET_SETTINGS, not via menu action
         # This is a fallback if triggered via menu action instead
         _send_settings_to_godot()
+    elif action == "prepare_break":
+        # 🍅 Graceful break: let Tama say goodbye BEFORE killing Gemini
+        if state["is_session_active"]:
+            from config import get_dynamic_break_checkpoints
+            total_min = state.get("session_duration_minutes", 50)
+            _dyn_cp, _dyn_dur = get_dynamic_break_checkpoints(total_min)
+            break_idx = state.get("current_break_index", 0)
+            break_dur = _dyn_dur[min(break_idx, len(_dyn_dur) - 1)] if _dyn_dur else 5
+            session_min = int((time.time() - state.get("session_start_time", time.time())) / 60)
+            state["_break_goodbye_pending"] = True
+            state["_break_goodbye_duration"] = break_dur
+            state["_break_goodbye_session_min"] = session_min
+            print(f"🍅 Pause demandée — Tama va dire au revoir ({break_dur}min pause, {session_min}min travaillé)")
+        else:
+            print("⏸️ Pas de session active.")
     elif action == "stop_session":
+        # Hard stop (fallback safety) — skips goodbye
         if state["is_session_active"]:
             state["is_session_active"] = False
             state["break_reminder_active"] = False
             state["is_on_break"] = True
             state["break_start_time"] = time.time()
             state["current_mode"] = "libre"
-            # Tell Godot the session is over (drone will stay visible in BREAK_TIMER mode)
             complete_msg = json.dumps({"command": "SESSION_COMPLETE"})
             broadcast_to_godot(complete_msg)
-            print("🏁 Pomodoro: Session stoppée pour la pause. Gemini va se déconnecter.")
+            print("🏁 Pomodoro: Session stoppée (hard stop). Gemini va se déconnecter.")
         else:
             print("⏸️ Pas de session active à stopper.")
     elif action == "quit":

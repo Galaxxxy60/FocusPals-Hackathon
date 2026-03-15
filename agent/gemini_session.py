@@ -549,6 +549,30 @@ def prepare_close_tab(reason: str, target_window: str = None):
         rect = ctypes.wintypes.RECT()
         ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
 
+        # ── Multi-monitor diagnostic ──
+        SM_XVIRTUALSCREEN = 76
+        SM_YVIRTUALSCREEN = 77
+        SM_CXVIRTUALSCREEN = 78
+        SM_CYVIRTUALSCREEN = 79
+        vx = ctypes.windll.user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+        vy = ctypes.windll.user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+        vw = ctypes.windll.user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+        vh = ctypes.windll.user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+
+        # Enumerate monitors for exact layout
+        monitors = []
+        def _monitor_cb(hMonitor, hdcMonitor, lprcMonitor, dwData):
+            mi = ctypes.wintypes.RECT()
+            ctypes.memmove(ctypes.byref(mi), lprcMonitor, ctypes.sizeof(mi))
+            monitors.append({"l": mi.left, "t": mi.top, "r": mi.right, "b": mi.bottom})
+            return True
+        MONITORENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.POINTER(ctypes.wintypes.RECT), ctypes.c_double)
+        ctypes.windll.user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(_monitor_cb), 0)
+
+        print(f"  📐 Virtual desktop: ({vx},{vy}) {vw}x{vh}")
+        print(f"  📐 Monitors: {monitors}")
+        print(f"  📐 Window rect: L={rect.left} T={rect.top} R={rect.right} B={rect.bottom}")
+
         # Default: top-right corner (app close button)
         target_x = rect.right - 25
         target_y = rect.top + 15
@@ -645,9 +669,10 @@ async def grace_then_close(session, audio_out_queue, reason, target_window):
             pending = state.get("_pending_strike", {})
             tx = pending.get("target_x", 0)
             ty = pending.get("target_y", 0)
-            target_msg = json.dumps({"command": "STRIKE_TARGET", "x": tx, "y": ty})
+            strike_title = pending.get("title", "")
+            target_msg = json.dumps({"command": "STRIKE_TARGET", "x": tx, "y": ty, "title": strike_title})
             broadcast_to_godot(target_msg)
-            print(f"  🎯 STRIKE_TARGET sent to Godot: ({tx}, {ty})")
+            print(f"  🎯 STRIKE_TARGET sent to Godot: ({tx}, {ty}) title='{strike_title[:40]}'")
 
             # ── Now that target is ready, send the Strike anim ──
             # If fire_strike already requested it, the flag is already True.
@@ -865,7 +890,10 @@ async def run_gemini_loop(pya):
                 audio_out_queue = asyncio.Queue()
                 audio_in_queue = asyncio.Queue(maxsize=50)  # Room for pre-buffer flush (12 chunks) without blocking hardware thread
 
-                state["force_speech"] = False
+                # Only reset force_speech during stealth reconnects
+                # During fresh session starts, force_speech was INTENTIONALLY set to True
+                if _is_stealth:
+                    state["force_speech"] = False
                 state["_tama_is_speaking"] = False  # Track globally for echo cancellation
                 state["_api_processing_tool"] = False  # Guard: pause sends during tool processing
                 state["_strike_in_progress"] = False  # Reset strike state on reconnection
@@ -1009,6 +1037,80 @@ async def run_gemini_loop(pya):
                                 await asyncio.sleep(0.01)
                                 continue
 
+                            # 🍅 BREAK GOODBYE: Tama says au revoir before being killed
+                            if state.get("_break_goodbye_pending"):
+                                state["_break_goodbye_pending"] = False
+                                dur = state.get("_break_goodbye_duration", 5)
+                                session_min = state.get("_break_goodbye_session_min", 0)
+                                lang = state.get("language", "en")
+                                if lang == "fr":
+                                    goodbye_text = (
+                                        f"[SYSTEM] 🍅 PAUSE MAINTENANT. Nicolas a travaillé {session_min} minutes. "
+                                        f"Dis-lui au revoir naturellement et préviens-le que tu reviens dans {dur} minutes. "
+                                        f"Sois brève et chaleureuse. UNE seule phrase."
+                                    )
+                                else:
+                                    goodbye_text = (
+                                        f"[SYSTEM] 🍅 BREAK TIME. Nicolas worked for {session_min} minutes. "
+                                        f"Say goodbye naturally and tell him you'll be back in {dur} minutes. "
+                                        f"Be brief and warm. ONE sentence only."
+                                    )
+                                try:
+                                    # 🛑 Couper le mic AVANT d'envoyer le texte
+                                    # Sinon Gemini détecte le bruit micro comme "barge in" et annule
+                                    state["mic_allowed"] = False
+                                    await session.send_realtime_input(text=goodbye_text)
+                                    state["_break_goodbye_sent_at"] = time.time()
+                                    state["_break_goodbye_started_speaking"] = False
+                                    state["force_speech"] = True
+                                    print(f"🍅 Goodbye envoyé à Gemini (mic coupé, {dur}min pause)")
+                                except Exception:
+                                    # If send fails, restore mic and fall through to hard kill
+                                    state["mic_allowed"] = True
+                                    state["is_on_break"] = True
+                                continue  # Skip this audio chunk
+
+                            # 🍅 BREAK GOODBYE MONITOR: Wait for speech to end, then teleport + kill
+                            if state.get("_break_goodbye_sent_at"):
+                                elapsed = time.time() - state["_break_goodbye_sent_at"]
+                                is_speaking = state.get("_tama_is_speaking", False)
+
+                                # Phase 1: Detect when Tama STARTS speaking
+                                if not state.get("_break_goodbye_started_speaking") and is_speaking:
+                                    state["_break_goodbye_started_speaking"] = True
+                                    print(f"🍅 Tama parle ! (au revoir en cours...)")
+
+                                # Phase 2: She started AND stopped → she's done
+                                speech_done = state.get("_break_goodbye_started_speaking", False) and not is_speaking and elapsed > 1.5
+                                # Timeout: if she never starts or takes too long
+                                timeout = elapsed > 12.0
+
+                                if speech_done or timeout:
+                                    if timeout:
+                                        print("🍅 Goodbye timeout (12s) — forçage de la déconnexion")
+                                    else:
+                                        print(f"🍅 Tama a fini son au revoir ({elapsed:.1f}s) — glitch dissolve !")
+                                    # Send departure glitch animation
+                                    try:
+                                        broadcast_to_godot(json.dumps({"command": "BREAK_DEPARTURE"}))
+                                    except Exception:
+                                        pass
+                                    await asyncio.sleep(1.5)  # Wait for glitch dissolve
+                                    # Clean up and execute the real stop
+                                    state.pop("_break_goodbye_sent_at", None)
+                                    state.pop("_break_goodbye_started_speaking", None)
+                                    state["mic_allowed"] = True  # Restore mic for next session
+                                    state["is_session_active"] = False
+                                    state["break_reminder_active"] = False
+                                    state["is_on_break"] = True
+                                    state["break_start_time"] = time.time()
+                                    state["current_mode"] = "libre"
+                                    broadcast_to_godot(json.dumps({"command": "BREAK_STARTED"}))
+                                    broadcast_to_godot(json.dumps({"command": "SESSION_COMPLETE"}))
+                                    print("🏁 Pomodoro: Tama a dit au revoir — Gemini va se déconnecter.")
+                                    raise RuntimeError("Pomodoro session stopped")
+                                continue  # Keep reading mic while waiting for speech to end
+
                             # 🛑 FIX POMODORO: Déconnexion immédiate si session stoppée OU pause activée
                             if (not state.get("is_session_active", True) or state.get("is_on_break", False)) and state.get("current_mode") != "conversation":
                                 print("🏁 Pause activée (Pomodoro) — Déconnexion immédiate de Gemini.")
@@ -1151,6 +1253,7 @@ async def run_gemini_loop(pya):
                         # her react to the session start.
                         state["just_started_session"] = False
                         state["_task_inference_done"] = False  # Reset task inference for new session
+                        state["force_speech"] = True  # Let Gemini respond to session start
                         await asyncio.sleep(1.5)
                         session_min = state.get("session_duration_minutes", 50)
                         task = state.get("current_task", "travail")
@@ -1202,6 +1305,7 @@ async def run_gemini_loop(pya):
                             if state.get("just_started_session"):
                                 state["just_started_session"] = False
                                 state["current_mode"] = "deep_work"
+                                state["force_speech"] = True  # Let Gemini acknowledge the session start
                                 session_min = state.get("session_duration_minutes", 50)
                                 try:
                                     if state.get("language") == "en":
@@ -1548,8 +1652,23 @@ async def run_gemini_loop(pya):
                         if eyes_description:
                             eyes_ctx = f"[EYES] {state['current_category']} A:{state['current_alignment']} \u2014 {eyes_description}"
 
+                        # Speech cooldown — suppress non-urgent directives, not the pulse itself
+                        # Gemini ALWAYS gets context (so she can react organically)
+                        # But ALERT directives are throttled to prevent spamming every 10s
+                        _secs_since_speech = time.time() - state.get("_last_speech_ended", 0)
+                        _is_urgent = speak_directive.startswith("STRIKE") or speak_directive.startswith("ULTIMATUM")
+                        if speak_directive and not _is_urgent and _secs_since_speech < 25.0:
+                            speak_directive = ""  # Suppress non-urgent directive during cooldown
                         speech_cooldown_ok = (time.time() - state.get("_last_speech_ended", 0)) > 4.0
-                        if tama_state == TamaState.CALM and audio_out_queue.empty() and speech_cooldown_ok:
+                        _gate_blocked_reason = ""
+                        if tama_state != TamaState.CALM:
+                            _gate_blocked_reason = f"tama_state={tama_state}"
+                        elif not audio_out_queue.empty():
+                            _gate_blocked_reason = "audio_queue_not_empty"
+                        elif not speech_cooldown_ok:
+                            _gate_blocked_reason = f"cooldown ({_secs_since_speech:.1f}s < 4s)"
+                        
+                        if not _gate_blocked_reason:
                             now_str = time.strftime("%H:%M")
                             session_min = int((now - state["session_start_time"]) / 60) if state.get("session_start_time") else 0
                             total_min = state.get("session_duration_minutes", 50)
@@ -1631,11 +1750,18 @@ async def run_gemini_loop(pya):
                                 await asyncio.sleep(0.5)
 
                             try:
+                                _gate_waited = time.time() - _gate_start
+                                _dir_short = speak_directive[:60] if speak_directive else "(no directive)"
+                                print(f"  📡 Pulse → Gemini | {_dir_short} | gate:{_gate_waited:.1f}s")
                                 await session.send_realtime_input(text=system_text)
                                 state["_api_last_heartbeat"] = time.time()
                             except Exception as e:
                                 print(f"  Pulse send failed: {e}")
                                 raise
+                        else:
+                            # Debug: log WHY the pulse was blocked
+                            if int(si) >= 3:  # Only log when suspicion is notable
+                                print(f"  🚫 Pulse BLOCKED | S:{int(si)} | reason: {_gate_blocked_reason}")
 
                         # Pulse intervals — balanced for API stability
                         # Too fast = 1011 crash spiral (API can't handle text+screenshot every 3s)
@@ -2251,7 +2377,16 @@ async def run_gemini_loop(pya):
             if not is_clean_conversation_end:
                 state.pop("_crash_context", None)  # Never save crash context → never mention it
                 state["_user_speech_turn_start"] = None  # 🛡️ FIX : Reset du chrono pour éviter la fausse latence au retour
-                print(f"  🔇 Stealth reconnect — user won't notice")
+                # 📺 Trigger glitch visual + SFX on Tama — masks the abrupt voice cutoff
+                # Makes the API drop feel like intentional "signal interference" not a software bug
+                if state["current_mode"] != "conversation":  # Conversation already handled above (L2313)
+                    _glitch_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "reconnecting"})
+                    for _ws in list(state["connected_ws_clients"]):
+                        try:
+                            await _ws.send(_glitch_msg)
+                        except Exception:
+                            pass
+                print(f"  🔇 Stealth reconnect — glitch SFX masks the drop")
 
             if is_clean_conversation_end:
                 # Clean conversation end (silence timeout) — not a failure
@@ -2389,7 +2524,7 @@ async def run_gemini_loop(pya):
                                     print(f"  🛞⚡ SPARE TIRE STRIKE! Closing tab without Gemini")
                                     state["_strike_in_progress"] = True
                                     pending = state.get("_pending_strike", {})
-                                    strike_msg = json.dumps({"command": "STRIKE_TARGET", "x": pending.get("target_x", 960), "y": pending.get("target_y", 540)})
+                                    strike_msg = json.dumps({"command": "STRIKE_TARGET", "x": pending.get("target_x", 960), "y": pending.get("target_y", 540), "title": pending.get("title", "")})
                                     broadcast_to_godot(strike_msg)
                                     send_anim_to_godot("Strike", False)
                                     # FIX: STRIKE_FIRE timeout — same as grace_then_close.

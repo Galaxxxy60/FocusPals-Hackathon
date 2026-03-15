@@ -74,12 +74,12 @@ var _bs_white_glasses: int = -1        # Blend shape index
 var _imba_tween: Tween = null          # For smooth transitions
 
 # Strike target coordinates from Python (tab/window close button position)
-var _strike_target: Vector2i = Vector2i(-1, -1)  # -1 = use mouse fallback
+var _strike_target: Vector2i = Vector2i(-99999, -99999)  # sentinel = use mouse fallback (NOT -1: left monitors have negative coords!)
 
 # ─── Dynamic Subject Gaze ───
 # Point of interest set by Python (e.g. a video playing, a browser tab).
 # When >= 0, overrides SCREEN_CENTER gaze to look at this exact pixel.
-var _subject_target: Vector2i = Vector2i(-1, -1)
+var _subject_target: Vector2i = Vector2i(-99999, -99999)
 
 # ─── Expression System (UV Swap) ─────────────────────────
 var _eyes_material: StandardMaterial3D = null
@@ -297,6 +297,7 @@ const GHOST_HOLO_FADE_SPEED: float = 1.2     # Slower hologram fade for smooth t
 var _ack_audio_player: AudioStreamPlayer = null
 var _session_ding_player: AudioStreamPlayer = null
 var _strike_sfx_player: AudioStreamPlayer = null  # UfoStrike.ogg — synced to impact
+var _glitch_sfx_player: AudioStreamPlayer = null  # gltich.ogg — API disconnect "interference"
 var _ack_eye_timer: float = 0.0  # Countdown to restore eyes after ack
 var _ack_gaze_timer: float = 0.0 # Countdown to restore head gaze after ack
 
@@ -430,6 +431,7 @@ func _ready() -> void:
 	_setup_ack_audio()
 	_setup_session_ding()
 	_setup_strike_sfx()
+	_setup_glitch_sfx()
 	_setup_greeting_audio()
 	call_deferred("_setup_gaze")
 	call_deferred("_setup_glitch_effect")  # After _setup_gaze (needs _camera)
@@ -724,7 +726,7 @@ func _on_tree_strike_fire() -> void:
 	# Spawn hand window + arm IK + notify Python (same as existing strike fire logic)
 	if _gaze_modifier:
 		var aim: Vector2i
-		if _strike_target.x >= 0:
+		if _strike_target.x > -99990:
 			aim = _strike_target
 		else:
 			aim = DisplayServer.mouse_get_position()
@@ -856,9 +858,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# F10 = Force pause Pomodoro (même effet que cliquer sur le drone ☕)
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F10:
 		print("⏸️ F10 → Pause Pomodoro manuelle !")
-		_was_on_break = true
 		
-		# Activer le drone en mode BREAK_TIMER
+		# Activer le drone en mode BREAK_TIMER (feedback visuel immédiat)
 		if _drone_window and is_instance_valid(_drone_window):
 			_drone_state = "BREAK_TIMER"
 			_break_timer_start = Time.get_unix_time_from_system()
@@ -875,16 +876,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _confetti_window:
 			_confetti_window.visible = false
 		
-		# Cacher Tama
-		var tama_node = get_node_or_null("Tama")
-		if tama_node:
-			tama_node.visible = false
-		if _tama_window:
-			_tama_window.visible = false
-		
-		# 🛑 Envoyer stop_session à Python (tue Gemini instantanément)
+		# 🍅 Envoyer prepare_break — Tama va dire au revoir AVANT de disparaître
+		# (Python enverra BREAK_STARTED quand elle aura fini de parler)
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-			ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "stop_session"}))
+			ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "prepare_break"}))
 
 # ─── Widget Drone (Remplace la Main Magique) ──────────────────
 var _drone_window: Window = null
@@ -981,7 +976,7 @@ func _spawn_drone_strike() -> void:
 		return
 	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
 
-	var aim: Vector2i = _strike_target if _strike_target.x >= 0 else DisplayServer.mouse_get_position()
+	var aim: Vector2i = _strike_target if _strike_target.x > -99990 else DisplayServer.mouse_get_position()
 
 	# Agrandir le modèle 3D pour l'impact
 	if _drone_model:
@@ -1055,7 +1050,7 @@ func _spawn_drone_strike() -> void:
 	# Phase 4: Pose de victoire puis retour doux
 	drone_tween.tween_interval(1.2)
 	drone_tween.tween_callback(func():
-		_strike_target = Vector2i(-1, -1)
+		_strike_target = Vector2i(-99999, -99999)
 		if session_active:
 			_show_drone_timer_mode()
 		else:
@@ -1154,7 +1149,7 @@ func _setup_drone_window() -> void:
 	_drone_anim = wings_instance.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _drone_anim:
 		# Force l'AnimationPlayer à toujours processer (même Window non-focusée)
-		_drone_anim.process_callback = AnimationPlayer.ANIMATION_PROCESS_IDLE
+		_drone_anim.callback_mode_process = AnimationPlayer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE
 		_drone_anim.process_mode = Node.PROCESS_MODE_ALWAYS
 		var anims = _drone_anim.get_animation_list()
 		print("🛸 Wings animations (%d): %s" % [anims.size(), str(anims)])
@@ -1448,9 +1443,8 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 			print("🛸 Drone → mode TIMER (anims: %s)" % str(_drone_anim_names))
 		elif _drone_state == "WAITING_BREAK":
 			print("▶️ Drone cliqué ! Démarrage de la pause...")
-			# Passer en mode BREAK_TIMER (le drone reste, affiche le décompte)
+			# Passer en mode BREAK_TIMER (feedback visuel immédiat)
 			_drone_state = "BREAK_TIMER"
-			_was_on_break = true  # 🛑 Active tous les guards de pause
 			_break_timer_start = Time.get_unix_time_from_system()
 			# Garder passthrough=false pour que DWM continue le rendu
 			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
@@ -1465,10 +1459,10 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 			if _drone_screen_mat:
 				_drone_screen_mat.emission = Color(0.1, 0.5, 0.3)
 				_drone_screen_mat.emission_energy_multiplier = 1.2
-			# 🛑 FIX POMODORO: On envoie stop_session pour TUER la connexion Gemini instantanément
-			# Plus de consommation API pendant la pause !
+			# 🍅 Tama va dire au revoir AVANT de disparaître
+			# Python enverra BREAK_STARTED quand elle aura fini
 			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-				ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "stop_session"}))
+				ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "prepare_break"}))
 
 
 func _update_drone_timer() -> void:
@@ -1850,11 +1844,12 @@ func _safe_restore_passthrough() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_MOUSE_PASSTHROUGH, true)
 
 func _sync_and_show_ui() -> void:
-	"""Move UI window to correct position (bottom-right, matching Tama).
+	"""Move UI window to correct position (bottom-right of PRIMARY screen).
+	UI always stays on the main monitor even when Tama dodges to another screen.
 	No visible toggle (avoids DWM lag). Just position change = instant.
 	Z-order was fixed once at entrance (see _trigger_entrance)."""
 	if _ui_window:
-		var scr_idx := _get_tama_screen_idx()
+		var scr_idx := DisplayServer.get_primary_screen()
 		var usable := DisplayServer.screen_get_usable_rect(scr_idx)
 		var win_size := _tama_window.size if _tama_window else _BASE_WIN_SIZE
 		var x := usable.position.x + usable.size.x - win_size.x
@@ -2517,6 +2512,39 @@ func _handle_message(raw: String) -> void:
 			print("💬 Mode conversation ! (Silhouette fantôme — attente voix IA)")
 			_show_ghost_silhouette()
 		return
+	elif command == "BREAK_DEPARTURE":
+		# 🍅 Glitch dissolve effect — Tama "teleports" out before the break
+		print("🍅 BREAK_DEPARTURE — Glitch dissolve !")
+		_glitch_intensity = GLITCH_TELEPORT_START * 1.5  # Extra dramatic
+		_glitch_target = GLITCH_TELEPORT_START * 1.5
+		if _glitch_quad:
+			_glitch_quad.visible = true
+		if _glitch_material:
+			_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
+		# Ramp up glitch then fade Tama out
+		var tw := create_tween().bind_node(self)
+		tw.tween_interval(0.3)
+		tw.tween_callback(func():
+			_glitch_target = 0.0  # Start fading the glitch
+			var tama_node = get_node_or_null("Tama")
+			if tama_node:
+				tama_node.visible = false
+			if _tama_window:
+				_tama_window.visible = false
+			print("🍅 Tama disparue (glitch dissolve terminé)")
+		)
+		return
+	elif command == "BREAK_STARTED":
+		# 🍅 Python confirms Tama said goodbye + teleported — now set guards
+		print("🍅 BREAK_STARTED — Pause activée, guards on !")
+		_was_on_break = true
+		# Safety: ensure Tama is hidden (in case BREAK_DEPARTURE missed)
+		var tama_node = get_node_or_null("Tama")
+		if tama_node:
+			tama_node.visible = false
+		if _tama_window:
+			_tama_window.visible = false
+		return
 	elif command == "SESSION_COMPLETE":
 		print("🏁 Session complète — fin de session !")
 		session_active = false
@@ -2627,7 +2655,7 @@ func _handle_message(raw: String) -> void:
 			_subject_target = Vector2i(int(data["x"]), int(data["y"]))
 			print("🎯 Subject target set: (%d, %d)" % [_subject_target.x, _subject_target.y])
 		else:
-			_subject_target = Vector2i(-1, -1)
+			_subject_target = Vector2i(-99999, -99999)
 			print("🎯 Subject target cleared")
 		return
 	elif command == "GAZE_AT":
@@ -2658,26 +2686,91 @@ func _handle_message(raw: String) -> void:
 				"neutral": set_gaze(GazeTarget.NEUTRAL, spd)
 		return
 	elif command == "STRIKE_TARGET":
-		# Python sends target coordinates (tab/window close button)
-		var tx := int(data.get("x", -1))
-		var ty := int(data.get("y", -1))
+		# Python sends target coordinates (tab/window close button) + window title
+		var tx := int(data.get("x", -99999))
+		var ty := int(data.get("y", -99999))
+		var strike_title := str(data.get("title", ""))
 		_strike_target = Vector2i(tx, ty)
-		print("🎯 STRIKE_TARGET received: (%d, %d)" % [tx, ty])
+		print("🎯 STRIKE_TARGET received: (%d, %d) title='%s'" % [tx, ty, strike_title.left(40)])
+
+		# ── Multi-monitor diagnostic (Godot side) ──
+		var scr_count := DisplayServer.get_screen_count()
+		for si in range(scr_count):
+			var sr := DisplayServer.screen_get_usable_rect(si)
+			print("  📐 Godot screen %d: pos=(%d,%d) size=%dx%d" % [si, sr.position.x, sr.position.y, sr.size.x, sr.size.y])
+
+		# ── Desktop Awareness: find the distraction window in our map ──
+		# The desktop map gives us reliable coordinates that are consistent
+		# with Godot's screen layout (same pygetwindow source as the radar).
+		var map_window: Dictionary = {}
+		if strike_title != "" and _desktop_windows.size() > 0:
+			for dwin in _desktop_windows:
+				var dtitle := str(dwin.get("title", ""))
+				# Partial match: window titles can be slightly different
+				if strike_title.left(30).to_lower() in dtitle.to_lower() or dtitle.to_lower() in strike_title.to_lower():
+					map_window = dwin
+					print("  🖥️ Found in desktop map: '%s' at (%d,%d) %dx%d" % [
+						dtitle.left(30),
+						int(dwin.get("x", 0)), int(dwin.get("y", 0)),
+						int(dwin.get("w", 0)), int(dwin.get("h", 0))
+					])
+					break
+
+		# If we found the window in the desktop map, clamp the strike target
+		# to the window's actual bounds (prevents off-screen strikes)
+		if not map_window.is_empty():
+			var mx := int(map_window.get("x", 0))
+			var my := int(map_window.get("y", 0))
+			var mw := int(map_window.get("w", 0))
+			var mh := int(map_window.get("h", 0))
+			# Clamp strike target within the window bounds
+			tx = clampi(tx, mx, mx + mw)
+			ty = clampi(ty, my, my + mh)
+			_strike_target = Vector2i(tx, ty)
+			print("  🎯 Strike target clamped to window: (%d, %d)" % [tx, ty])
+
 		# ── Teleport Tama to the screen where the distraction is ──
 		# So the user sees her when she strikes (not stuck on another monitor)
-		if _tama_window and is_instance_valid(_tama_window) and tx >= 0 and ty >= 0:
+		if _tama_window and is_instance_valid(_tama_window) and tx > -99990 and ty > -99990:
 			var screen_count := DisplayServer.get_screen_count()
-			var target_screen := 0
-			for i in range(screen_count):
-				var screen_rect := DisplayServer.screen_get_usable_rect(i)
-				if tx >= screen_rect.position.x and tx < screen_rect.position.x + screen_rect.size.x \
-				   and ty >= screen_rect.position.y and ty < screen_rect.position.y + screen_rect.size.y:
-					target_screen = i
-					break
+			var target_screen := -1
+
+			# Strategy 1: Use desktop map window center to find screen
+			if not map_window.is_empty():
+				var wcx := int(map_window.get("x", 0)) + int(map_window.get("w", 0)) / 2
+				var wcy := int(map_window.get("y", 0)) + int(map_window.get("h", 0)) / 2
+				for i in range(screen_count):
+					var screen_rect := DisplayServer.screen_get_usable_rect(i)
+					if wcx >= screen_rect.position.x and wcx < screen_rect.position.x + screen_rect.size.x \
+					   and wcy >= screen_rect.position.y and wcy < screen_rect.position.y + screen_rect.size.y:
+						target_screen = i
+						print("  📐 Desktop map → distraction on screen %d" % i)
+						break
+
+			# Strategy 2: Fall back to raw strike coordinates
+			if target_screen < 0:
+				for i in range(screen_count):
+					var screen_rect := DisplayServer.screen_get_usable_rect(i)
+					if tx >= screen_rect.position.x and tx < screen_rect.position.x + screen_rect.size.x \
+					   and ty >= screen_rect.position.y and ty < screen_rect.position.y + screen_rect.size.y:
+						target_screen = i
+						print("  📐 Raw coords → distraction on screen %d" % i)
+						break
+
+			# Strategy 3: Ultimate fallback = primary screen
+			if target_screen < 0:
+				target_screen = DisplayServer.get_primary_screen()
+				print("  ⚠️ Could not match any screen — fallback to primary (%d)" % target_screen)
+
 			var target_rect := DisplayServer.screen_get_usable_rect(target_screen)
 			var win_size := _tama_window.size
+			# Bottom-right of the TARGET screen
 			var new_x := target_rect.position.x + target_rect.size.x - win_size.x
 			var new_y := target_rect.position.y + target_rect.size.y - win_size.y
+			# Safety clamp
+			new_x = clampi(new_x, target_rect.position.x, target_rect.position.x + target_rect.size.x - win_size.x)
+			new_y = clampi(new_y, target_rect.position.y, target_rect.position.y + target_rect.size.y - win_size.y)
+
 			var old_pos := _tama_window.position
 			if old_pos != Vector2i(new_x, new_y):
 				_tama_window.position = Vector2i(new_x, new_y)
@@ -3622,7 +3715,10 @@ func _set_glitch_active(active: bool) -> void:
 	_glitch_target = 1.0 if active else 0.0
 	if active and _glitch_quad:
 		_glitch_quad.visible = true
-		print("📺 Glitch ON — API disconnected")
+		# 🔊 Play glitch SFX — masks the abrupt voice cutoff
+		if _glitch_sfx_player and _glitch_sfx_player.stream:
+			_glitch_sfx_player.play()
+		print("📺 Glitch ON — API disconnected (SFX played)")
 	elif not active:
 		print("📺 Glitch fading out — API reconnected")
 
@@ -4025,6 +4121,17 @@ func _setup_strike_sfx() -> void:
 		push_warning("⚠️ UfoStrike.ogg not found")
 	add_child(_strike_sfx_player)
 
+func _setup_glitch_sfx() -> void:
+	_glitch_sfx_player = AudioStreamPlayer.new()
+	var audio_file = load("res://gltich.ogg")
+	if audio_file:
+		_glitch_sfx_player.stream = audio_file
+		_glitch_sfx_player.volume_db = -6.0  # Noticeable but not harsh
+		print("🔊 gltich.ogg loaded (%.1fs)" % audio_file.get_length())
+	else:
+		push_warning("⚠️ gltich.ogg not found")
+	add_child(_glitch_sfx_player)
+
 func _on_user_speaking_ack() -> void:
 	# Only block the ack SOUND when Tama is speaking (avoid audio clash)
 	# But ALWAYS set the gaze — user must see Tama react even during barge-in
@@ -4052,7 +4159,7 @@ func set_gaze_subtle(target: GazeTarget, speed: float = 3.0, max_blend: float = 
 	elif target in [GazeTarget.SCREEN_CENTER, GazeTarget.SCREEN_TOP, GazeTarget.SCREEN_BOTTOM, GazeTarget.OTHER_MONITOR]:
 		# Dynamic: compute actual screen pixel, then convert to 3D world point
 		var pt = _get_dynamic_target_point(target)
-		if target == GazeTarget.SCREEN_CENTER and _subject_target.x >= 0:
+		if target == GazeTarget.SCREEN_CENTER and _subject_target.x > -99990:
 			pt = Vector2(float(_subject_target.x), float(_subject_target.y))
 		var target_3d = _screen_to_world(pt.x, pt.y)
 		_gaze_world_target = target_3d
@@ -4182,7 +4289,7 @@ func set_gaze_with_lead(target: GazeTarget, speed: float = GAZE_SPEED_NATURAL, b
 	# 1. Eyes dart IMMEDIATELY
 	if target in [GazeTarget.SCREEN_CENTER, GazeTarget.SCREEN_TOP, GazeTarget.SCREEN_BOTTOM, GazeTarget.OTHER_MONITOR]:
 		var pt = _get_dynamic_target_point(target)
-		if target == GazeTarget.SCREEN_CENTER and _subject_target.x >= 0:
+		if target == GazeTarget.SCREEN_CENTER and _subject_target.x > -99990:
 			pt = Vector2(float(_subject_target.x), float(_subject_target.y))
 		_look_eyes_at_screen_point(pt.x, pt.y)
 	elif target == GazeTarget.USER:
@@ -4425,7 +4532,7 @@ func _look_eyes_at_screen_point(px: float, py: float) -> void:
 func _look_eyes_at_screen_center() -> void:
 	"""Look at the dynamic screen center OR the Python-defined subject."""
 	var pt = _get_dynamic_target_point(GazeTarget.SCREEN_CENTER)
-	if _subject_target.x >= 0:
+	if _subject_target.x > -99990:
 		pt = Vector2(float(_subject_target.x), float(_subject_target.y))
 	_look_eyes_at_screen_point(pt.x, pt.y)
 
@@ -4450,7 +4557,7 @@ func set_gaze(target: GazeTarget, speed: float = 5.0) -> void:
 		# Dynamic: compute actual screen pixel, then convert to 3D world point
 		var pt = _get_dynamic_target_point(target)
 		# Override with Python subject when looking at screen center
-		if target == GazeTarget.SCREEN_CENTER and _subject_target.x >= 0:
+		if target == GazeTarget.SCREEN_CENTER and _subject_target.x > -99990:
 			pt = Vector2(float(_subject_target.x), float(_subject_target.y))
 		var target_3d = _screen_to_world(pt.x, pt.y)
 		_gaze_world_target = target_3d
