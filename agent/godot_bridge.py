@@ -88,6 +88,19 @@ def _handle_menu_action(action: str):
         # Settings panel is handled via WebSocket GET_SETTINGS, not via menu action
         # This is a fallback if triggered via menu action instead
         _send_settings_to_godot()
+    elif action == "stop_session":
+        if state["is_session_active"]:
+            state["is_session_active"] = False
+            state["break_reminder_active"] = False
+            state["is_on_break"] = True
+            state["break_start_time"] = time.time()
+            state["current_mode"] = "libre"
+            # Tell Godot the session is over (drone will stay visible in BREAK_TIMER mode)
+            complete_msg = json.dumps({"command": "SESSION_COMPLETE"})
+            broadcast_to_godot(complete_msg)
+            print("🏁 Pomodoro: Session stoppée pour la pause. Gemini va se déconnecter.")
+        else:
+            print("⏸️ Pas de session active à stopper.")
     elif action == "quit":
         quit_app(state["tray_icon"], None)
 

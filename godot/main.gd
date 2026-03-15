@@ -853,6 +853,38 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _anim_tree_module and _anim_tree_module._ready_ok:
 			_anim_tree_module.play_strike()
 			_show_status_indicator("🎯 Debug Strike (F7)", Color(1, 0.3, 0.3))
+	# F10 = Force pause Pomodoro (même effet que cliquer sur le drone ☕)
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F10:
+		print("⏸️ F10 → Pause Pomodoro manuelle !")
+		_was_on_break = true
+		
+		# Activer le drone en mode BREAK_TIMER
+		if _drone_window and is_instance_valid(_drone_window):
+			_drone_state = "BREAK_TIMER"
+			_break_timer_start = Time.get_unix_time_from_system()
+			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
+			_drone_window.size = Vector2i(180, 140)
+			_drone_window.visible = true
+			if _drone_screen_label:
+				_drone_screen_label.add_theme_font_size_override("font_size", 48)
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.7))
+			if _drone_screen_mat:
+				_drone_screen_mat.emission = Color(0.1, 0.5, 0.3)
+				_drone_screen_mat.emission_energy_multiplier = 1.2
+			_drone_play("idle")
+		if _confetti_window:
+			_confetti_window.visible = false
+		
+		# Cacher Tama
+		var tama_node = get_node_or_null("Tama")
+		if tama_node:
+			tama_node.visible = false
+		if _tama_window:
+			_tama_window.visible = false
+		
+		# 🛑 Envoyer stop_session à Python (tue Gemini instantanément)
+		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "stop_session"}))
 
 # ─── Widget Drone (Remplace la Main Magique) ──────────────────
 var _drone_window: Window = null
@@ -871,6 +903,7 @@ var _drone_anim: AnimationPlayer = null           # Wings AnimationPlayer (idle/
 var _drone_anim_names: Dictionary = {}            # Resolved anim names
 var _drone_glitch_mat: ShaderMaterial = null       # Glitch effect shader material
 var _drone_glitch_quad: MeshInstance3D = null       # Glitch quad reference
+var _celebration_sfx: AudioStreamPlayer = null      # celebration.ogg player
 
 func _get_hand_bone_screen_pos() -> Vector2i:
 	"""Get Tama's hand bone projected to screen coords, or center fallback."""
@@ -1036,7 +1069,7 @@ func _reset_drone_style() -> void:
 	if _drone_screen_label:
 		_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 1.0, 0.7))
 		if _drone_state == "TIMER":
-			_drone_screen_label.add_theme_font_size_override("font_size", 32)
+			_drone_screen_label.add_theme_font_size_override("font_size", 56)
 		else:
 			_drone_screen_label.add_theme_font_size_override("font_size", 36)
 	if _drone_screen_mat:
@@ -1370,7 +1403,7 @@ func _setup_confetti_window() -> void:
 	# Add to tree FIRST — then set display-server-dependent properties
 	add_child(_confetti_window)
 	_confetti_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
-	_confetti_window.size = Vector2i(800, 800)
+	_confetti_window.size = Vector2i(350, 350)  # Zone limitée autour du drone
 	_confetti_window.visible = false
 	print("🎊 Confetti window setup complete")
 
@@ -1385,7 +1418,7 @@ func _show_drone_timer_mode() -> void:
 	# Le handler _on_drone_gui_input ignore déjà les clics en mode TIMER.
 	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
 	# unfocusable reste true (valeur initiale) — ne JAMAIS le toggler dynamiquement
-	_drone_window.size = Vector2i(120, 100)  # Petit pour ne pas gêner les clics
+	_drone_window.size = Vector2i(180, 140)  # Assez grand pour bien voir le timer
 	_drone_window.visible = true
 	_reset_drone_style()
 	_drone_play("idle")
@@ -1417,22 +1450,25 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 			print("▶️ Drone cliqué ! Démarrage de la pause...")
 			# Passer en mode BREAK_TIMER (le drone reste, affiche le décompte)
 			_drone_state = "BREAK_TIMER"
+			_was_on_break = true  # 🛑 Active tous les guards de pause
 			_break_timer_start = Time.get_unix_time_from_system()
 			# Garder passthrough=false pour que DWM continue le rendu
 			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
 			# unfocusable reste true — ne JAMAIS le toggler
-			_drone_window.size = Vector2i(120, 100)  # Petit familier
+			_drone_window.size = Vector2i(180, 140)  # Familier visible
 			if _confetti_window:
 				_confetti_window.visible = false
 			# Style pause (vert/doré doux)
 			if _drone_screen_label:
-				_drone_screen_label.add_theme_font_size_override("font_size", 28)
+				_drone_screen_label.add_theme_font_size_override("font_size", 48)
 				_drone_screen_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.7))
 			if _drone_screen_mat:
 				_drone_screen_mat.emission = Color(0.1, 0.5, 0.3)
 				_drone_screen_mat.emission_energy_multiplier = 1.2
+			# 🛑 FIX POMODORO: On envoie stop_session pour TUER la connexion Gemini instantanément
+			# Plus de consommation API pendant la pause !
 			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-				ws.send_text(JSON.stringify({"command": "ACCEPT_BREAK"}))
+				ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "stop_session"}))
 
 
 func _update_drone_timer() -> void:
@@ -1448,7 +1484,7 @@ func _update_drone_timer() -> void:
 	if _drone_model:
 		var target_scale: Vector3
 		if _drone_state in ["TIMER", "BREAK_TIMER"]:
-			target_scale = Vector3(0.55, 0.55, 0.55)  # Petit familier
+			target_scale = Vector3(0.75, 0.75, 0.75)  # Familier compact mais visible
 		else:
 			target_scale = Vector3(1.0, 1.0, 1.0)  # Taille normale
 		_drone_model.scale = _drone_model.scale.lerp(target_scale, 5.0 * delta)
@@ -1459,7 +1495,7 @@ func _update_drone_timer() -> void:
 
 	if head_screen_pos.x > 0 and head_screen_pos.y > 0 and _tama_window:
 		target_x = float(_tama_window.position.x) + head_screen_pos.x - _drone_window.size.x / 2.0
-		target_y = float(_tama_window.position.y) + head_screen_pos.y - _drone_window.size.y - 15.0
+		target_y = float(_tama_window.position.y) + head_screen_pos.y - _drone_window.size.y - 60.0  # Bien au-dessus de la tête
 	else:
 		var tama_center = _get_tama_screen_center()
 		target_x = float(tama_center.x - _drone_window.size.x / 2.0)
@@ -1489,10 +1525,35 @@ func _update_drone_timer() -> void:
 				_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 			else:
 				_drone_screen_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+		# 🎉 Célébration locale quand le timer atteint zéro !
+		if remaining <= 0 and session_elapsed_secs > 0 and not _break_popup_visible:
+			if _session_ding_player and _session_ding_player.stream:
+				_session_ding_player.play()
+			_show_break_popup()
 	elif _drone_state == "BREAK_TIMER":
 		# Afficher le temps de pause restant
 		var elapsed = Time.get_unix_time_from_system() - _break_timer_start
 		var remaining_f = maxf(_break_timer_duration - elapsed, 0.0)
+		
+		# 🛑 FIX POMODORO: Fin du chrono de pause → Retour au bouton START
+		if remaining_f <= 0.0:
+			if _session_ding_player and _session_ding_player.stream:
+				_session_ding_player.play()
+			print("⏰ Fin de la pause ! En attente du prochain lancement Pomodoro.")
+			
+			# Réafficher la fenêtre de Tama pour qu'elle attende avec nous
+			_was_on_break = false
+			if _tama_window:
+				_tama_window.visible = true
+			var tama_node = get_node_or_null("Tama")
+			if tama_node:
+				tama_node.visible = true
+				_trigger_entrance()
+				
+			# Afficher ▶ START et sortir de la fonction
+			_show_drone_start_widget()
+			return
+		
 		var mins = int(remaining_f) / 60
 		var secs = int(remaining_f) % 60
 		if _drone_screen_label:
@@ -1833,6 +1894,8 @@ func _get_tama_screen_center() -> Vector2i:
 
 func _update_mouse_dodge(delta: float) -> void:
 	"""Move Tama's window when mouse hovers her."""
+	if _was_on_break:
+		return
 	# Don't calculate dodge when Tama is invisible (prevents arming while hidden)
 	if not _tama_window or not _tama_window.visible:
 		return
@@ -2399,6 +2462,11 @@ func _handle_message(raw: String) -> void:
 
 	# ── Commandes depuis Python ──
 	var command = data.get("command", "")
+	
+	# 🛑 FIX: Ignorer les commandes d'action et de surveillance si Tama est en pause
+	if _was_on_break and command in ["STRIKE_TARGET", "JARVIS_TAP", "TAMA_ANIM", "TAMA_MOOD", "SCREEN_SCAN", "GAZE_AT", "SET_SUBJECT", "USER_SPEAKING", "VISEME"]:
+		return
+	
 	if command == "QUIT":
 		print("👋 Signal QUIT reçu, glitch de fermeture...")
 		_start_quit_glitch()
@@ -2429,8 +2497,14 @@ func _handle_message(raw: String) -> void:
 	elif command == "SESSION_COMPLETE":
 		print("🏁 Session complète — fin de session !")
 		session_active = false
-		_was_on_break = false
-		_hide_drone_timer()
+		# 🛑 FIX POMODORO: Garder _was_on_break = true si le drone est en mode pause
+		if _drone_state != "BREAK_TIMER":
+			_was_on_break = false
+		
+		# 🛑 FIX POMODORO: On ne masque le drone QUE s'il n'est pas déjà en mode Pause ou Attente
+		if _drone_state not in ["BREAK_TIMER", "WAITING_START"]:
+			_hide_drone_timer()
+			
 		if _tama_ui:
 			_tama_ui.hide_break_overlay()
 		if _anim_tree_module:
@@ -2439,6 +2513,14 @@ func _handle_message(raw: String) -> void:
 					_anim_tree_module.sit_ground()
 				else:
 					_anim_tree_module.return_to_wall()
+					
+		# Assurer la disparition totale de Tama pendant la pause
+		if _drone_state == "BREAK_TIMER":
+			var tama_node = get_node_or_null("Tama")
+			if tama_node:
+				tama_node.visible = false
+			if _tama_window:
+				_tama_window.visible = false
 		return
 	elif command == "END_CONVERSATION":
 		if conversation_active:
@@ -2886,43 +2968,72 @@ func _handle_message(raw: String) -> void:
 	# ── Break overlay: show/hide based on is_on_break state ──
 	var on_break: bool = data.get("is_on_break", false)
 	if on_break and not _was_on_break:
-		# Break just started — show overlay with duration from Python
+		# Break just started
 		var next_break_at = data.get("next_break_at", null)
-		# Compute break duration from session config (5-20 min based on session length)
-		var break_dur_min: float = 5.0  # Default
+		var break_dur_min: float = 5.0
 		var sess_dur := session_duration_secs / 60
-		if sess_dur <= 30:
-			break_dur_min = 5.0
-		elif sess_dur <= 60:
-			break_dur_min = 10.0
-		elif sess_dur <= 120:
-			break_dur_min = 15.0
-		else:
-			break_dur_min = 20.0
+		if sess_dur <= 30: break_dur_min = 5.0
+		elif sess_dur <= 60: break_dur_min = 10.0
+		elif sess_dur <= 120: break_dur_min = 15.0
+		else: break_dur_min = 20.0
+		
+		# 🛑 FIX: Nettoyer l'ancien voile bleu de pause (ne JAMAIS l'afficher)
 		if _tama_ui:
-			_tama_ui.show_break_overlay(break_dur_min)
+			_tama_ui.hide_break_overlay()
+			
+		# 🛑 FIX: S'assurer que le drone de pause s'affiche bien
+		# (utile si la pause est déclenchée depuis le tray Python)
+		if _drone_state != "BREAK_TIMER":
+			_drone_state = "BREAK_TIMER"
+			_break_timer_start = Time.get_unix_time_from_system()
+			_break_timer_duration = break_dur_min * 60.0
+			if _drone_window and is_instance_valid(_drone_window):
+				_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
+				_drone_window.size = Vector2i(180, 140)
+				_drone_window.visible = true
+			if _confetti_window:
+				_confetti_window.visible = false
+			if _drone_screen_label:
+				_drone_screen_label.add_theme_font_size_override("font_size", 48)
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.7))
+			if _drone_screen_mat:
+				_drone_screen_mat.emission = Color(0.1, 0.5, 0.3)
+				_drone_screen_mat.emission_energy_multiplier = 1.2
+			_drone_play("idle")
+			
 		if _session_ding_player and _session_ding_player.stream:
 			_session_ding_player.play()
-		# Hide Tama's 3D model during break ("est pas là")
+			
+		# 🛑 FIX: Masquer la fenêtre de Tama TOUTE ENTIÈRE
+		# Détruit le voile bleu + empêche les interactions souris résiduelles
 		var tama_node = get_node_or_null("Tama")
 		if tama_node:
 			tama_node.visible = false
-		print("☕ Break started! (%.0f min), Tama est partie en pause")
+		if _tama_window:
+			_tama_window.visible = false
+			
+		print("☕ Break started! (%.0f min), Tama est partie en pause" % break_dur_min)
+		
 	elif not on_break and _was_on_break:
 		# Break ended — hide overlay
 		if _tama_ui:
 			_tama_ui.hide_break_overlay()
 		if _session_ding_player and _session_ding_player.stream:
 			_session_ding_player.play()
+			
 		# Hide the drone break timer
 		if _drone_state == "BREAK_TIMER":
 			_drone_state = "HIDDEN"
 			_drone_exit_glitch()
-		# Bring Tama back
+			
+		# Réafficher la fenêtre de Tama à son retour
+		if _tama_window:
+			_tama_window.visible = true
 		var tama_node = get_node_or_null("Tama")
 		if tama_node:
 			tama_node.visible = true
 			_trigger_entrance() # Replay WalkIn/Teleport if possible or just appear
+			
 		print("💪 Break ended — back to work!")
 	_was_on_break = on_break
 
@@ -2943,6 +3054,8 @@ func _get_tier() -> int:
 # ─── Logique Normale (Post-Intro) ─────────────────────────
 func _update_suspicion_anim() -> void:
 	if not session_active or not _anim_tree_module:
+		return
+	if _was_on_break:
 		return
 	if _anim_tree_module.is_transitioning():
 		return
@@ -3947,6 +4060,8 @@ func _is_idle_gaze_eligible() -> bool:
 	"""Check if idle gaze should be active (Tama is resting, not busy)."""
 	if not _gaze_active or not _started:
 		return false
+	if _was_on_break:
+		return false
 	if _is_speaking or _suspicion_staring:
 		return false
 	if _strike_gaze_locked:         # F2: gaze locked during strike
@@ -4662,13 +4777,28 @@ func _show_break_popup() -> void:
 	_drone_play("idle")
 	_drone_entrance_glitch()
 
-	# Célébration Confetti !
-	if _confetti_window and is_instance_valid(_confetti_window):
-		# Positionner le centre de la fenêtre 800x800 sur le drone
-		_confetti_window.position = Vector2i(dx + 120 - 400, dy + 90 - 400)
-		_confetti_window.visible = true
+	# 🎉 Son de célébration
+	if not _celebration_sfx:
+		_celebration_sfx = AudioStreamPlayer.new()
+		var sfx = load("res://celebration.ogg")
+		if sfx:
+			_celebration_sfx.stream = sfx
+			_celebration_sfx.volume_db = -5.0
+		add_child(_celebration_sfx)
+	if _celebration_sfx and _celebration_sfx.stream:
+		_celebration_sfx.play()
 
-	print("☕ Drone Pause + Confetti shown")
+	# Confetti retardé de 1s pour sync avec le burst audio
+	if _confetti_window and is_instance_valid(_confetti_window):
+		_confetti_window.position = Vector2i(dx + 120 - 175, dy + 90 - 175)  # Centré sur le drone
+		var confetti_tw = create_tween()
+		confetti_tw.tween_interval(1.0)
+		confetti_tw.tween_callback(func():
+			if _confetti_window and is_instance_valid(_confetti_window):
+				_confetti_window.visible = true
+		)
+
+	print("🎉 Célébration ! Son + Confetti (1s delay)")
 
 
 func _hide_break_popup() -> void:

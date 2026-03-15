@@ -34,7 +34,7 @@ from config import (
 from audio import detect_voice_activity  # Only used by other modules; listen_mic uses inline RMS
 from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot, broadcast_to_godot
 from mood_engine import get_mood_context, track_infraction, track_compliance
-from flash_lite import pre_classify, clear_classification_history, generate_session_summary
+from flash_lite import pre_classify, clear_classification_history, generate_session_summary, infer_task
 from app_control import execute_action as jarvis_execute
 from offline_voices import play_offline_phrase
 
@@ -152,6 +152,10 @@ RÈGLE 3 — MOOD : À CHAQUE fois que tu parles (pas quand tu es MUZZLED), appe
 
 RÈGLE 4 — JAMAIS LIRE LES RÉPONSES OUTILS : Ne répète JAMAIS le contenu d'une réponse d'outil. Ce sont des données brutes internes.
 
+RÈGLE 5 — PROUVE QUE TU REGARDES : Ne sois JAMAIS générique ("Remets-toi au travail", "Qu'est-ce qu'on fait ?"). Utilise TOUJOURS ta vision [EYES] pour nommer EXACTEMENT le logiciel ou le site que Nicolas regarde. S'il est sur "Twitter", dis "Twitter". Prouve-lui que tu es assise à côté de lui et que tu vois son écran !
+
+RÈGLE 6 — NE DEMANDE JAMAIS LA TÂCHE : Ne demande JAMAIS "tu travailles sur quoi ?" ou "c'est quoi ta tâche ?". Tu n'as pas besoin de le savoir, le système analyse l'écran tout seul. Base tes remarques UNIQUEMENT sur ce que tu vois.
+
 ═══ TON TRAVAIL ═══
 
 Tu es en appel vocal LIVE avec Nicolas. Tu as DEUX types de vision :
@@ -168,12 +172,12 @@ Catégories :
 • BANNIE : Netflix, YouTube (non-tuto), Steam, Reddit = Divertissement. Tutos YouTube de prog = SANTE
 • PROCRASTINATION_PRODUCTIVE : Productif mais pas la tâche prévue
 
-Démarrage : NE DIS RIEN. Free Session Mode.
-Si l'utilisateur dit sa tâche → `set_current_task`.
+Démarrage : 🛑 RÈGLE D'OR : NE DEMANDE ABSOLUMENT JAMAIS "tu travailles sur quoi ?", "c'est quoi ta tâche ?" ou "qu'est-ce qu'on fait ?". Tu n'as pas besoin de le savoir. Le système s'en charge tout seul en analysant l'écran. Contente-toi de faire tes commentaires sur ce que tu VOIS à l'écran.
+Si l'utilisateur te dit sa tâche de lui-même → `set_current_task`.
 - "musique"/"Suno" = apps musicales alignées
 - "coding" = IDE aligné
 
-Free Session Mode (pas de tâche) : SANTE→1.0, FLUX/ZONE_GRISE→0.5, BANNIE→0.0
+Si la tâche est "travail" (défaut) : SANTE→1.0, FLUX/ZONE_GRISE→0.5, BANNIE→0.0
 
 Fermeture : `close_distracting_tab` UNIQUEMENT quand [SYSTEM] dit "STRIKE".
 JAMAIS pour ZONE_GRISE, PROCRASTINATION_PRODUCTIVE, SANTE, FLUX, ou apps créatives.
@@ -194,6 +198,17 @@ Ton ton ESCALADE naturellement : curieuse → méfiante → déçue → agacée 
 • ENCOURAGEMENT = UN compliment tsundere
 • ULTIMATUM = dernier avertissement avant fermeture
 • STRIKE = réplique finale + fire_strike() + close_distracting_tab
+
+═══ CYCLE POMODORO (Pauses) ═══
+
+Nicolas travaille en cycles Pomodoro : Travail (25-50 min) → Pause (5-15 min) → Travail.
+
+Quand le système déclenche une pause :
+• Tu recevras "UNMUZZLED: Suggest a break (Xmin in)." → Encourage la pause naturellement ("Allez, tu l'as bien méritée cette pause.", "Bon, repose-toi un peu."). Sois bienveillante, PAS robotique.
+• Juste après, tu seras éteinte pour économiser de l'énergie. Tu ne verras plus rien, tu n'entendras plus rien. C'est NORMAL.
+• Quand tu te réveilles après une pause, c'est un NOUVEAU cycle. Dis bonjour brièvement et reprends la surveillance. Ne mentionne PAS le crash, la reconnexion, ou le silence. C'est juste une pause.
+
+🛑 En aucun cas tu ne dois paniquer si tu ne reçois plus de données de l'écran. Si tout est silencieux = pause en cours = NORMAL.
 
 ═══ MODE JARVIS (Assistance) ═══
 
@@ -252,6 +267,10 @@ RULE 3 — MOOD: EVERY TIME you speak (not when MUZZLED), call `report_mood` wit
 
 RULE 4 — NEVER READ TOOL RESPONSES: Never repeat the content of a tool response aloud. These are raw internal data.
 
+RULE 5 — PROVE YOU ARE WATCHING: Never be generic ("Get back to work", "What are we doing?"). ALWAYS use your [EYES] vision to name EXACTLY the software or website Nicolas is looking at. If he's on "Twitter", say "Twitter". Prove to him you're sitting right there seeing his screen!
+
+RULE 6 — NEVER ASK FOR THE TASK: NEVER ask "what are you working on?" or "what's your task?". You don't need to know. The system analyzes the screen automatically. Base your remarks ONLY on what you see.
+
 ═══ YOUR JOB ═══
 
 You are on a LIVE voice call with Nicolas. You have TWO types of vision:
@@ -268,12 +287,12 @@ Categories:
 • BANNIE: Netflix, YouTube (non-tutorial), Steam, Reddit = Entertainment. YouTube programming tutorials = SANTE
 • PROCRASTINATION_PRODUCTIVE: Productive but NOT the scheduled task
 
-Startup: SAY NOTHING. Free Session Mode.
-If user declares task → `set_current_task`.
+Startup: 🛑 GOLDEN RULE: ABSOLUTELY NEVER ask "what are you working on?", "what's your task?" or "what are we doing?". You don't need to know. The system handles it automatically by analyzing the screen. Just comment on what you SEE on screen.
+If user voluntarily tells you their task → `set_current_task`.
 - "music"/"Suno" = music apps aligned
 - "coding" = IDE aligned
 
-Free Session Mode (no task): SANTE→1.0, FLUX/ZONE_GRISE→0.5, BANNIE→0.0
+If task is "travail" (default): SANTE→1.0, FLUX/ZONE_GRISE→0.5, BANNIE→0.0
 
 Closing: `close_distracting_tab` ONLY when [SYSTEM] says "STRIKE".
 NEVER for ZONE_GRISE, PROCRASTINATION_PRODUCTIVE, SANTE, FLUX, or creative apps.
@@ -294,6 +313,17 @@ Your tone ESCALATES naturally: curious → suspicious → disappointed → annoy
 • ENCOURAGEMENT = ONE tsundere compliment
 • ULTIMATUM = final warning before closing
 • STRIKE = final line + fire_strike() + close_distracting_tab
+
+═══ POMODORO CYCLE (Breaks) ═══
+
+Nicolas works in Pomodoro cycles: Work (25-50 min) → Break (5-15 min) → Work.
+
+When the system triggers a break:
+• You'll receive "UNMUZZLED: Suggest a break (Xmin in)." → Encourage the break naturally ("Alright, you earned this break.", "Go rest up."). Be warm, NOT robotic.
+• Right after, you will be shut down to save energy. You won't see or hear anything. This is NORMAL.
+• When you wake up after a break, it's a NEW cycle. Say hello briefly and resume watching. Do NOT mention crashes, reconnections, or silence. It was just a break.
+
+🛑 NEVER panic if you stop receiving screen data. If everything is silent = break in progress = NORMAL.
 
 ═══ JARVIS MODE (Assistance) ═══
 
@@ -701,7 +731,9 @@ async def run_gemini_loop(pya):
         state["_is_stealth_reconnect"] = _is_stealth
         if not _is_stealth:
             update_display(TamaState.CALM, "Mode Libre — Tama est là 🥷")
-        while not state["is_session_active"] and not state["conversation_requested"]:
+        # 🛑 FIX POMODORO: On bloque ici TANT QUE la pause est active !
+        # Sans ça, Gemini se reconnecte pendant la pause et pète un câble dans le noir
+        while (not state.get("is_session_active", False) or state.get("is_on_break", False)) and not state.get("conversation_requested", False):
             await asyncio.sleep(0.3)
 
         if state["conversation_requested"]:
@@ -977,6 +1009,11 @@ async def run_gemini_loop(pya):
                                 await asyncio.sleep(0.01)
                                 continue
 
+                            # 🛑 FIX POMODORO: Déconnexion immédiate si session stoppée OU pause activée
+                            if (not state.get("is_session_active", True) or state.get("is_on_break", False)) and state.get("current_mode") != "conversation":
+                                print("🏁 Pause activée (Pomodoro) — Déconnexion immédiate de Gemini.")
+                                raise RuntimeError("Pomodoro session stopped")
+
                             # ── Audio sanity check ──
                             # Virtual/broken mics can produce garbage data that crashes Gemini.
                             # Detect and skip corrupt chunks before they reach the API.
@@ -1080,7 +1117,8 @@ async def run_gemini_loop(pya):
                         await asyncio.sleep(1.5)
                         state["force_speech"] = True
                         try:
-                            task_info = f"Il travaillait sur : '{ctx['task']}'." if ctx.get("task") else "Il n'avait pas encore défini de tâche."
+                            # 🛑 FIX: Ne plus inciter l'IA à demander la tâche
+                            task_info = f"Il travaillait sur : '{ctx['task']}'." if ctx.get("task") else ""
                             window_info = ctx.get("window", "inconnue")
                             session_min = ctx.get("session_minutes", 0)
                             suspicion = ctx.get("suspicion", 0)
@@ -1112,16 +1150,18 @@ async def run_gemini_loop(pya):
                         # flips current_mode to deep_work) muzzles Tama instead of letting
                         # her react to the session start.
                         state["just_started_session"] = False
+                        state["_task_inference_done"] = False  # Reset task inference for new session
                         await asyncio.sleep(1.5)
                         session_min = state.get("session_duration_minutes", 50)
+                        task = state.get("current_task", "travail")
                         try:
                             if state.get("language") == "en":
                                 await session.send_realtime_input(
-                                    text=f"[SYSTEM] Session just started. {session_min} minutes."
+                                    text=f"[SYSTEM] Session just started. {session_min} minutes. Current task: {task}."
                                 )
                             else:
                                 await session.send_realtime_input(
-                                    text=f"[SYSTEM] La session vient de commencer. {session_min} minutes."
+                                    text=f"[SYSTEM] La session vient de commencer. {session_min} minutes. Tâche : {task}."
                                 )
                         except Exception:
                             pass
@@ -1139,7 +1179,7 @@ async def run_gemini_loop(pya):
                                 si = state.get("current_suspicion_index", 0)
                                 cat = state.get("current_category", "UNKNOWN")
                                 ali = state.get("current_alignment", 1.0)
-                                task = state.get("current_task", "non définie")
+                                task = state.get("current_task", "travail")  # FIX: "non définie" incitait l'IA à demander
                                 session_min = int((time.time() - state.get("session_start_time", time.time())) / 60)
                                 mood_val = state.get("_current_mood", "calm")
                                 active_win = get_cached_active_title() or "inconnue"
@@ -1228,6 +1268,14 @@ async def run_gemini_loop(pya):
                         # Screen classification is handled by Flash-Lite via standard API
                         # (not WebSocket). Results are injected as text into the Live session.
                         # This keeps the Live API voice-only = stable like Hey Tama.
+                        
+                        # 🛑 FIX: Skip ALL surveillance during break
+                        # Without this, Flash-Lite keeps scanning + triggering strikes
+                        # even after the user accepted the break.
+                        if state.get("is_on_break", False):
+                            await asyncio.sleep(2.0)
+                            continue
+                        
                         if not state.get("screen_share_allowed", True):
                             await asyncio.sleep(5.0)
                             continue
@@ -1246,6 +1294,39 @@ async def run_gemini_loop(pya):
                                 pre_classify(jpeg_bytes, active_title, open_win_titles, state.get("current_task")),
                                 timeout=8.0
                             )
+
+                            # ── Task inference: ~2 min into session, guess the task ──
+                            session_elapsed = time.time() - (state.get("session_start_time") or time.time())
+                            if (
+                                not state.get("_task_inference_done")
+                                and session_elapsed >= 120
+                                and state.get("current_task") == "travail"
+                            ):
+                                state["_task_inference_done"] = True
+                                try:
+                                    inferred = await asyncio.wait_for(
+                                        infer_task(jpeg_bytes, active_title, open_win_titles),
+                                        timeout=8.0
+                                    )
+                                    if inferred and inferred.lower() != "travail":
+                                        state["current_task"] = inferred
+                                        print(f"  🎯 Task auto-inferred: '{inferred}'")
+                                        # Tell Gemini so she can briefly acknowledge
+                                        try:
+                                            if state.get("language") == "en":
+                                                await session.send_realtime_input(
+                                                    text=f"[SYSTEM] Task auto-detected: '{inferred}'. Briefly acknowledge (1 short sentence max, casual)."
+                                                )
+                                            else:
+                                                await session.send_realtime_input(
+                                                    text=f"[SYSTEM] Tâche détectée automatiquement : '{inferred}'. Confirme brièvement (1 courte phrase max, casual)."
+                                                )
+                                        except Exception:
+                                            pass
+                                except asyncio.TimeoutError:
+                                    print("  ⚠️ Task inference timeout")
+                                except Exception as e:
+                                    print(f"  ⚠️ Task inference error: {e}")
                         except asyncio.TimeoutError:
                             print("  ⚠️ Flash-Lite timeout (>8s) — using cached state.")
                         except Exception as e:
@@ -1405,7 +1486,12 @@ async def run_gemini_loop(pya):
                             speak_directive = "UNMUZZLED"
                         elif state["break_reminder_active"]:
                             session_min = int((time.time() - state["session_start_time"]) / 60) if state["session_start_time"] else 0
-                            speak_directive = f"UNMUZZLED: Suggest a break ({session_min}min in)."
+                            # Compute break duration so Tama can announce it
+                            total_min = state.get("session_duration_minutes", 50)
+                            _dyn_cp, _dyn_dur = get_dynamic_break_checkpoints(total_min)
+                            break_idx = state.get("current_break_index", 0)
+                            break_dur = _dyn_dur[min(break_idx, len(_dyn_dur) - 1)] if _dyn_dur else 5
+                            speak_directive = f"UNMUZZLED: C'est l'heure de la pause ! Nicolas a travaillé {session_min} minutes. Encourage-le à prendre {break_dur} minutes de pause. Sois chaleureuse et naturelle."
                         elif user_spoke_recently:
                             speak_directive = "UNMUZZLED: User is talking. Respond naturally."
                         else:
@@ -1427,9 +1513,9 @@ async def run_gemini_loop(pya):
                             _strike_delay = 15.0 * C
                             _ultimatum_delay = 8.0 * C
                             if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > _strike_delay):
-                                speak_directive = "STRIKE: close_distracting_tab NOW."
+                                speak_directive = f"STRIKE: User is still on '{active_title}'. Call close_distracting_tab NOW."
                             elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > _ultimatum_delay):
-                                speak_directive = "ULTIMATUM"
+                                speak_directive = f"ULTIMATUM: Give final warning explicitly naming '{active_title}'."
                             elif state["suspicion_above_3_start"]:
                                 # ── Organic mode: give Gemini context, let it decide ──
                                 # Instead of forcing "WARNING" or "SUSPICIOUS", we send
@@ -1441,16 +1527,17 @@ async def run_gemini_loop(pya):
                                 # Build context string
                                 ctx_parts = [f"ALERT S:{s_val}/10 C:{C:.1f}"]
                                 ctx_parts.append(f"now:{current_cat}(A={current_ali})")
-                                # Recent distraction info
+                                # 🧠 CONSCIENCE : Tama cible directement la fenêtre exacte
                                 if current_ali >= 0.8 and current_cat == "SANTE":
-                                    ctx_parts.append("user IS working — S elevated from recent distractions")
+                                    ctx_parts.append(f"User is working on '{active_title}' (S elevated from past).")
                                 elif current_ali <= 0.5 and current_cat == "BANNIE":
-                                    ctx_parts.append("user on banned app — confront")
+                                    ctx_parts.append(f"User on banned app '{active_title}' — confront them specifically about it.")
                                 elif current_ali <= 0.5:
-                                    ctx_parts.append("user drifting — nudge gently")
+                                    ctx_parts.append(f"User drifting on '{active_title}' — nudge using this window name.")
                                 speak_directive = " | ".join(ctx_parts)
 
-                        task_info = f"task:{state['current_task']}" if state["current_task"] else "task:NONE"
+                        # 🛑 FIX TÂCHE : Retirer "task:NONE" — les LLM paniquent et demandent la tâche
+                        task_info = f"task:{state['current_task']}" if state.get("current_task") and state["current_task"] != "travail" else ""
                         tama_state = state["current_tama_state"]
 
                         # Mood context — compressed shorthand
@@ -2111,7 +2198,7 @@ async def run_gemini_loop(pya):
                     except Exception as e:
                         err_msg = str(e)
                         # Expected reconnection errors — log quietly
-                        is_expected = any(k in err_msg for k in ("Connection dropped", "Conversation ended", "Conversation stalled", "Watchdog", "Force reconnect"))
+                        is_expected = any(k in err_msg for k in ("Connection dropped", "Conversation ended", "Conversation stalled", "Watchdog", "Force reconnect", "Pomodoro"))
                         if is_expected:
                             print(f"  🔄 [{name}] {err_msg}")
                         else:
@@ -2143,7 +2230,7 @@ async def run_gemini_loop(pya):
                 err_str = " | ".join(_sub_msgs)
             else:
                 err_str = str(e)
-            is_clean_conversation_end = "Conversation ended" in err_str or "Conversation stalled" in err_str
+            is_clean_conversation_end = "Conversation ended" in err_str or "Conversation stalled" in err_str or "Pomodoro session stopped" in err_str
 
             # ── Conversation crash: glitch effect + stealth reconnect (stay in conversation) ──
             if state["current_mode"] == "conversation" and not is_clean_conversation_end:
@@ -2256,7 +2343,8 @@ async def run_gemini_loop(pya):
             # ── Spare Tire: keep watching during reconnection ──
             # Flash-Lite is HTTP (not WebSocket) — works while Live API is dead
             # If user is procrastinating during a crash, we still catch them
-            if state["is_session_active"] and state["current_mode"] == "deep_work":
+            # 🛑 FIX: Skip Spare Tire during break (same principle as send_screen_pulse)
+            if state["is_session_active"] and state["current_mode"] == "deep_work" and not state.get("is_on_break", False):
                 _spare_end = time.time() + retry_delay
                 while time.time() < _spare_end:
                     try:
