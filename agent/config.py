@@ -120,7 +120,7 @@ state = {
     "current_suspicion_index": 0.0,
     "current_alignment": 1.0,
     "current_category": "SANTE",
-    "current_task": None,
+    "current_task": "travail",
     "can_be_closed": True,
     "suspicion_above_3_start": None,
     "suspicion_above_6_start": None,

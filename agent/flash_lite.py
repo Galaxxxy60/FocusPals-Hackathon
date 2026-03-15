@@ -292,7 +292,72 @@ def clear_classification_history():
     _lite_start_time = 0.0  # Reset warmup for next session
 
 
+# ─── Task Inference ─────────────────────────────────────────
+
+INFER_TASK_PROMPT = """Look at this screenshot and the open windows. What is the user working on RIGHT NOW?
+
+Active window: {active_window}
+Other windows: {open_windows}
+
+Reply with ONLY a short task label (2-5 words max) that describes the project or activity.
+Examples: "FocusPals dev", "music production on Suno", "web design", "writing report", "3D modeling in Blender", "coding Python bot"
+
+If you really can't tell, reply: "travail"
+Reply with ONLY the label, nothing else."""
+
+
+async def infer_task(jpeg_bytes: bytes, active_window: str,
+                     open_windows: list) -> str | None:
+    """
+    Use Flash-Lite to infer the user's current task from the screen.
+    Returns a short task label (e.g. "FocusPals dev") or None on failure.
+    Called once ~2 minutes into the session.
+    """
+    if cfg.client is None:
+        return None
+
+    try:
+        prompt = INFER_TASK_PROMPT.format(
+            active_window=active_window,
+            open_windows=open_windows[:8],
+        )
+
+        response = await cfg.client.aio.models.generate_content(
+            model=LITE_MODEL,
+            contents=[
+                types.Part(text=prompt),
+                types.Part(inline_data=types.Blob(
+                    data=jpeg_bytes, mime_type="image/jpeg"
+                )),
+            ],
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=30,
+            ),
+        )
+
+        # Track telemetry
+        state["_lite_api_calls"] += 1
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            state["_lite_input_tokens"] += response.usage_metadata.prompt_token_count or 0
+            state["_lite_output_tokens"] += response.usage_metadata.candidates_token_count or 0
+
+        task_label = response.text.strip().strip('"').strip("'")
+        # Sanity check: not too long, not empty
+        if not task_label or len(task_label) > 60:
+            return None
+
+        log.info(f"🎯 Task inferred: '{task_label}'")
+        return task_label
+
+    except Exception as e:
+        log.warning(f"Flash-Lite task inference error: {e}")
+        state["_lite_errors"] += 1
+        return None
+
+
 def get_lite_stats() -> dict:
+
     """Return Flash-Lite usage statistics."""
     return {
         "lite_calls": state.get("_lite_api_calls", 0),
