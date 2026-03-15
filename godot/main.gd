@@ -409,6 +409,7 @@ var _perch_check_timer: float = 0.0         # Timer for perch validity checks
 const PERCH_CHECK_INTERVAL: float = 0.5     # How often to check if perched window moved/closed
 const PERCH_MOVE_THRESHOLD: float = 50.0    # Pixels — if window moved more than this, Tama falls
 var _perch_last_rect: Dictionary = {}       # {x, y, w, h} of the window when Tama perched
+var _debug_drone_follow: bool = false       # F8: drone follows mouse (multi-screen debug)
 
 # ─── Tama Window (separate rendering window) ───
 var _tama_window: Window = null
@@ -855,6 +856,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		_show_status_indicator("🎯 Debug Strike (F7)", Color(1, 0.3, 0.3))
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "DEBUG_STRIKE"}))
+	# F8 = Debug: drone follows mouse cursor (multi-screen test)
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F8:
+		_debug_drone_follow = !_debug_drone_follow
+		if _debug_drone_follow:
+			print("🛸 [DEBUG] F8 → Drone follows mouse ON")
+			_show_status_indicator("🛸 Drone Follow: ON (F8)", Color(0.3, 0.8, 1.0))
+			if _drone_window:
+				_drone_window.visible = true
+				_drone_window.always_on_top = true
+				_drone_window.move_to_foreground()
+		else:
+			print("🛸 [DEBUG] F8 → Drone follows mouse OFF")
+			_hide_status_indicator()
 	# F10 = Force pause Pomodoro (même effet que cliquer sur le drone ☕)
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F10:
 		print("⏸️ F10 → Pause Pomodoro manuelle !")
@@ -2444,6 +2458,13 @@ func _process(delta: float) -> void:
 
 	# ─── Drone Timer ──────────────────────────────────────────
 	_update_drone_timer()
+
+	# ─── Debug: Drone follows mouse (F8) ──────────────────────
+	if _debug_drone_follow and _drone_window and is_instance_valid(_drone_window):
+		var mouse_pos := DisplayServer.mouse_get_position()
+		var half := _drone_window.size / 2
+		_drone_window.position = Vector2i(mouse_pos.x - half.x, mouse_pos.y - half.y - 40)
+		_drone_window.always_on_top = true
 
 	# ─── Strike Fire ──────────────────────────────────────────
 	# Handled by AnimTree module (strike_fire_point signal → _on_tree_strike_fire)
