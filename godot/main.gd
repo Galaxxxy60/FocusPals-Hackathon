@@ -3301,8 +3301,12 @@ func _handle_message(raw: String) -> void:
 		if not session_active and not conversation_active:
 			conversation_active = true
 			_convo_engagement = 0  # Reset engagement counter
+			# Sync session duration from Python's saved prefs (fixes "▶ 50min" default)
+			var dur = int(data.get("session_duration", 0))
+			if dur > 0:
+				session_duration_secs = dur * 60
 			# Silhouette fantôme — se matérialise au premier son de l'IA
-			print("💬 Mode conversation ! (Silhouette fantôme — attente voix IA)")
+			print("💬 Mode conversation ! (Silhouette fantôme — attente voix IA) [%dmin]" % (session_duration_secs / 60))
 			_drone_start_pending = true
 			_show_ghost_silhouette()
 		return

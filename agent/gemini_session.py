@@ -834,7 +834,7 @@ async def run_gemini_loop(pya):
             state["_convo_nudge_sent"] = False  # Reset nudge flag
             # Clear resume handle — don't inject deep_work context into conversations
             state["_session_resume_handle"] = None
-            msg = json.dumps({"command": "START_CONVERSATION"})
+            msg = json.dumps({"command": "START_CONVERSATION", "session_duration": state.get("session_duration_minutes", 50)})
             for ws_client in list(state["connected_ws_clients"]):
                 try:
                     await ws_client.send(msg)
