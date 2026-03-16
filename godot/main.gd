@@ -2621,6 +2621,9 @@ func _on_volume_changed(volume: float) -> void:
 func _on_session_duration_changed(duration: int) -> void:
 	session_duration_secs = duration * 60  # Sync locally so timer shows correct value immediately
 	print("⏱️ Session duration changed: " + str(duration) + " min (" + str(session_duration_secs) + "s)")
+	# Live-update the drone's "▶ XXmin" display if waiting to start
+	if _drone_state == "WAITING_START" and _drone_screen_label:
+		_drone_screen_label.text = "▶ %dmin" % duration
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_SESSION_DURATION", "duration": duration}))
 

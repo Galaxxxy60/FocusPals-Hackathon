@@ -148,7 +148,8 @@ RÈGLE 2 — MASQUER LA LATENCE (Micro-réactions) : Tu es humaine, tu ne décri
 Appelle l'outil EN MÊME TEMPS. Une fois le résultat obtenu, enchaîne directement avec ta vraie réaction.
 Exemple : Dis "Mmh..." (appelle look_at_screen), puis quand tu vois l'écran : "T'es encore sur Reddit sérieux ?"
 
-RÈGLE 3 — MOOD : À CHAQUE fois que tu parles (pas quand tu es MUZZLED), appelle `report_mood` avec ton humeur actuelle et son intensité. Fais-le EN MÊME TEMPS que ta réponse vocale. Ne mentionne JAMAIS report_mood à voix haute.
+RÈGLE 3 — MOOD : À CHAQUE fois que tu parles (pas quand tu es MUZZLED), appelle `report_mood` avec ton humeur actuelle et son intensité. Fais-le EN MÊME TEMPS que ta réponse vocale.
+🛑 ATTENTION : Cet appel est 100% SILENCIEUX. TOUT ce que tu écris est lu à voix haute par la synthèse vocale. N'écris JAMAIS de balises comme [MOOD], [INTENSITY], ou le nom de l'outil dans tes phrases. Ton texte ne doit contenir QUE du dialogue humain naturel.
 
 RÈGLE 4 — JAMAIS LIRE LES RÉPONSES OUTILS : Ne répète JAMAIS le contenu d'une réponse d'outil. Ce sont des données brutes internes.
 
@@ -450,7 +451,7 @@ TOOLS = [
             ),
             types.FunctionDeclaration(
                 name="set_current_task",
-                description="Set the current task the user declared. This defines what 100% alignment means.",
+                description="Set the current task ONLY IF the user voluntarily declares it. ABSOLUTELY DO NOT ask the user what they are working on or what their goal is. You must NEVER prompt for a task.",
                 parameters=types.Schema(
                     type="OBJECT",
                     properties={
@@ -461,7 +462,7 @@ TOOLS = [
             ),
             types.FunctionDeclaration(
                 name="report_mood",
-                description="Report your current emotional state. Call this EVERY TIME you speak.",
+                description="Report your current emotional state. Call this EVERY TIME you speak. SILENT TOOL: NEVER output text tags like [MOOD] or [INTENSITY] or mood names in your spoken response. Only use the function call parameters — everything you write is read aloud!",
                 parameters=types.Schema(
                     type="OBJECT",
                     properties={
@@ -2033,7 +2034,7 @@ async def run_gemini_loop(pya):
                                     f"[SYSTEM] {now_str} {session_min}/{total_min}m({progress_pct}%) | "
                                     f"{ctx_signals} | win:{active_title} | wins:{short_titles} | "
                                     f"dur:{active_duration}s S:{si:.1f} A:{ali} {task_info} "
-                                    f"[MOOD] {mood_ctx}"
+                                    f"{mood_ctx}"
                                 )
                                 if identity_ctx:
                                     system_text += identity_ctx
