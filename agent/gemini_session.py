@@ -109,10 +109,10 @@ def capture_all_screens() -> bytes:
         screenshot = sct.grab(monitor)
         img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
 
-    img.thumbnail((1024, 512), Image.Resampling.BILINEAR)
+    img.thumbnail((1024, 1024), Image.Resampling.BILINEAR)
 
     buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=30)
+    img.save(buffer, format="JPEG", quality=50)
     return buffer.getvalue()
 
 
@@ -1511,7 +1511,10 @@ async def run_gemini_loop(pya):
                                                 "[SYSTEM] The user wants to hear the explanation! "
                                                 "Explain FocusPals briefly and enthusiastically: "
                                                 "1) You're Tama, their focus companion who watches over them while they work. "
-                                                "2) They set a work session (the timer on the drone), and you monitor their screen. "
+                                                "2) They click the ▶ button on the drone to start a work session. "
+                                                "The session duration is shown right on the drone — they can change it "
+                                                "anytime by hovering the right edge of the screen to open the radial menu, "
+                                                "then going to Settings. "
                                                 "3) If they get distracted, you'll warn them — and if they don't listen, "
                                                 "the drone fires a 'strike' to close the distraction. "
                                                 "4) There are break reminders built in — you'll tell them when to rest. "
@@ -1523,7 +1526,10 @@ async def run_gemini_loop(pya):
                                                 "[SYSTEM] L'utilisateur veut entendre l'explication ! "
                                                 "Explique FocusPals brièvement avec enthousiasme : "
                                                 "1) Tu es Tama, sa compagne de concentration qui veille sur lui pendant le travail. "
-                                                "2) Il définit une session de travail (le timer sur le drone), et tu surveilles son écran. "
+                                                "2) Il clique sur le ▶ du drone pour démarrer une session de travail. "
+                                                "La durée de session est affichée sur le drone — il peut la changer "
+                                                "en survolant le bord droit de l'écran pour ouvrir le menu radial, "
+                                                "puis en allant dans Réglages. "
                                                 "3) S'il se distrait, tu le préviens — et s'il n'écoute pas, "
                                                 "le drone envoie une 'frappe' pour fermer la distraction. "
                                                 "4) Il y a des rappels de pause intégrés — tu lui diras quand se reposer. "

@@ -514,7 +514,13 @@ async def ws_handler(websocket):
                     print(f"🆕 ONBOARDING_RESPONSE: {answer}")
                 elif cmd == "RESET_MEMORY":
                     tama_memory.reset_memory()
-                    print("🗑️ Memory reset via settings panel")
+                    # Clear any leftover onboarding state flags
+                    for key in list(state.keys()):
+                        if key.startswith("_onboarding"):
+                            del state[key]
+                    # Force reconnect so is_first_session() is re-evaluated
+                    state["_force_reconnect"] = True
+                    print("🗑️ Memory reset via settings panel — forcing reconnect for fresh onboarding")
                 elif cmd == "DEBUG_SKIP_TIME":
                     # F10 debug: fast-forward session timer by N seconds
                     skip = int(data.get("skip_seconds", 10))

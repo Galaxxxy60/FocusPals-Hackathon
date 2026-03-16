@@ -1832,8 +1832,9 @@ func _show_drone_start_widget() -> void:
 	_reset_drone_style()
 
 	if _drone_screen_label:
-		_drone_screen_label.text = "▶"
-		_drone_screen_label.add_theme_font_size_override("font_size", 52)
+		var mins := session_duration_secs / 60
+		_drone_screen_label.text = "▶ %dmin" % mins
+		_drone_screen_label.add_theme_font_size_override("font_size", 36)
 		_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
 
 	# Positionner juste au-dessus de la tête de Tama
