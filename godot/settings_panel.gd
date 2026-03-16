@@ -12,6 +12,7 @@ signal session_duration_changed(duration: int)
 signal tama_scale_changed(scale_pct: int)
 signal screen_share_toggled(enabled: bool)
 signal mic_toggled(enabled: bool)
+signal memory_reset()
 
 var is_open := false
 var _progress := 0.0
@@ -76,6 +77,7 @@ var _screen_share_allowed: bool = true
 var _mic_allowed: bool = true
 var _screen_share_toggle: CheckButton = null
 var _mic_toggle: CheckButton = null
+var _memory_empty: bool = true
 
 # ─── Styles ────────────────────────────────────────────────
 
@@ -214,7 +216,7 @@ func _setup_mic_capture() -> void:
 
 # ─── Public API ────────────────────────────────────────────
 
-func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "en", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true, tama_scale: int = 100, key_hint: String = "") -> void:
+func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: bool = false, lang: String = "en", volume: float = 1.0, session_duration: int = 50, api_usage: Dictionary = {}, screen_share: bool = true, mic_on: bool = true, tama_scale: int = 100, key_hint: String = "", memory_empty: bool = true) -> void:
 	_mics = mics
 	_selected_index = selected
 	_api_key_has_key = has_api_key
@@ -223,6 +225,7 @@ func show_settings(mics: Array, selected: int, has_api_key: bool, key_valid: boo
 	_screen_share_allowed = screen_share
 	_mic_allowed = mic_on
 	_api_key_hint = key_hint
+	_memory_empty = memory_empty
 	if has_api_key:
 		_api_key_valid = 1 if key_valid else 0
 	else:
@@ -665,6 +668,104 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_mic_toggle.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
 	_mic_toggle.toggled.connect(_on_mic_toggled)
 	mic_row.add_child(_mic_toggle)
+
+	# ══════ SECTION: Danger Zone (Reset) ══════
+	var danger_section := _make_collapsible_section(_L.t("section_data"), false)
+	_vbox.add_child(danger_section["root"])
+	var danger_content: VBoxContainer = danger_section["content"]
+
+	var reset_desc := Label.new()
+	reset_desc.text = _L.t("reset_memory_desc")
+	reset_desc.add_theme_font_size_override("font_size", 9)
+	reset_desc.add_theme_color_override("font_color", Color(0.5, 0.45, 0.45))
+	reset_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	danger_content.add_child(reset_desc)
+
+	var reset_btn := Button.new()
+	reset_btn.custom_minimum_size = Vector2(0, 32)
+	var danger_style := StyleBoxFlat.new()
+	var danger_hover := StyleBoxFlat.new()
+
+	if _memory_empty:
+		# Memory already empty → greyed out
+		reset_btn.text = "💾  Memory is empty"
+		reset_btn.disabled = true
+		danger_style.bg_color = Color(0.1, 0.1, 0.12, 0.4)
+		danger_style.border_color = Color(0.25, 0.25, 0.3, 0.3)
+		danger_hover = danger_style
+		reset_btn.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45))
+		reset_btn.add_theme_color_override("font_disabled_color", Color(0.4, 0.4, 0.45))
+	else:
+		reset_btn.text = "🗑️  Reset Memory"
+		danger_style.bg_color = Color(0.25, 0.08, 0.08, 0.7)
+		danger_style.border_color = Color(0.7, 0.2, 0.2, 0.4)
+		danger_hover.bg_color = Color(0.4, 0.1, 0.1, 0.85)
+		danger_hover.border_color = Color(1.0, 0.3, 0.3, 0.6)
+		danger_hover.set_border_width_all(1)
+		danger_hover.set_corner_radius_all(4)
+		danger_hover.set_content_margin_all(4)
+		reset_btn.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
+		reset_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.6, 0.6))
+
+	danger_style.set_border_width_all(1)
+	danger_style.set_corner_radius_all(4)
+	danger_style.set_content_margin_all(4)
+	reset_btn.add_theme_stylebox_override("normal", danger_style)
+	reset_btn.add_theme_stylebox_override("hover", danger_hover)
+	reset_btn.add_theme_stylebox_override("pressed", danger_hover)
+	reset_btn.add_theme_stylebox_override("disabled", danger_style)
+	reset_btn.add_theme_font_size_override("font_size", 11)
+	var _reset_confirmed := false
+	reset_btn.pressed.connect(func():
+		if _memory_empty:
+			return
+		if not _reset_confirmed:
+			_reset_confirmed = true
+			reset_btn.text = "⚠️  Click again to confirm"
+			reset_btn.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+			# Auto-cancel after 3s
+			var tw := create_tween()
+			tw.tween_interval(3.0)
+			tw.tween_callback(func():
+				if is_instance_valid(reset_btn):
+					_reset_confirmed = false
+					reset_btn.text = "🗑️  Reset Memory"
+					reset_btn.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
+			)
+		else:
+			_reset_confirmed = false
+			reset_btn.text = "✓  Memory Reset!"
+			reset_btn.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
+			# Play erased sound at low volume
+			var sfx := AudioStreamPlayer.new()
+			sfx.stream = load("res://erased.ogg")
+			sfx.volume_db = -18.0
+			add_child(sfx)
+			sfx.play()
+			sfx.finished.connect(sfx.queue_free)
+			# Grey out button after reset
+			_memory_empty = true
+			reset_btn.disabled = true
+			var grey_style := StyleBoxFlat.new()
+			grey_style.bg_color = Color(0.1, 0.1, 0.12, 0.4)
+			grey_style.border_color = Color(0.25, 0.25, 0.3, 0.3)
+			grey_style.set_border_width_all(1)
+			grey_style.set_corner_radius_all(4)
+			grey_style.set_content_margin_all(4)
+			reset_btn.add_theme_stylebox_override("normal", grey_style)
+			reset_btn.add_theme_stylebox_override("disabled", grey_style)
+			memory_reset.emit()
+			# Change text after a beat
+			var tw2 := create_tween()
+			tw2.tween_interval(1.5)
+			tw2.tween_callback(func():
+				if is_instance_valid(reset_btn):
+					reset_btn.text = "💾  Memory is empty"
+					reset_btn.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45))
+					reset_btn.add_theme_color_override("font_disabled_color", Color(0.4, 0.4, 0.45))
+			)
+	)
+	danger_content.add_child(reset_btn)
 
 # ─── Helper: Collapsible Section ──────────────────────────
 

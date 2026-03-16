@@ -23,6 +23,7 @@ board_data.js
 # Agent runtime data (logs, prefs)
 agent/logs/
 agent/user_prefs.json
+agent/tama_memory.json
 
 # Gemini/Agent local config
 .agent/

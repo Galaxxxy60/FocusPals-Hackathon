@@ -15,6 +15,7 @@ from PIL import ImageDraw, Image
 from enum import Enum
 
 from config import state, BREAK_CHECKPOINTS, get_dynamic_break_checkpoints
+import tama_memory
 
 
 # ─── Tama States ────────────────────────────────────────────
@@ -95,6 +96,9 @@ def start_session(source="UI"):
         state["is_on_break"] = False
         state["session_completed"] = False
         state["just_started_session"] = True
+        # ── Tama Memory: record session start ──
+        tama_memory.load_memory()
+        tama_memory.record_session_start()
         if was_on_break:
             state["_post_break_restart"] = True
             # Reset stealth counters — the disconnect was intentional (break), not a crash
@@ -138,7 +142,7 @@ def refuse_break_from_tray(icon, item):
 def open_settings_popup(icon=None, item=None):
     """Ouvre une fenêtre de réglages avec sélection du micro."""
     import tkinter as tk
-    from tkinter import ttk
+    from tkinter import ttk, messagebox
     from audio import get_available_mics, select_mic
 
     mics = get_available_mics()
@@ -147,7 +151,7 @@ def open_settings_popup(icon=None, item=None):
 
     win = tk.Tk()
     win.title("FocusPals — Réglages 🎤")
-    win.geometry("420x150")
+    win.geometry("420x220")
     win.resizable(False, False)
     win.attributes("-topmost", True)
     win.configure(bg="#1e1e2e")
@@ -157,6 +161,7 @@ def open_settings_popup(icon=None, item=None):
     style.configure("TLabel", background="#1e1e2e", foreground="#cdd6f4", font=("Segoe UI", 11))
     style.configure("TCombobox", font=("Segoe UI", 10))
     style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
+    style.configure("Danger.TButton", font=("Segoe UI", 9))
 
     ttk.Label(win, text="🎤 Microphone").pack(pady=(15, 5))
 
@@ -184,7 +189,14 @@ def open_settings_popup(icon=None, item=None):
                 break
         win.destroy()
 
-    ttk.Button(win, text="✅ Sauvegarder", command=save, style="Accent.TButton").pack(pady=15)
+    def reset_memory():
+        if messagebox.askyesno("Reset Memory", "Effacer toute la mémoire de Tama ?\n(sessions, prénom, moments mémorables)\n\nTama te traitera comme un inconnu."):
+            tama_memory.reset_memory()
+            messagebox.showinfo("Reset", "Mémoire effacée ! Tama repartira de zéro.")
+            print("🗑️ Tama memory reset by user")
+
+    ttk.Button(win, text="✅ Sauvegarder", command=save, style="Accent.TButton").pack(pady=(10, 5))
+    ttk.Button(win, text="🗑️ Reset Memory", command=reset_memory, style="Danger.TButton").pack(pady=(0, 10))
     win.mainloop()
 
 

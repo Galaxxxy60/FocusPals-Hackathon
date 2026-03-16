@@ -421,7 +421,7 @@ var _init_done: bool = false                # True after all deferred setups com
 
 # ─── Widget Drone (Remplace la Main Magique) ──────────────────
 var _drone_window: Window = null
-var _drone_state: String = "HIDDEN"  # États : HIDDEN, WAITING_START, TIMER, STRIKING, WAITING_BREAK, BREAK_TIMER
+var _drone_state: String = "HIDDEN"  # États : HIDDEN, WAITING_START, ONBOARDING_YN, TIMER, STRIKING, WAITING_BREAK, BREAK_TIMER
 var _break_timer_start: float = 0.0  # Timestamp when break started (for drone countdown)
 var _break_timer_duration: float = 300.0  # Break duration in seconds
 var _confetti_window: Window = null
@@ -514,6 +514,8 @@ const JARVIS_EMOJIS = {
 
 # ─── Quit UI ───
 var _quit_layer: CanvasLayer = null
+# ─── Onboarding UI ───
+var _onboarding_layer: CanvasLayer = null
 
 # ─── Gaze Angle Limits ───
 const GAZE_MAX_YAW: float = 40.0   # Left/right
@@ -920,6 +922,7 @@ func _setup_radial_menu() -> void:
 	settings_panel.screen_share_toggled.connect(_on_screen_share_toggled)
 	settings_panel.mic_toggled.connect(_on_mic_toggled)
 	settings_panel.tama_scale_changed.connect(_on_tama_scale_changed)
+	settings_panel.memory_reset.connect(_on_memory_reset)
 	# Debug tweaks (hidden, F2)
 	debug_tweaks = DebugTweaksScript.new()
 	ui_parent.add_child(debug_tweaks)
@@ -2021,7 +2024,7 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 
 func _update_drone_timer() -> void:
 	"""Flottaison organique du drone (suit Tama) et affichage du Timer/Break."""
-	if _drone_state not in ["WAITING_START", "TIMER", "WAITING_BREAK", "BREAK_TIMER", "STRIKING", "SPARE"]:
+	if _drone_state not in ["WAITING_START", "ONBOARDING_YN", "TIMER", "WAITING_BREAK", "BREAK_TIMER", "STRIKING", "SPARE"]:
 		return
 	if not _drone_window or not is_instance_valid(_drone_window):
 		return
@@ -2222,7 +2225,7 @@ func _on_radial_action(action_id: String) -> void:
 	# 🟢 Appeler Tama : elle et le drone apparaissent ensemble
 	if action_id == "call_tama":
 		# Déjà active ? Ignore
-		if _drone_state == "WAITING_START" or _drone_state == "TIMER" or session_active or conversation_active:
+		if _drone_state == "WAITING_START" or _drone_state == "ONBOARDING_YN" or _drone_state == "TIMER" or session_active or conversation_active:
 			print("🛸 Tama déjà là — appel ignoré")
 			if radial_menu:
 				radial_menu.close()
@@ -2357,6 +2360,98 @@ func _do_quit() -> void:
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "quit"}))
 
+# ─── Onboarding Dialog ────────────────────────────────────
+
+func _show_onboarding_dialog(lang: String = "en") -> void:
+	if _onboarding_layer:
+		return  # Already visible
+	_sync_and_show_ui()
+
+	_onboarding_layer = CanvasLayer.new()
+	_onboarding_layer.layer = 200
+	var parent: Node = _ui_window if _ui_window else self
+	parent.add_child(_onboarding_layer)
+
+	# Full-screen click catcher (clicking outside = skip / "No")
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.01)
+	bg.anchor_right = 1.0
+	bg.anchor_bottom = 1.0
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	bg.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed:
+			_onboarding_answer("N")
+	)
+	_onboarding_layer.add_child(bg)
+
+	# Panel
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.09, 0.14, 0.95)
+	style.border_color = Color(0.35, 0.45, 0.75, 0.5)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(12)
+	style.set_content_margin_all(24)
+	style.shadow_color = Color(0, 0, 0, 0.4)
+	style.shadow_size = 8
+	panel.add_theme_stylebox_override("panel", style)
+	panel.custom_minimum_size = Vector2(280, 0)
+	_onboarding_layer.add_child(panel)
+
+	var vp_size := _ui_window.size if _ui_window else Vector2i(get_viewport().get_visible_rect().size)
+	panel.position = Vector2(vp_size.x / 2 - 140, vp_size.y / 2 - 60)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 16)
+	panel.add_child(vbox)
+
+	# Title
+	var title := Label.new()
+	title.text = "✨ FocusPals" if lang == "en" else "✨ FocusPals"
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	# Question
+	var lbl := Label.new()
+	if lang == "fr":
+		lbl.text = "Tu veux que je t'explique\ncomment ça marche ? 🎓"
+	else:
+		lbl.text = "Want me to explain\nhow this works? 🎓"
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", Color(0.9, 0.92, 1.0))
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(lbl)
+
+	# Buttons
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(row)
+
+	var yes_text: String = "  Oui !  " if lang == "fr" else "  Yes!  "
+	var no_text: String = "  Non  " if lang == "fr" else "  Skip  "
+
+	row.add_child(_build_styled_button(yes_text,
+		Color(0.15, 0.3, 0.2, 0.8), Color(0.2, 0.45, 0.3, 0.9),
+		Color(0.85, 1.0, 0.9), _onboarding_answer.bind("Y")))
+	row.add_child(_build_styled_button(no_text,
+		Color(0.15, 0.15, 0.25, 0.6), Color(0.2, 0.2, 0.35, 0.8),
+		Color(0.7, 0.72, 0.8), _onboarding_answer.bind("N")))
+
+func _onboarding_answer(answer: String) -> void:
+	_hide_onboarding_dialog()
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "ONBOARDING_RESPONSE", "answer": answer}))
+	print("🆕 Onboarding answer: %s" % answer)
+
+func _hide_onboarding_dialog() -> void:
+	if _onboarding_layer:
+		_onboarding_layer.queue_free()
+		_onboarding_layer = null
+	_safe_restore_passthrough()
+
 func _on_mic_selected(mic_index: int) -> void:
 	print("🎤 Micro sélectionné: " + str(mic_index))
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -2410,6 +2505,11 @@ func _on_mic_toggled(enabled: bool) -> void:
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "SET_MIC_ALLOWED", "enabled": enabled}))
 
+func _on_memory_reset() -> void:
+	print("🗑️ Memory reset requested from settings")
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "RESET_MEMORY"}))
+
 func _safe_restore_passthrough() -> void:
 	"""Park _ui_window off-screen when all UI is closed. Move it on-screen when active.
 	Position changes are free (no DWM lag, unlike visible toggle)."""
@@ -2418,6 +2518,7 @@ func _safe_restore_passthrough() -> void:
 	if settings_panel and settings_panel.is_open: is_ui_active = true
 	if debug_tweaks and debug_tweaks.is_open: is_ui_active = true
 	if _quit_layer: is_ui_active = true
+	if _onboarding_layer: is_ui_active = true
 
 	if is_ui_active:
 		if _ui_window and _ui_window.position.x < -1000:
@@ -3178,6 +3279,7 @@ func _handle_message(raw: String) -> void:
 		var screen_share = data.get("screen_share_allowed", true)
 		var mic_on = data.get("mic_allowed", true)
 		var tama_scale = int(data.get("tama_scale", 100))
+		var mem_empty = data.get("memory_empty", true)
 		print("⚙️ Settings: %d micros, selected: %d, API key: %s, valid: %s, lang: %s, duration: %d" % [mics.size(), selected, str(has_api_key), str(key_valid), lang, session_duration])
 		if settings_panel:
 			if radial_menu and radial_menu.is_open:
@@ -3185,7 +3287,7 @@ func _handle_message(raw: String) -> void:
 			if radial_menu and radial_menu.has_method("set_lang"):
 				radial_menu.set_lang(lang)
 			_sync_and_show_ui()
-			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on, tama_scale, key_hint)
+			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on, tama_scale, key_hint, mem_empty)
 			_safe_restore_passthrough()
 		return
 	elif command == "API_KEY_UPDATED":
@@ -3250,6 +3352,26 @@ func _handle_message(raw: String) -> void:
 		return
 	elif command == "DRONE_SPARE_OFF":
 		_exit_drone_spare_mode()
+		return
+	elif command == "ONBOARDING_FACE":
+		# First session: show friendly expression — Y/N comes later when Tama finishes speaking
+		_drone_state = "ONBOARDING_YN"  # Same state so drone stays interactive
+		_drone_set_expression("happy")
+		if _drone_window:
+			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
+		print("🆕 Drone → ONBOARDING cute face mode")
+		return
+	elif command == "ONBOARDING_YN":
+		# Tama finished speaking — show a proper dialog window
+		var onb_lang: String = data.get("lang", "en")
+		_show_onboarding_dialog(onb_lang)
+		print("🆕 Onboarding dialog opened")
+		return
+	elif command == "ONBOARDING_DONE":
+		# Onboarding finished → close dialog + switch drone back to ▶ Start
+		_hide_onboarding_dialog()
+		_show_drone_start_widget()
+		print("🆕 Onboarding done — drone back to ▶ Start")
 		return
 	elif command == "DRONE_EXPRESSION":
 		var expr: String = data.get("expression", "neutral")
@@ -4383,7 +4505,14 @@ func _trigger_entrance() -> void:
 		# Delay drone — let Tama finish greeting first
 		var drone_tw2 := create_tween().bind_node(self)
 		drone_tw2.tween_interval(4.0)
-		drone_tw2.tween_callback(_show_drone_start_widget)
+		drone_tw2.tween_callback(func():
+			var was_onboarding := (_drone_state == "ONBOARDING_YN")
+			_show_drone_start_widget()
+			if was_onboarding:
+				# Re-apply onboarding expression (start_widget just put "▶")
+				_drone_state = "ONBOARDING_YN"
+				_drone_set_expression("happy")
+		)
 		print("🛸 Drone START différé (4s) — Tama parle d'abord")
 
 
@@ -4462,7 +4591,13 @@ func _show_ghost_silhouette() -> void:
 		_drone_start_pending = false
 		var drone_tw := create_tween().bind_node(self)
 		drone_tw.tween_interval(5.0)  # Let Tama materialize + finish greeting
-		drone_tw.tween_callback(_show_drone_start_widget)
+		drone_tw.tween_callback(func():
+			var was_onboarding := (_drone_state == "ONBOARDING_YN")
+			_show_drone_start_widget()
+			if was_onboarding:
+				_drone_state = "ONBOARDING_YN"
+				_drone_set_expression("happy")
+		)
 		print("🛸 Drone START différé — arrivera dans 5s")
 	print("👻 Hologram ALPHA_HASH activé — dissolution progressive...")
 
@@ -4528,11 +4663,11 @@ func _materialize_from_ghost() -> void:
 	# ── Onboarding: gaze + point at drone, nudge if no click ──
 	# The drone is a separate Window but we convert its screen position
 	# to 3D via _screen_to_world / _screen_to_arm_target (same as strikes)
-	if _drone_state == "WAITING_START" and _drone_window and _drone_window.visible:
+	if (_drone_state == "WAITING_START" or _drone_state == "ONBOARDING_YN") and _drone_window and _drone_window.visible:
 		var tw = create_tween().bind_node(self)
 		tw.tween_interval(2.0)  # Beat after Hello anim
 		tw.tween_callback(func():
-			if _drone_state != "WAITING_START" or not _drone_window or not _drone_window.visible:
+			if _drone_state not in ["WAITING_START", "ONBOARDING_YN"] or not _drone_window or not _drone_window.visible:
 				return
 			# Drone center in screen coords
 			var dc = _drone_window.position + Vector2i(_drone_window.size.x / 2, _drone_window.size.y / 2)

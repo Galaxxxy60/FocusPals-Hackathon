@@ -21,6 +21,7 @@ from config import application_path, state, tweaks, BREAK_CHECKPOINTS, BREAK_DUR
 from audio import get_available_mics, refresh_mic_cache, select_mic, resolve_default_mic
 from ui import TamaState, start_session, quit_app, update_display, broadcast_to_godot
 from flash_lite import get_lite_stats, clear_classification_history, generate_session_summary
+import tama_memory
 
 
 # ─── Click-Through Toggle ───────────────────────────────────
@@ -214,7 +215,8 @@ def _build_settings_data(mics: list) -> dict:
         "api_usage": _get_api_usage_stats(),
         "screen_share_allowed": state["screen_share_allowed"],
         "mic_allowed": state["mic_allowed"],
-        "tama_scale": state["tama_scale"]
+        "tama_scale": state["tama_scale"],
+        "memory_empty": tama_memory.is_first_session(),
     }
 
 
@@ -505,6 +507,14 @@ async def ws_handler(websocket):
                     # User hasn't clicked Start — flag for Gemini to nudge organically
                     state["_onboarding_nudge_pending"] = True
                     print("⏰ ONBOARDING_NUDGE — user hasn't clicked Start")
+                elif cmd == "ONBOARDING_RESPONSE":
+                    # User clicked Y or N on the drone for the onboarding explanation
+                    answer = data.get("answer", "N")
+                    state["_onboarding_response"] = answer
+                    print(f"🆕 ONBOARDING_RESPONSE: {answer}")
+                elif cmd == "RESET_MEMORY":
+                    tama_memory.reset_memory()
+                    print("🗑️ Memory reset via settings panel")
                 elif cmd == "DEBUG_SKIP_TIME":
                     # F10 debug: fast-forward session timer by N seconds
                     skip = int(data.get("skip_seconds", 10))
@@ -606,6 +616,10 @@ async def broadcast_ws_state():
                     # Check if session just ended → generate summary
                     if _session_ended:
                         _session_ended = False
+                        # ── Tama Memory: record session end ──
+                        if state.get("session_start_time"):
+                            focus_min = (time.time() - state["session_start_time"]) / 60.0
+                            tama_memory.record_session_end(focus_min)
                         asyncio.create_task(_generate_end_summary())
                     state_data = {
                         "session_active": False,

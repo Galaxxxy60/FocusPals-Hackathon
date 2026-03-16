@@ -36,6 +36,7 @@ from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot
 from mood_engine import get_mood_context, track_infraction, track_compliance
 from flash_lite import pre_classify, clear_classification_history, generate_session_summary, infer_task
 from app_control import execute_action as jarvis_execute
+import tama_memory
 
 
 # ─── Screen Capture & Window Cache ──────────────────────────
@@ -387,13 +388,23 @@ RULE: NEVER use robotic phrases ("let me check", "I'll verify", "I'm looking"). 
 
 
 def get_system_prompt():
-    """Returns the system prompt in the configured language."""
-    return SYSTEM_PROMPT_EN if state.get("language") == "en" else SYSTEM_PROMPT_FR
+    """Returns the system prompt in the configured language, with memory context."""
+    lang = state.get("language", "fr")
+    base = SYSTEM_PROMPT_EN if lang == "en" else SYSTEM_PROMPT_FR
+    memory_ctx = tama_memory.get_memory_context(lang)
+    if memory_ctx:
+        return base + "\n\n" + memory_ctx
+    return base
 
 
 def get_convo_prompt():
-    """Returns the conversation prompt in the configured language."""
-    return CONVO_PROMPT_EN if state.get("language") == "en" else CONVO_PROMPT_FR
+    """Returns the conversation prompt in the configured language, with memory context."""
+    lang = state.get("language", "fr")
+    base = CONVO_PROMPT_EN if lang == "en" else CONVO_PROMPT_FR
+    memory_ctx = tama_memory.get_memory_context(lang)
+    if memory_ctx:
+        return base + "\n\n" + memory_ctx
+    return base
 
 
 # ─── Tools (Function Calling) ───────────────────────────────
@@ -968,6 +979,8 @@ async def run_gemini_loop(pya):
                     state["_last_speech_ended"] = time.time()
                     state["_convo_nudge_sent"] = False
                     is_post_break = state.pop("_post_break_greeting", False)
+                    is_first = tama_memory.is_first_session()
+
                     if is_post_break:
                         greeting_text = (
                             "La pause est terminée ! Tu reviens d'une pause. "
@@ -978,6 +991,31 @@ async def run_gemini_loop(pya):
                             "Say something brief and energetic to welcome the user back. ONE sentence max. "
                             "Remind them they can click the drone button to start a new session."
                         )
+                    elif is_first:
+                        # ── ONBOARDING: First ever session — special intro prompt ──
+                        state["_onboarding_active"] = True
+                        state["_onboarding_start_time"] = time.time()
+                        state["_onboarding_yn_shown"] = False
+                        lang = state.get("language", "fr")
+                        if lang == "en":
+                            greeting_text = (
+                                "[SYSTEM] This is the user's VERY FIRST TIME using FocusPals. "
+                                "Introduce yourself warmly as Tama, their new focus companion. "
+                                "Then ask if they'd like you to explain how FocusPals works. "
+                                "Keep it short: 2 sentences for the intro, then the question. "
+                                "They can answer by clicking the drone or just saying yes/no out loud."
+                            )
+                        else:
+                            greeting_text = (
+                                "[SYSTEM] C'est la TOUTE PREMIÈRE FOIS que l'utilisateur utilise FocusPals. "
+                                "Présente-toi chaleureusement en tant que Tama, sa nouvelle compagne de concentration. "
+                                "Puis demande-lui s'il veut que tu lui expliques comment FocusPals fonctionne. "
+                                "Sois concise : 2 phrases d'intro, puis la question. "
+                                "Il peut répondre en cliquant sur le drone ou en disant oui/non à haute voix."
+                            )
+                        # Show cute emoji face on the drone first (Y/N comes later when Tama finishes speaking)
+                        broadcast_to_godot(json.dumps({"command": "ONBOARDING_FACE"}))
+                        print("  🆕 ONBOARDING: First session detected — cute face mode")
                     else:
                         greeting_text = (
                             "L'utilisateur vient de t'appeler. La session de travail n'a pas encore commencé. "
@@ -1399,6 +1437,85 @@ async def run_gemini_loop(pya):
                                 except Exception:
                                     pass
 
+                            # ── Onboarding Y/N response: user clicked Y or N ──
+                            onb_response = state.pop("_onboarding_response", None)
+                            if onb_response:
+                                state["_onboarding_active"] = False
+                                try:
+                                    if onb_response.upper() == "Y":
+                                        if state.get("language") == "en":
+                                            await session.send_realtime_input(
+                                                text=(
+                                                    "[SYSTEM] The user wants to hear the explanation! "
+                                                    "Explain FocusPals briefly and enthusiastically: "
+                                                    "1) You're Tama, their focus companion who watches over them while they work. "
+                                                    "2) They set a work session (the timer on the drone), and you monitor their screen. "
+                                                    "3) If they get distracted, you'll warn them — and if they don't listen, "
+                                                    "the drone fires a 'strike' to close the distraction. "
+                                                    "4) There are break reminders built in — you'll tell them when to rest. "
+                                                    "5) They can talk to you anytime by just speaking out loud. "
+                                                    "Keep it fun, under 30 seconds. Then tell them to click the ▶ button on the drone to start!"
+                                                )
+                                            )
+                                        else:
+                                            await session.send_realtime_input(
+                                                text=(
+                                                    "[SYSTEM] L'utilisateur veut entendre l'explication ! "
+                                                    "Explique FocusPals brièvement avec enthousiasme : "
+                                                    "1) Tu es Tama, sa compagne de concentration qui veille sur lui pendant le travail. "
+                                                    "2) Il définit une session de travail (le timer sur le drone), et tu surveilles son écran. "
+                                                    "3) S'il se distrait, tu le préviens — et s'il n'écoute pas, "
+                                                    "le drone envoie une 'frappe' pour fermer la distraction. "
+                                                    "4) Il y a des rappels de pause intégrés — tu lui diras quand se reposer. "
+                                                    "5) Il peut te parler à tout moment en parlant à haute voix. "
+                                                    "Reste fun, moins de 30 secondes. Puis dis-lui de cliquer sur le ▶ du drone pour commencer !"
+                                                )
+                                            )
+                                        print("  🆕 ONBOARDING: User chose YES — explanation sent")
+                                    else:
+                                        if state.get("language") == "en":
+                                            await session.send_realtime_input(
+                                                text="[SYSTEM] The user doesn't need the explanation. Just tell them to click the ▶ button on the drone whenever they're ready to start a work session. Be brief and cheerful."
+                                            )
+                                        else:
+                                            await session.send_realtime_input(
+                                                text="[SYSTEM] L'utilisateur n'a pas besoin d'explication. Dis-lui simplement de cliquer sur le ▶ du drone quand il est prêt à commencer une session. Sois bref et joyeux."
+                                            )
+                                        print("  🆕 ONBOARDING: User chose NO — skip explanation")
+                                    # Tell Godot to switch drone back to ▶ Start mode
+                                    broadcast_to_godot(json.dumps({"command": "ONBOARDING_DONE"}))
+                                except Exception:
+                                    pass
+
+                            # ── Onboarding: reveal dialog after Tama finishes speaking ──
+                            onb_start = state.get("_onboarding_start_time", 0)
+                            onb_elapsed = time.time() - onb_start if onb_start else 0
+                            if state.get("_onboarding_active") and not state.get("_onboarding_yn_shown"):
+                                tama_spoke = state.get("_last_speech_ended", 0) > onb_start
+                                fallback_timeout = onb_elapsed > 20  # API was slow/failed
+                                if tama_spoke or fallback_timeout:
+                                    state["_onboarding_yn_shown"] = True
+                                    lang = state.get("language", "fr")
+                                    broadcast_to_godot(json.dumps({"command": "ONBOARDING_YN", "lang": lang}))
+                                    if fallback_timeout and not tama_spoke:
+                                        print("  🆕 ONBOARDING: Fallback — API slow, showing dialog anyway")
+                                    else:
+                                        print("  🆕 ONBOARDING: Tama finished speaking — showing dialog")
+
+                            # ── Onboarding auto-clear: user answered by voice ──
+                            if (state.get("_onboarding_active") and state.get("_onboarding_yn_shown")
+                                    and state.get("user_spoke_at", 0) > onb_start + 10
+                                    and onb_elapsed > 15):
+                                state["_onboarding_active"] = False
+                                broadcast_to_godot(json.dumps({"command": "ONBOARDING_DONE"}))
+                                print("  🆕 ONBOARDING: Voice detected — auto-switching drone to ▶ Start")
+
+                            # ── Onboarding global timeout: don't get stuck forever ──
+                            if state.get("_onboarding_active") and onb_elapsed > 60:
+                                state["_onboarding_active"] = False
+                                broadcast_to_godot(json.dumps({"command": "ONBOARDING_DONE"}))
+                                print("  🆕 ONBOARDING: Global timeout (60s) — auto-closing")
+
                             # Check user speech, Tama speech end, AND active audio playback
                             # This prevents killing the conversation while Tama is mid-response
                             last_activity = max(
@@ -1409,7 +1526,7 @@ async def run_gemini_loop(pya):
                             someone_spoke_recently = (time.time() - last_activity) < CONVERSATION_SILENCE_TIMEOUT
                             time_in_conversation = time.time() - (state["conversation_start_time"] or time.time())
 
-                            if not someone_spoke_recently and time_in_conversation > 10:
+                            if not someone_spoke_recently and time_in_conversation > 10 and not state.get("_onboarding_active"):
                                 print("💬 Silence détecté — fin de la conversation.")
                                 end_msg = json.dumps({"command": "END_CONVERSATION"})
                                 for ws_client in list(state["connected_ws_clients"]):
@@ -2174,6 +2291,8 @@ async def run_gemini_loop(pya):
                                             elif fc.name == "fire_strike":
                                                 timing = fc.args.get('timing_intent', '')
                                                 print(f"  🥊🔥 GEMINI INITIATED STRIKE: {timing}")
+                                                # ── Tama Memory: record strike ──
+                                                tama_memory.record_strike()
 
                                                 # ── Ghost strike guard ──
                                                 # If fire_strike arrives without close_distracting_tab,
@@ -2647,9 +2766,10 @@ async def run_gemini_loop(pya):
                             elif new_s < 9:
                                 broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "angry"}))
                             # Auto-strike if critical suspicion — drone strikes alone
-                            if new_s >= 9 and not state.get("_strike_in_progress"):
+                            # 🛑 NO STRIKE for gray zone apps (same policy as main loop)
+                            if new_s >= 9 and not state.get("_strike_in_progress") and cat not in ("ZONE_GRISE", "PROCRASTINATION_PRODUCTIVE", "FLUX"):
                                 broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "strike"}))
-                                result = await asyncio.to_thread(prepare_close_tab, "Procrastination detected during API outage", None)
+                                result = await asyncio.to_thread(prepare_close_tab, "Procrastination detected during API outage", active_title)
                                 if result.get("status") == "success":
                                     print(f"  🛞⚡ DRONE SPARE STRIKE! Closing tab without Gemini")
                                     state["_strike_in_progress"] = True

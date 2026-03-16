@@ -208,6 +208,20 @@ func _build_strings() -> void:
 			"zh": "Tama 可以听到您的声音",
 		},
 
+		# ── Data ──
+		"section_data": {
+			"fr": "💾  Mémoire",
+			"en": "💾  Memory",
+			"ja": "💾  メモリ",
+			"zh": "💾  记忆",
+		},
+		"reset_memory_desc": {
+			"fr": "Efface la mémoire de Tama (sessions, prénom, souvenirs). Elle repartira comme si c'était la première fois.",
+			"en": "Erase Tama's memory (sessions, name, memories). She'll start fresh like it's the first time.",
+			"ja": "Tamaの記憶を消去します（セッション、名前、思い出）。初回のようにやり直します。",
+			"zh": "清除Tama的记忆（会话、姓名、回忆）。她将像第一次一样重新开始。",
+		},
+
 		# ── Radial Menu ──
 		"radial_settings": {
 			"fr": "Réglages",
