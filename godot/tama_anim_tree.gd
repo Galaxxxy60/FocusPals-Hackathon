@@ -23,7 +23,7 @@ signal strike_sequence_started()  # Strike sequence just kicked off
 
 # ─── States ───────────────────────────────────────────────────
 enum State { OFF_SCREEN, ON_WALL, WALL_TALK, LEAVING_WALL, STANDING, RETURNING_WALL, STRIKING,
-	ON_GROUND, GROUND_TALK, LEAVING_GROUND, SITTING_GROUND }
+	ON_GROUND, GROUND_TALK, LEAVING_GROUND, SITTING_GROUND, STAND_TALK }
 var current_state: int = State.OFF_SCREEN
 
 # ─── Internals ────────────────────────────────────────────────
@@ -53,6 +53,7 @@ const WANTED = {
 	"idle_ground_talk": "Idle_ground_talk",
 	"idle_ground_standup": "Idle_ground_StandUp",
 	"hello": "Hello",
+	"stand_talk": "StandTalk",
 }
 
 # Which animations should loop
@@ -72,6 +73,11 @@ var _strike_time: float = 0.0
 
 # Track SM node for change detection
 var _prev_node: String = ""
+
+# ─── Onboarding Hold ──────────────────────────────────────
+# When true, Tama stays STANDING after Hello→idle instead of auto-returning to wall.
+# Set by main.gd during onboarding flow, cleared by ONBOARDING_DONE.
+var onboarding_hold: bool = false
 
 # ─── Random Idle Hair Fix Timer ────────────────────────────
 var _idle_hair_timer: float = 0.0
@@ -173,6 +179,9 @@ func _build_tree() -> void:
 		"sit_ground": Vector2(600, 250),  # reverse standup
 		# Hello (startup greeting)
 		"hello": Vector2(-400, 0),
+		# StandTalk (talking while standing — onboarding explanation)
+		"stand_talk": Vector2(400, -100),
+		"stand_talk_return": Vector2(400, -200),
 	}
 
 	for key in _names:
@@ -210,6 +219,22 @@ func _build_tree() -> void:
 		for to_key in ["idle", "suspicious", "angry"]:
 			if from_key != to_key:
 				_add_trans(sm, from_key, to_key, XFADE_MOOD)
+
+	# ── StandTalk (talking while standing — same pattern as wall_talk) ──
+	if _names.has("stand_talk"):
+		# Reverse StandTalk for return to idle
+		var rev_st := AnimationNodeAnimation.new()
+		rev_st.animation = _names["stand_talk"]
+		rev_st.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
+		sm.add_node("stand_talk_return", rev_st, positions.get("stand_talk_return", Vector2.ZERO))
+		# idle ↔ stand_talk
+		_add_trans(sm, "idle", "stand_talk", XFADE_WALL_TALK)
+		# NO auto-return! She holds the talking pose while speaking.
+		_add_trans(sm, "stand_talk", "stand_talk_return", XFADE_WALL_TALK)
+		_add_trans(sm, "stand_talk_return", "idle", XFADE_WALL_TALK, true)  # auto-advance
+		# Allow direct transitions from stand_talk
+		_add_trans(sm, "stand_talk", "return_wall", XFADE_TRANSITION)  # can return to wall
+		_add_trans(sm, "stand_talk", "strike_base", XFADE_STRIKE)      # can strike
 
 	# Standing → return to wall
 	for key in ["idle", "suspicious", "angry"]:
@@ -571,6 +596,34 @@ func end_wall_talk() -> void:
 	print("🎬 → end_wall_talk()")
 
 
+# ─── Stand Talk API (talking while standing) ──────────────────
+
+func play_stand_talk() -> void:
+	"""Play StandTalk — she transitions into a talking gesture while standing.
+	Only works when STANDING. Call end_stand_talk() when speech ends."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.STANDING:
+		print("🎬 stand_talk ignored — not standing (state: %s)" % State.keys()[current_state])
+		return
+	if not _names.has("stand_talk"):
+		print("🎬 stand_talk ignored — animation not found in GLB")
+		return
+	_playback.travel("stand_talk")
+	print("🎬 → play_stand_talk()")
+
+
+func end_stand_talk() -> void:
+	"""End stand talk — plays StandTalk in reverse back to idle."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.STAND_TALK:
+		return
+	_set_state(State.STANDING)
+	_playback.travel("stand_talk_return")
+	print("🎬 → end_stand_talk()")
+
+
 # ─── Ground Sitting API ───────────────────────────────────────
 
 func sit_ground() -> void:
@@ -721,7 +774,7 @@ func is_on_ground() -> bool:
 	return current_state == State.ON_GROUND or current_state == State.GROUND_TALK
 
 func is_standing() -> bool:
-	return current_state == State.STANDING
+	return current_state == State.STANDING or current_state == State.STAND_TALK
 
 func is_striking() -> bool:
 	return current_state == State.STRIKING
@@ -838,7 +891,11 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 				set_standing_anim(q)
 		else:
 			# Default: continue to idle_wall after walk_in completes
-			_playback.travel("idle_wall")
+			# UNLESS onboarding is active — she stays standing to talk
+			if onboarding_hold:
+				print("🎬 Hello done → staying STANDING (onboarding hold)")
+			else:
+				_playback.travel("idle_wall")
 
 	# off_wall just ended → we're now standing
 	elif from_node == "off_wall" and to_node in ["idle", "suspicious", "angry"]:
@@ -943,6 +1000,23 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 			var q := _queued_standing
 			_queued_standing = ""
 			if q == "strike": play_strike()
+			else: set_standing_anim(q)
+
+	# ── Stand Talk State Detection ──
+
+	# stand_talk started
+	elif to_node == "stand_talk":
+		_set_state(State.STAND_TALK)
+
+	# stand_talk_return ended → back to idle (standing)
+	elif from_node == "stand_talk_return" and to_node == "idle":
+		_set_state(State.STANDING)
+		_current_standing = "idle"
+		if _queued_standing != "":
+			var q := _queued_standing
+			_queued_standing = ""
+			if q == "strike": play_strike()
+			elif q == "go_away": go_away()
 			else: set_standing_anim(q)
 
 

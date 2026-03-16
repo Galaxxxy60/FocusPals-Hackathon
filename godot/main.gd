@@ -391,6 +391,9 @@ var _pending_leave_wall: bool = false      # Queue leave-wall after reverse wall
 var _waiting_for_voice: bool = false
 var _voice_timeout_timer: float = 0.0
 
+# ─── Onboarding StandTalk trigger ────────────────────────
+var _onboarding_stand_talk_pending: bool = false  # True after Yes click, waiting for first audio
+
 # ─── Local Greeting Audio (instant "Salut !" fallback) ────
 var _local_greeting_player: AudioStreamPlayer = null
 var _has_local_greeting: bool = false  # True if tama_hello.wav was found
@@ -525,7 +528,7 @@ const GAZE_MAX_YAW: float = 40.0   # Left/right
 const GAZE_MAX_PITCH: float = 45.0  # Up/down (increased for more range)
 const GAZE_PITCH_OFFSET_DEG: float = -8.0
 var GAZE_PRESET_OFFSETS = {
-	GazeTarget.USER: Vector3(0, 0.3, 2.0),            # Slightly up toward user (webcam is above screen)
+	GazeTarget.USER: Vector3(0, -0.1, 2.0),            # Toward user face (slightly below center)
 	GazeTarget.BOOK: Vector3(-0.3, -0.8, 0.5),         # Down in front (fallback if bone not found)
 	GazeTarget.AWAY: Vector3(2.0, 0.2, -0.5),          # Behind to the right
 }
@@ -905,6 +908,10 @@ func _on_tree_off_wall_done() -> void:
 			print("🎬 Dodge + %s → staying standing" % mood)
 		else:
 			_anim_tree_module.sit_ground()
+	elif _anim_tree_module.onboarding_hold:
+		# 🆕 Onboarding: stay standing — Tama is about to explain the app
+		set_gaze(GazeTarget.USER, GAZE_SPEED_NATURAL)
+		print("🎬 Onboarding hold → staying standing (looking at user)")
 	else:
 		# Home → return to wall
 		_anim_tree_module.return_to_wall()
@@ -2583,6 +2590,17 @@ func _onboarding_answer(answer: String) -> void:
 	_show_drone_start_widget()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "ONBOARDING_RESPONSE", "answer": answer}))
+	# 🆕 YES: Tama stands up to explain the app face-to-face
+	if answer == "Y" and _anim_tree_module:
+		_anim_tree_module.onboarding_hold = true  # Prevent auto-return to wall
+		if _anim_tree_module.is_on_wall():
+			_anim_tree_module.leave_wall()  # idle_wall → off_wall → idle (standing)
+		elif _anim_tree_module.is_on_ground():
+			_anim_tree_module.stand_from_ground()  # idle_ground → standup → idle
+		# If already standing, she'll just stay there
+		set_gaze(GazeTarget.USER, GAZE_SPEED_NATURAL)
+		_onboarding_stand_talk_pending = true  # 🆕 Trigger StandTalk on first audio chunk
+		print("🆕 Onboarding YES → Tama leaves wall to explain (standing hold ON, StandTalk pending)")
 	print("🆕 Onboarding answer: %s — drone ▶ shown" % answer)
 
 func _hide_onboarding_dialog() -> void:
@@ -3392,6 +3410,9 @@ func _handle_message(raw: String) -> void:
 			set_gaze(GazeTarget.NEUTRAL, 2.0)
 			print("💬 Fin de conversation")
 			if _anim_tree_module:
+				_anim_tree_module.onboarding_hold = false  # Safety: release hold
+				if _anim_tree_module.current_state == _anim_tree_module.State.STAND_TALK:
+					_anim_tree_module.end_stand_talk()
 				if _anim_tree_module.is_on_ground():
 					if _anim_tree_module.current_state == 8:  # GROUND_TALK
 						_anim_tree_module.end_ground_talk()
@@ -3521,6 +3542,8 @@ func _handle_message(raw: String) -> void:
 		_drone_set_expression("happy")
 		if _drone_window:
 			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
+		# NOTE: onboarding_hold is NOT set here — Tama goes to wall normally after Hello.
+		# The hold is only activated in _onboarding_answer("Y") when user clicks Yes.
 		print("🆕 Drone → ONBOARDING cute face mode")
 		return
 	elif command == "ONBOARDING_YN":
@@ -3530,8 +3553,33 @@ func _handle_message(raw: String) -> void:
 		print("🆕 Onboarding dialog opened")
 		return
 	elif command == "ONBOARDING_DONE":
-		# Onboarding finished → close dialog + switch drone back to ▶ Start
+		# Onboarding finished → close dialog + return Tama to wall + switch drone to ▶ Start
 		_hide_onboarding_dialog()
+		_onboarding_stand_talk_pending = false  # Safety: cancel pending trigger
+		# 🆕 Release onboarding hold and send Tama back to wall
+		if _anim_tree_module:
+			_anim_tree_module.onboarding_hold = false
+			# End StandTalk first if active, then return to wall
+			if _anim_tree_module.current_state == _anim_tree_module.State.STAND_TALK:
+				_anim_tree_module.end_stand_talk()
+				# return_to_wall will happen after stand_talk_return → idle transition
+				# We schedule it with a short delay to let the reverse anim play
+				var tw := create_tween().bind_node(self)
+				tw.tween_interval(1.0)  # Let StandTalk reverse finish
+				tw.tween_callback(func():
+					if _anim_tree_module and _anim_tree_module.is_standing():
+						if _dodge_active:
+							_anim_tree_module.sit_ground()
+						else:
+							_anim_tree_module.return_to_wall()
+						print("🆕 Onboarding done → Tama returning to wall (after StandTalk)")
+				)
+			elif _anim_tree_module.is_standing():
+				if _dodge_active:
+					_anim_tree_module.sit_ground()
+				else:
+					_anim_tree_module.return_to_wall()
+				print("🆕 Onboarding done → Tama returning to wall")
 		_show_drone_start_widget()
 		print("🆕 Onboarding done — drone back to ▶ Start")
 		return
@@ -3741,6 +3789,12 @@ func _handle_message(raw: String) -> void:
 		var mouth_slot = VISEME_MAP.get(shape, "M0")
 		# Track Tama speech
 		if shape != "REST":
+			# 🆕 Onboarding: first audio after Yes click → trigger StandTalk
+			if _onboarding_stand_talk_pending and _anim_tree_module:
+				_onboarding_stand_talk_pending = false
+				if _anim_tree_module.current_state == _anim_tree_module.State.STANDING:
+					_anim_tree_module.play_stand_talk()
+					print("🆕 First audio after Yes → StandTalk!")
 			# Stage 2: Confirmed contact — Tama looks at user fully (head turn)
 			if not _is_speaking and conversation_active:
 				set_gaze(GazeTarget.USER, 5.0)  # Full head turn toward user
