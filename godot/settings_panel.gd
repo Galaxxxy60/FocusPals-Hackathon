@@ -78,6 +78,8 @@ var _mic_allowed: bool = true
 var _screen_share_toggle: CheckButton = null
 var _mic_toggle: CheckButton = null
 var _memory_empty: bool = true
+var _reset_confirmed: bool = false
+var _reset_btn: Button = null
 
 # ─── Retro Pixel Art Styles (Y2K Pastel Blue) ─────────────
 # Palette: #e7eef6 (bg), #80aee3 (border), #8dbcea (surcontour)
@@ -733,22 +735,22 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	reset_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	danger_content.add_child(reset_desc)
 
-	var reset_btn := Button.new()
-	reset_btn.custom_minimum_size = Vector2(0, 32)
+	_reset_btn = Button.new()
+	_reset_btn.custom_minimum_size = Vector2(0, 32)
 	var danger_style := StyleBoxFlat.new()
 	var danger_hover := StyleBoxFlat.new()
 
 	if _memory_empty:
-		# Memory already empty → greyed out
-		reset_btn.text = "💾  Memory is empty"
-		reset_btn.disabled = true
+		# Memory truly empty → greyed out
+		_reset_btn.text = "💾  Memory is empty"
+		_reset_btn.disabled = true
 		danger_style.bg_color = Color(0.1, 0.1, 0.12, 0.4)
 		danger_style.border_color = Color(0.25, 0.25, 0.3, 0.3)
 		danger_hover = danger_style
-		reset_btn.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45))
-		reset_btn.add_theme_color_override("font_disabled_color", Color(0.4, 0.4, 0.45))
+		_reset_btn.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45))
+		_reset_btn.add_theme_color_override("font_disabled_color", Color(0.4, 0.4, 0.45))
 	else:
-		reset_btn.text = "🗑️  Reset Memory"
+		_reset_btn.text = "🗑️  Reset Memory"
 		danger_style.bg_color = Color(0.25, 0.08, 0.08, 0.7)
 		danger_style.border_color = Color(0.7, 0.2, 0.2, 0.4)
 		danger_hover.bg_color = Color(0.4, 0.1, 0.1, 0.85)
@@ -756,38 +758,36 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 		danger_hover.set_border_width_all(1)
 		danger_hover.set_corner_radius_all(4)
 		danger_hover.set_content_margin_all(4)
-		reset_btn.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
-		reset_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.6, 0.6))
+		_reset_btn.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
+		_reset_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.6, 0.6))
 
 	danger_style.set_border_width_all(1)
 	danger_style.set_corner_radius_all(4)
 	danger_style.set_content_margin_all(4)
-	reset_btn.add_theme_stylebox_override("normal", danger_style)
-	reset_btn.add_theme_stylebox_override("hover", danger_hover)
-	reset_btn.add_theme_stylebox_override("pressed", danger_hover)
-	reset_btn.add_theme_stylebox_override("disabled", danger_style)
-	reset_btn.add_theme_font_size_override("font_size", 11)
-	var _reset_confirmed := false
-	reset_btn.pressed.connect(func():
-		if _memory_empty:
-			return
+	_reset_btn.add_theme_stylebox_override("normal", danger_style)
+	_reset_btn.add_theme_stylebox_override("hover", danger_hover)
+	_reset_btn.add_theme_stylebox_override("pressed", danger_hover)
+	_reset_btn.add_theme_stylebox_override("disabled", danger_style)
+	_reset_btn.add_theme_font_size_override("font_size", 11)
+	_reset_confirmed = false
+	_reset_btn.pressed.connect(func():
 		if not _reset_confirmed:
 			_reset_confirmed = true
-			reset_btn.text = "⚠️  Click again to confirm"
-			reset_btn.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+			_reset_btn.text = "⚠️  Click again to confirm"
+			_reset_btn.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
 			# Auto-cancel after 3s
 			var tw := create_tween()
 			tw.tween_interval(3.0)
 			tw.tween_callback(func():
-				if is_instance_valid(reset_btn):
-					_reset_confirmed = false
-					reset_btn.text = "🗑️  Reset Memory"
-					reset_btn.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
+				_reset_confirmed = false
+				if is_instance_valid(_reset_btn):
+					_reset_btn.text = "🗑️  Reset Memory"
+					_reset_btn.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
 			)
 		else:
 			_reset_confirmed = false
-			reset_btn.text = "✓  Memory Reset!"
-			reset_btn.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
+			_reset_btn.text = "✓  Memory Reset!"
+			_reset_btn.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
 			# Play erased sound at low volume
 			var sfx := AudioStreamPlayer.new()
 			sfx.stream = load("res://erased.ogg")
@@ -795,29 +795,29 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 			add_child(sfx)
 			sfx.play()
 			sfx.finished.connect(sfx.queue_free)
+			memory_reset.emit()
 			# Grey out button after reset
 			_memory_empty = true
-			reset_btn.disabled = true
+			_reset_btn.disabled = true
 			var grey_style := StyleBoxFlat.new()
 			grey_style.bg_color = Color(0.1, 0.1, 0.12, 0.4)
 			grey_style.border_color = Color(0.25, 0.25, 0.3, 0.3)
 			grey_style.set_border_width_all(1)
 			grey_style.set_corner_radius_all(4)
 			grey_style.set_content_margin_all(4)
-			reset_btn.add_theme_stylebox_override("normal", grey_style)
-			reset_btn.add_theme_stylebox_override("disabled", grey_style)
-			memory_reset.emit()
+			_reset_btn.add_theme_stylebox_override("normal", grey_style)
+			_reset_btn.add_theme_stylebox_override("disabled", grey_style)
 			# Change text after a beat
 			var tw2 := create_tween()
 			tw2.tween_interval(1.5)
 			tw2.tween_callback(func():
-				if is_instance_valid(reset_btn):
-					reset_btn.text = "💾  Memory is empty"
-					reset_btn.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45))
-					reset_btn.add_theme_color_override("font_disabled_color", Color(0.4, 0.4, 0.45))
+				if is_instance_valid(_reset_btn):
+					_reset_btn.text = "💾  Memory is empty"
+					_reset_btn.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45))
+					_reset_btn.add_theme_color_override("font_disabled_color", Color(0.4, 0.4, 0.45))
 			)
 	)
-	danger_content.add_child(reset_btn)
+	danger_content.add_child(_reset_btn)
 
 # ─── Helper: Collapsible Section ──────────────────────────
 

@@ -216,7 +216,7 @@ def _build_settings_data(mics: list) -> dict:
         "screen_share_allowed": state["screen_share_allowed"],
         "mic_allowed": state["mic_allowed"],
         "tama_scale": state["tama_scale"],
-        "memory_empty": tama_memory.is_first_session(),
+        "memory_empty": tama_memory.is_memory_empty(),
     }
 
 

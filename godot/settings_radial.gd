@@ -36,6 +36,7 @@ var _hovered := -1
 var _hover_scales: Array[float] = []
 var _canvas: Control
 var _close_timer := 0.0
+var _first_open := true  # True on first launch — stays open until user hovers an item
 
 var _label_alpha := 0.0
 var _label_text := ""
@@ -132,7 +133,13 @@ func _update_hover(delta: float) -> void:
 			continue
 		if mouse.distance_to(_item_pos(i)) < ITEM_SIZE * 1.8:
 			_hovered = i
+			# First hover clears the "sticky" first-open mode
+			if _first_open:
+				_first_open = false
 			break
+	# Don't auto-close on first open — wait for user to discover the menu
+	if _first_open:
+		return
 	if is_open and _progress >= 0.5:
 		var center := _arc_center()
 		var dist := mouse.distance_to(center)

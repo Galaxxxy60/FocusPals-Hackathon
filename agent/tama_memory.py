@@ -83,6 +83,27 @@ def is_first_session() -> bool:
     return mem.get("total_sessions", 0) == 0
 
 
+def is_memory_empty() -> bool:
+    """True if memory has no meaningful data (all defaults).
+    Used for the Reset Memory button — greyed out only when truly empty."""
+    mem = get_memory()
+    if mem.get("user_name"):
+        return False
+    if mem.get("total_sessions", 0) > 0:
+        return False
+    if mem.get("total_strikes", 0) > 0:
+        return False
+    if mem.get("total_focus_minutes", 0) > 0:
+        return False
+    if mem.get("relationship_level", 0) > 0:
+        return False
+    if mem.get("memorable_moments"):
+        return False
+    if mem.get("known_projects"):
+        return False
+    return True
+
+
 def reset_memory():
     """Wipe all memory and start fresh. Called from Settings > Reset."""
     global _memory

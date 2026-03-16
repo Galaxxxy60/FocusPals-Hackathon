@@ -1012,7 +1012,7 @@ async def run_gemini_loop(pya):
                                 "Introduce yourself warmly as Tama, their new focus companion. "
                                 "Then ask if they'd like you to explain how FocusPals works. "
                                 "Keep it short: 2 sentences for the intro, then the question. "
-                                "They can answer by clicking the drone or just saying yes/no out loud."
+                                "A dialog box will pop up with 'Yes' and 'Skip' buttons for them to click."
                             )
                         else:
                             greeting_text = (
@@ -1020,7 +1020,7 @@ async def run_gemini_loop(pya):
                                 "Présente-toi chaleureusement en tant que Tama, sa nouvelle compagne de concentration. "
                                 "Puis demande-lui s'il veut que tu lui expliques comment FocusPals fonctionne. "
                                 "Sois concise : 2 phrases d'intro, puis la question. "
-                                "Il peut répondre en cliquant sur le drone ou en disant oui/non à haute voix."
+                                "Une fenêtre va apparaître avec les boutons 'Oui' et 'Skip' pour qu'il clique."
                             )
                         # Block Play button + show loading face while API connects
                         broadcast_to_godot(json.dumps({"command": "ONBOARDING_FACE"}))
@@ -1299,13 +1299,10 @@ async def run_gemini_loop(pya):
                         if state.get("_api_processing_tool", False):
                             continue  # Drop this chunk silently — tool processing takes priority
                         # ── Mute mic during onboarding to prevent barge-in ──
-                        # Phase 1: Before greeting arrives (ambient noise kills greeting)
-                        # Phase 2: After YES click until explanation audio starts (click noise kills explanation)
+                        # Keep mic silent during the ENTIRE onboarding flow:
+                        # greeting, dialog, explanation — until ONBOARDING_DONE clears _onboarding_active
                         if state.get("_onboarding_active"):
-                            if not state.get("_onboarding_arrived"):
-                                continue  # Phase 1: waiting for greeting
-                            if state.get("_onboarding_answered") and not state.get("_onboarding_explanation_started"):
-                                continue  # Phase 2: waiting for explanation audio
+                            continue  # Drop all audio chunks during onboarding
                         try:
                             await session.send_realtime_input(audio=blob)
                             state["_api_audio_chunks_sent"] += 1
@@ -1431,7 +1428,7 @@ async def run_gemini_loop(pya):
                                 "Introduce yourself warmly as Tama, their new focus companion. "
                                 "Then ask if they'd like you to explain how FocusPals works. "
                                 "Keep it short: 2 sentences for the intro, then the question. "
-                                "They can answer by clicking the drone or just saying yes/no out loud."
+                                "A dialog box will pop up with 'Yes' and 'Skip' buttons for them to click."
                             )
                         else:
                             greeting_text = (
@@ -1439,7 +1436,7 @@ async def run_gemini_loop(pya):
                                 "Présente-toi chaleureusement en tant que Tama, sa nouvelle compagne de concentration. "
                                 "Puis demande-lui s'il veut que tu lui expliques comment FocusPals fonctionne. "
                                 "Sois concise : 2 phrases d'intro, puis la question. "
-                                "Il peut répondre en cliquant sur le drone ou en disant oui/non à haute voix."
+                                "Une fenêtre va apparaître avec les boutons 'Oui' et 'Skip' pour qu'il clique."
                             )
                         try:
                             await session.send_client_content(

@@ -928,6 +928,14 @@ func _setup_radial_menu() -> void:
 	debug_tweaks = DebugTweaksScript.new()
 	ui_parent.add_child(debug_tweaks)
 	print("🎛️ Menus attachés à %s" % ui_parent.name)
+	# Auto-open radial menu on first launch so users discover it
+	# Delayed so the UI window is on-screen first and the animation is visible
+	call_deferred("_sync_and_show_ui")
+	var open_timer := get_tree().create_timer(0.5)
+	open_timer.timeout.connect(func():
+		if radial_menu and not radial_menu.is_open:
+			radial_menu.open()
+	)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -2463,6 +2471,14 @@ func _show_onboarding_dialog(lang: String = "en") -> void:
 	var vp_size := _ui_window.size if _ui_window else Vector2i(get_viewport().get_visible_rect().size)
 	panel.position = Vector2(vp_size.x / 2 - 140, vp_size.y / 2 - 60)
 
+	# ✨ Bounce pop entrance — start tiny, overshoot, settle
+	panel.pivot_offset = panel.custom_minimum_size / 2.0
+	panel.scale = Vector2(0.01, 0.01)
+	var pop_tw := create_tween().bind_node(panel)
+	pop_tw.set_ease(Tween.EASE_OUT)
+	pop_tw.set_trans(Tween.TRANS_ELASTIC)
+	pop_tw.tween_property(panel, "scale", Vector2.ONE, 0.6)
+
 	var root_vbox := VBoxContainer.new()
 	root_vbox.add_theme_constant_override("separation", 0)
 	panel.add_child(root_vbox)
@@ -2531,9 +2547,11 @@ func _show_onboarding_dialog(lang: String = "en") -> void:
 
 func _onboarding_answer(answer: String) -> void:
 	_hide_onboarding_dialog()
+	# Show the ▶ Play button NOW so the user can see it while Tama explains
+	_show_drone_start_widget()
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "ONBOARDING_RESPONSE", "answer": answer}))
-	print("🆕 Onboarding answer: %s" % answer)
+	print("🆕 Onboarding answer: %s — drone ▶ shown" % answer)
 
 func _hide_onboarding_dialog() -> void:
 	if _onboarding_layer:
@@ -2680,8 +2698,8 @@ func _update_mouse_dodge(delta: float) -> void:
 		return
 	if _glitch_quitting or _glitch_teleporting or _dodge_departing:
 		return
-	# 🛑 L'ASTUCE : Tama se laisse faire tant que le drone attend le clic !
-	if _drone_state == "WAITING_START":
+	# 🛑 L'ASTUCE : Tama se laisse faire tant que le drone attend le clic ou pendant l'onboarding !
+	if _drone_state in ["WAITING_START", "ONBOARDING_YN"]:
 		return
 	if _quit_layer:
 		return
