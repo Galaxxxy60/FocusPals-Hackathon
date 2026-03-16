@@ -965,18 +965,29 @@ async def run_gemini_loop(pya):
 
                 # ── Conversation greeting: tell Tama to speak first ──
                 if state["current_mode"] == "conversation":
-                    state["_last_speech_ended"] = time.time()  # Init timer so nudge doesn't fire instantly
+                    state["_last_speech_ended"] = time.time()
                     state["_convo_nudge_sent"] = False
-                    # ── Onboarding: situation context, not instructions ──
-                    greeting_text = (
-                        "L'utilisateur vient de t'appeler. La session de travail n'a pas encore commencé. "
-                        "Salue-le chaleureusement, et dis-lui qu'il peut cliquer sur le bouton du drone au-dessus de ta tête "
-                        "s'il veut commencer une session de travail. Sois naturelle et détendue."
-                        if state.get("language") != "en" else
-                        "The user just called you. The work session hasn't started yet. "
-                        "Greet them warmly, and let them know they can click the button on the drone above your head "
-                        "if they want to start a work session. Be natural and relaxed."
-                    )
+                    is_post_break = state.pop("_post_break_greeting", False)
+                    if is_post_break:
+                        greeting_text = (
+                            "La pause est terminée ! Tu reviens d'une pause. "
+                            "Dis un truc bref et énergique pour accueillir l'utilisateur. UNE phrase max. "
+                            "Rappelle-lui qu'il peut cliquer sur le bouton du drone pour relancer une session."
+                            if state.get("language") != "en" else
+                            "Break is over! You're back from a break. "
+                            "Say something brief and energetic to welcome the user back. ONE sentence max. "
+                            "Remind them they can click the drone button to start a new session."
+                        )
+                    else:
+                        greeting_text = (
+                            "L'utilisateur vient de t'appeler. La session de travail n'a pas encore commencé. "
+                            "Salue-le chaleureusement, et dis-lui qu'il peut cliquer sur le bouton du drone au-dessus de ta tête "
+                            "s'il veut commencer une session de travail. Sois naturelle et détendue."
+                            if state.get("language") != "en" else
+                            "The user just called you. The work session hasn't started yet. "
+                            "Greet them warmly, and let them know they can click the button on the drone above your head "
+                            "if they want to start a work session. Be natural and relaxed."
+                        )
                     try:
                         await session.send_client_content(
                             turns=types.Content(
@@ -1078,12 +1089,7 @@ async def run_gemini_loop(pya):
 
                             data = await asyncio.to_thread(stream.read, CHUNK_SIZE, exception_on_overflow=False)
 
-                            # Gate: if mic is disabled, discard the data (keep stream alive but don't send)
-                            if not state.get("mic_allowed", True):
-                                await asyncio.sleep(0.01)
-                                continue
-
-                            # 🍅 BREAK GOODBYE: Tama says au revoir before being killed
+                            # 🍅 BREAK GOODBYE: Must run BEFORE mic gate! (mic gets disabled during goodbye)
                             if state.get("_break_goodbye_pending"):
                                 state["_break_goodbye_pending"] = False
                                 dur = state.get("_break_goodbye_duration", 5)
@@ -1102,8 +1108,6 @@ async def run_gemini_loop(pya):
                                         f"Be brief and warm. ONE sentence only."
                                     )
                                 try:
-                                    # 🛑 Couper le mic AVANT d'envoyer le texte
-                                    # Sinon Gemini détecte le bruit micro comme "barge in" et annule
                                     state["mic_allowed"] = False
                                     await session.send_realtime_input(text=goodbye_text)
                                     state["_break_goodbye_sent_at"] = time.time()
@@ -1111,24 +1115,20 @@ async def run_gemini_loop(pya):
                                     state["force_speech"] = True
                                     print(f"🍅 Goodbye envoyé à Gemini (mic coupé, {dur}min pause)")
                                 except Exception:
-                                    # If send fails, restore mic and fall through to hard kill
                                     state["mic_allowed"] = True
                                     state["is_on_break"] = True
-                                continue  # Skip this audio chunk
+                                continue
 
                             # 🍅 BREAK GOODBYE MONITOR: Wait for speech to end, then teleport + kill
                             if state.get("_break_goodbye_sent_at"):
                                 elapsed = time.time() - state["_break_goodbye_sent_at"]
                                 is_speaking = state.get("_tama_is_speaking", False)
 
-                                # Phase 1: Detect when Tama STARTS speaking
                                 if not state.get("_break_goodbye_started_speaking") and is_speaking:
                                     state["_break_goodbye_started_speaking"] = True
                                     print(f"🍅 Tama parle ! (au revoir en cours...)")
 
-                                # Phase 2: She started AND stopped → she's done
                                 speech_done = state.get("_break_goodbye_started_speaking", False) and not is_speaking and elapsed > 1.5
-                                # Timeout: if she never starts or takes too long
                                 timeout = elapsed > 12.0
 
                                 if speech_done or timeout:
@@ -1136,16 +1136,14 @@ async def run_gemini_loop(pya):
                                         print("🍅 Goodbye timeout (12s) — forçage de la déconnexion")
                                     else:
                                         print(f"🍅 Tama a fini son au revoir ({elapsed:.1f}s) — glitch dissolve !")
-                                    # Send departure glitch animation
                                     try:
                                         broadcast_to_godot(json.dumps({"command": "BREAK_DEPARTURE"}))
                                     except Exception:
                                         pass
-                                    await asyncio.sleep(1.5)  # Wait for glitch dissolve
-                                    # Clean up and execute the real stop
+                                    await asyncio.sleep(1.2)
                                     state.pop("_break_goodbye_sent_at", None)
                                     state.pop("_break_goodbye_started_speaking", None)
-                                    state["mic_allowed"] = True  # Restore mic for next session
+                                    state["mic_allowed"] = True
                                     state["is_session_active"] = False
                                     state["break_reminder_active"] = False
                                     state["is_on_break"] = True
@@ -1155,7 +1153,14 @@ async def run_gemini_loop(pya):
                                     broadcast_to_godot(json.dumps({"command": "SESSION_COMPLETE"}))
                                     print("🏁 Pomodoro: Tama a dit au revoir — Gemini va se déconnecter.")
                                     raise RuntimeError("Pomodoro session stopped")
-                                continue  # Keep reading mic while waiting for speech to end
+                                continue
+
+                            # Gate: if mic is disabled, discard the data (keep stream alive but don't send)
+                            if not state.get("mic_allowed", True):
+                                await asyncio.sleep(0.01)
+                                continue
+
+
 
                             # 🛑 FIX POMODORO: Déconnexion immédiate si session stoppée OU pause activée
                             if (not state.get("is_session_active", True) or state.get("is_on_break", False)) and state.get("current_mode") != "conversation":
@@ -1294,24 +1299,32 @@ async def run_gemini_loop(pya):
 
                     elif state.get("just_started_session"):
                         # Fresh session start — MUST come before stealth check!
-                        # Otherwise stealth reconnection (which matches when is_session_active
-                        # flips current_mode to deep_work) muzzles Tama instead of letting
-                        # her react to the session start.
                         state["just_started_session"] = False
-                        state["_task_inference_done"] = False  # Reset task inference for new session
-                        state["force_speech"] = True  # Let Gemini respond to session start
+                        state["_task_inference_done"] = False
+                        state["force_speech"] = True
                         await asyncio.sleep(1.5)
                         session_min = state.get("session_duration_minutes", 50)
                         task = state.get("current_task", "travail")
+                        is_post_break = state.pop("_post_break_restart", False)
                         try:
-                            if state.get("language") == "en":
-                                await session.send_realtime_input(
-                                    text=f"[SYSTEM] Session just started. {session_min} minutes. Current task: {task}."
-                                )
+                            if is_post_break:
+                                if state.get("language") == "en":
+                                    await session.send_realtime_input(
+                                        text=f"[SYSTEM] Break is over! You're back. New session: {session_min} minutes. Say something brief and energetic to welcome the user back from break. ONE sentence."
+                                    )
+                                else:
+                                    await session.send_realtime_input(
+                                        text=f"[SYSTEM] La pause est finie ! Tu reviens. Nouvelle session : {session_min} minutes. Dis un truc bref et énergique pour accueillir l'utilisateur. UNE phrase."
+                                    )
                             else:
-                                await session.send_realtime_input(
-                                    text=f"[SYSTEM] La session vient de commencer. {session_min} minutes. Tâche : {task}."
-                                )
+                                if state.get("language") == "en":
+                                    await session.send_realtime_input(
+                                        text=f"[SYSTEM] Session just started. {session_min} minutes. Current task: {task}."
+                                    )
+                                else:
+                                    await session.send_realtime_input(
+                                        text=f"[SYSTEM] La session vient de commencer. {session_min} minutes. Tâche : {task}."
+                                    )
                         except Exception:
                             pass
 

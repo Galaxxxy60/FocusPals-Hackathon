@@ -431,8 +431,11 @@ var _drone_model: Node3D = null       # Reference to the Wings 3D root (for scal
 var _drone_screen_mat: StandardMaterial3D = null  # Screen material (slot 1)
 var _drone_screen_vp: SubViewport = null          # SubViewport for screen text
 var _drone_break_bg: ColorRect = null              # Light overlay for break mode (#ECEBF5)
+var _drone_break_dodge_offset: Vector2 = Vector2.ZERO  # Persistent mouse dodge offset during break
 var _drone_screen_label: Label = null             # Dynamic text on the screen
 var _drone_anim: AnimationPlayer = null           # Wings AnimationPlayer (idle/dash/strike)
+var _drone_pop_player: AudioStreamPlayer = null   # DronePop.ogg SFX
+var _drone_pop_played: bool = false               # Only play pop SFX once
 var _drone_anim_names: Dictionary = {}            # Resolved anim names
 var _drone_glitch_mat: ShaderMaterial = null       # Glitch effect shader material
 var _drone_glitch_quad: MeshInstance3D = null       # Glitch quad reference
@@ -988,7 +991,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			_show_status_indicator("🛸 Drone Follow: ON (F8)", Color(0.3, 0.8, 1.0))
 			if _drone_window:
 				_drone_window.visible = true
-				_drone_window.always_on_top = true
 				_drone_window.move_to_foreground()
 		else:
 			print("🛸 [DEBUG] F8 → Drone follows mouse OFF")
@@ -1002,6 +1004,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		session_elapsed_secs += 10
 		var remaining = max(session_duration_secs - session_elapsed_secs, 0)
 		print("⏩ F10 → +10s | elapsed=%ds | remaining=%ds" % [session_elapsed_secs, remaining])
+		# Also accelerate break timer if active
+		if _drone_state == "BREAK_TIMER" and _break_timer_start > 0:
+			_break_timer_start -= 10.0
+			var break_remaining = maxf(_break_timer_duration - (Time.get_unix_time_from_system() - _break_timer_start), 0.0)
+			print("⏩ F10 → Break timer also +10s | break remaining=%.0fs" % break_remaining)
 		_show_status_indicator("⏩ +10s (%02d:%02d left)" % [remaining / 60, remaining % 60], Color(1, 0.8, 0.2))
 		# Sync to Python so both sides agree on elapsed time
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -1286,6 +1293,10 @@ func _enter_drone_spare_mode() -> void:
 	"""Drone takes over as active agent — Tama is offline."""
 	if _drone_spare_active:
 		return
+	# 🍅 Don't activate spare mode during break — Gemini disconnect is intentional
+	if _was_on_break or _drone_state == "BREAK_TIMER" or _drone_state == "WAITING_BREAK":
+		print("🛸 Spare mode blocked — on break")
+		return
 	_drone_spare_active = true
 	_drone_spare_expression = "loading"
 	_drone_spare_blink_timer = randf_range(3.0, 6.0)
@@ -1303,7 +1314,8 @@ func _enter_drone_spare_mode() -> void:
 	_drone_window.size = Vector2i(240, 180)
 	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
 	_drone_window.visible = true
-	_drone_window.always_on_top = true
+	# 🛑 NE PAS re-setter always_on_top ! Sous Windows, DWM détruit et recrée
+	# la surface de rendu → freeze du SubViewport. move_to_foreground() suffit.
 	_drone_window.move_to_foreground()
 
 	# Purple theme (normal drone look)
@@ -1805,18 +1817,51 @@ func _show_drone_start_widget() -> void:
 	print("🛸 Drone appelé ! En attente de clic...")
 
 func _drone_entrance_glitch() -> void:
-	"""Burst de glitch quand le drone apparaît — même shader que Tama."""
-	if not _drone_glitch_quad or not _drone_glitch_mat:
+	"""Dramatic entrance: scale pop + glitch burst + SFX when the drone appears."""
+	if not _drone_window or not is_instance_valid(_drone_window):
 		return
-	_drone_glitch_quad.visible = true
-	_drone_glitch_mat.set_shader_parameter("intensity", 0.0)
-	var tw = create_tween().bind_node(self)
-	tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 0.0, 1.2, 0.15)
-	tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 1.2, 0.0, 0.4)
-	tw.tween_callback(func():
-		if _drone_glitch_quad:
-			_drone_glitch_quad.visible = false
-	)
+
+	# 🔊 Pop SFX (first appearance only, quiet)
+	if not _drone_pop_played:
+		_drone_pop_played = true
+		if not _drone_pop_player:
+			_drone_pop_player = AudioStreamPlayer.new()
+			_drone_pop_player.bus = "Master"
+			_drone_pop_player.volume_db = -12.0
+			add_child(_drone_pop_player)
+			var sfx = load("res://DronePop.ogg")
+			if sfx:
+				_drone_pop_player.stream = sfx
+		if _drone_pop_player and _drone_pop_player.stream:
+			_drone_pop_player.play()
+
+	# 1. Scale pop: start tiny → overshoot → settle
+	var drone_vp := _drone_window.get_node_or_null("DroneViewport")
+	var drone_root: Node3D = null
+	if drone_vp:
+		for child in drone_vp.get_children():
+			if child is Node3D:
+				drone_root = child
+				break
+	if drone_root:
+		drone_root.scale = Vector3(0.01, 0.01, 0.01)
+		var scale_tw := create_tween().bind_node(self)
+		scale_tw.set_ease(Tween.EASE_OUT)
+		scale_tw.set_trans(Tween.TRANS_ELASTIC)
+		scale_tw.tween_property(drone_root, "scale", Vector3.ONE, 0.6)
+
+	# 2. Glitch shader burst (stronger + longer)
+	if _drone_glitch_quad and _drone_glitch_mat:
+		_drone_glitch_quad.visible = true
+		_drone_glitch_mat.set_shader_parameter("intensity", 0.0)
+		var tw = create_tween().bind_node(self)
+		tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 0.0, 1.8, 0.2)
+		tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 1.8, 0.6, 0.15)
+		tw.tween_method(func(v): _drone_glitch_mat.set_shader_parameter("intensity", v), 0.6, 0.0, 0.5)
+		tw.tween_callback(func():
+			if _drone_glitch_quad:
+				_drone_glitch_quad.visible = false
+		)
 
 func _spawn_debug_dot(pos: Vector2i) -> void:
 	"""Creates a temporary red window at the exact target coordinates for debugging."""
@@ -1905,16 +1950,20 @@ func _show_drone_timer_mode() -> void:
 	if not _drone_window or not is_instance_valid(_drone_window):
 		return
 	_drone_state = "TIMER"
-	# NE PAS utiliser FLAG_MOUSE_PASSTHROUGH ici !
-	# Sur Windows, DWM arrête de rafraîchir le contenu visuel d'une Window passthrough,
-	# ce qui gèle l'animation ET le SubViewport texte.
-	# Le handler _on_drone_gui_input ignore déjà les clics en mode TIMER.
 	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
-	# unfocusable reste true (valeur initiale) — ne JAMAIS le toggler dynamiquement
-	_drone_window.size = Vector2i(180, 140)  # Assez grand pour bien voir le timer
+	_drone_window.size = Vector2i(180, 140)
 	_drone_window.visible = true
 	_reset_drone_style()
 	_drone_play("idle")
+	# Set correct initial time immediately (avoid stale text flash)
+	if _drone_screen_label:
+		var remaining := session_duration_secs - session_elapsed_secs
+		if remaining > 0:
+			var mins_i := int(remaining) / 60
+			var secs_i := int(remaining) % 60
+			_drone_screen_label.text = "%02d:%02d" % [mins_i, secs_i]
+		else:
+			_drone_screen_label.text = "%02d:00" % [session_duration_secs / 60]
 	# Glitch d'entrée si on ne l'a pas déjà fait
 	if not _drone_glitch_quad or not _drone_glitch_quad.visible:
 		_drone_entrance_glitch()
@@ -1934,8 +1983,6 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 
 			# Switch to timer mode via new function
 			_show_drone_timer_mode()
-			if _drone_screen_label:
-				_drone_screen_label.text = "--:--"
 			print("🛸 Drone → mode TIMER (anims: %s)" % str(_drone_anim_names))
 		elif _drone_state == "WAITING_BREAK":
 			print("▶️ Drone cliqué ! Démarrage de la pause...")
@@ -1983,11 +2030,39 @@ func _update_drone_timer() -> void:
 
 	# ── Positionnement organique (SKIP pendant STRIKING — le tween gère la position) ──
 	if _drone_state != "STRIKING":
-		# ── Calcul de la Cible (Au-dessus de la tête) ──
+		# ── Calcul de la Cible ──
 		var target_x: float = 0.0
 		var target_y: float = 0.0
 
-		if head_screen_pos.x > 0 and head_screen_pos.y > 0 and _tama_window:
+		if _drone_state == "BREAK_TIMER":
+			# 🍅 Mode pause: position bas-droite (zone radial menu / home Tama)
+			# Tama est invisible, le drone ne peut plus la suivre
+			var scr_idx := _get_tama_screen_idx()
+			var usable := DisplayServer.screen_get_usable_rect(scr_idx)
+			var base_x := float(usable.position.x + usable.size.x) - _drone_window.size.x - 40.0
+			var base_y := float(usable.position.y + usable.size.y) - _drone_window.size.y - 80.0
+
+			# 🐭 Mouse dodge: persistent offset that stays after push
+			var mouse_pos := DisplayServer.mouse_get_position()
+			var drone_center := Vector2(_drone_window.position) + Vector2(_drone_window.size) / 2.0
+			var dist := drone_center.distance_to(Vector2(mouse_pos))
+			if dist < 120.0:
+				# Push drone away — accumulate offset
+				var push_dir := (drone_center - Vector2(mouse_pos)).normalized()
+				_drone_break_dodge_offset += push_dir * 300.0 * delta
+				# Cap the offset magnitude
+				if _drone_break_dodge_offset.length() > 400.0:
+					_drone_break_dodge_offset = _drone_break_dodge_offset.normalized() * 400.0
+			elif dist > 250.0:
+				# Mouse is far — slowly decay offset back to zero (~5s)
+				_drone_break_dodge_offset = _drone_break_dodge_offset.lerp(Vector2.ZERO, 0.4 * delta)
+
+			# Apply offset + clamp inside usable area
+			target_x = base_x + _drone_break_dodge_offset.x
+			target_y = base_y + _drone_break_dodge_offset.y
+			target_x = clampf(target_x, float(usable.position.x) + 10.0, float(usable.position.x + usable.size.x) - _drone_window.size.x - 10.0)
+			target_y = clampf(target_y, float(usable.position.y) + 10.0, float(usable.position.y + usable.size.y) - _drone_window.size.y - 10.0)
+		elif head_screen_pos.x > 0 and head_screen_pos.y > 0 and _tama_window:
 			target_x = float(_tama_window.position.x) + head_screen_pos.x - _drone_window.size.x / 2.0
 			target_y = float(_tama_window.position.y) + head_screen_pos.y - _drone_window.size.y - 60.0  # Bien au-dessus de la tête
 		else:
@@ -2002,9 +2077,11 @@ func _update_drone_timer() -> void:
 
 		# ── Déplacement Lerp Fluide ──
 		var current_pos = Vector2(_drone_window.position)
-		var new_pos = current_pos.lerp(Vector2(target_x, target_y), 6.0 * delta)
-		if current_pos.distance_to(Vector2(target_x, target_y)) > 600:
-			new_pos = Vector2(target_x, target_y)  # Téléportation si Tama a fait un grand bond
+		var lerp_speed := 2.0 if _drone_state == "BREAK_TIMER" else 6.0
+		var new_pos = current_pos.lerp(Vector2(target_x, target_y), lerp_speed * delta)
+		# Teleport on huge jumps — but NOT during break (drone should float gently)
+		if _drone_state != "BREAK_TIMER" and current_pos.distance_to(Vector2(target_x, target_y)) > 600:
+			new_pos = Vector2(target_x, target_y)
 		_drone_window.position = Vector2i(new_pos)
 
 	# ── Mise à jour du Texte ──
@@ -2033,18 +2110,39 @@ func _update_drone_timer() -> void:
 		if remaining_f <= 0.0:
 			if _session_ding_player and _session_ding_player.stream:
 				_session_ding_player.play()
-			print("⏰ Fin de la pause ! En attente du prochain lancement Pomodoro.")
+			print("⏰ Fin de la pause ! Tama revient (en attente de START)")
 			
-			# Réafficher la fenêtre de Tama pour qu'elle attende avec nous
+			# Reset break state
 			_was_on_break = false
+			_drone_break_dodge_offset = Vector2.ZERO
+			_break_popup_visible = false
+
+			# Reset BS_Appear (flatten was set to 1.0 during departure)
+			if _body_mesh and _bs_appear >= 0:
+				_body_mesh.set_blend_shape_value(_bs_appear, 1.0)  # Start flat
+
+			# Make window visible but Tama still "flat" — ghost entrance
 			if _tama_window:
 				_tama_window.visible = true
 			var tama_node = get_node_or_null("Tama")
 			if tama_node:
 				tama_node.visible = true
-				_trigger_entrance()
-				
-			# Afficher ▶ START et sortir de la fonction
+
+			# Full ghost entrance (silhouette → Hello anim → materialized)
+			_show_ghost_silhouette()
+			_waiting_for_voice = true
+			var reentry_tw := create_tween().bind_node(self)
+			reentry_tw.tween_interval(2.0)
+			reentry_tw.tween_callback(func():
+				if _ghost_active:
+					_materialize_from_ghost()
+			)
+
+			# 🍅 Trigger conversation mode (Tama says "break's over!") + show START button
+			session_elapsed_secs = 0
+			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+				ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "talk", "context": "break_ended"}))
+				print("💬 Conversation post-pause lancée")
 			_show_drone_start_widget()
 			return
 		
@@ -2354,7 +2452,12 @@ func _reposition_bottom_right() -> void:
 	## Anchor Tama window to bottom-right of usable screen area (excludes taskbar)
 	if not _tama_window or not is_instance_valid(_tama_window):
 		return
-	var scr_idx := _get_tama_screen_idx()
+	# On first appearance, force primary screen (avoid spawning on secondary)
+	var scr_idx: int
+	if not _started:
+		scr_idx = DisplayServer.get_primary_screen()
+	else:
+		scr_idx = _get_tama_screen_idx()
 	var usable := DisplayServer.screen_get_usable_rect(scr_idx)
 	var win_size := _tama_window.size
 	var x := usable.position.x + usable.size.x - win_size.x
@@ -2852,7 +2955,6 @@ func _process(delta: float) -> void:
 		var mouse_pos := DisplayServer.mouse_get_position()
 		var half := _drone_window.size / 2
 		_drone_window.position = Vector2i(mouse_pos.x - half.x, mouse_pos.y - half.y - 40)
-		_drone_window.always_on_top = true
 
 	# ─── Strike Fire ──────────────────────────────────────────
 	# Handled by AnimTree module (strike_fire_point signal → _on_tree_strike_fire)
@@ -2968,6 +3070,11 @@ func _handle_message(raw: String) -> void:
 		_start_quit_glitch()
 		return
 	elif command == "START_SESSION":
+		# Sync session duration BEFORE anything else (fixes first-frame display)
+		var dur_secs = data.get("session_duration_secs", 0)
+		if dur_secs > 0:
+			session_duration_secs = int(dur_secs)
+			session_elapsed_secs = 0
 		if not session_active:
 			session_active = true
 			conversation_active = false  # Session overrides conversation
@@ -2993,25 +3100,40 @@ func _handle_message(raw: String) -> void:
 			_show_ghost_silhouette()
 		return
 	elif command == "BREAK_DEPARTURE":
-		# 🍅 Glitch dissolve effect — Tama "teleports" out before the break
-		print("🍅 BREAK_DEPARTURE — Glitch dissolve !")
-		_glitch_intensity = GLITCH_TELEPORT_START * 1.5  # Extra dramatic
-		_glitch_target = GLITCH_TELEPORT_START * 1.5
+		# 🍅 Tama "teleports out" — immediate glitch + flatten + hide
+		# NO go_away() — it requires multi-step transitions from ON_WALL and is unreliable
+		print("🍅 BREAK_DEPARTURE — Glitch + flatten dissolve !")
+
+		# Block dodges immediately
+		_was_on_break = true
+
+		# Phase 1: GLITCH ramps up immediately
+		_glitch_intensity = GLITCH_TELEPORT_START * 2.5
+		_glitch_target = GLITCH_TELEPORT_START * 2.5
 		if _glitch_quad:
 			_glitch_quad.visible = true
 		if _glitch_material:
 			_glitch_material.set_shader_parameter("intensity", _glitch_intensity)
-		# Ramp up glitch then fade Tama out
+
+		# Phase 2: Flatten Tama (BS_Appear → 1.0) + fade glitch → hide
 		var tw := create_tween().bind_node(self)
-		tw.tween_interval(0.3)
+		tw.tween_method(func(v: float):
+			if _body_mesh and _bs_appear >= 0:
+				_body_mesh.set_blend_shape_value(_bs_appear, v)
+		, 0.0, 1.0, 0.6).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_EXPO)
+
+		# Phase 3: She's flat → hide everything
 		tw.tween_callback(func():
-			_glitch_target = 0.0  # Start fading the glitch
+			_glitch_target = 0.0  # Fade out glitch
 			var tama_node = get_node_or_null("Tama")
 			if tama_node:
 				tama_node.visible = false
 			if _tama_window:
 				_tama_window.visible = false
-			print("🍅 Tama disparue (glitch dissolve terminé)")
+			# Set anim tree to OFF_SCREEN so she can re-enter later
+			if _anim_tree_module:
+				_anim_tree_module.current_state = _anim_tree_module.State.OFF_SCREEN
+			print("🍅 Tama disparue ! (glitch + flatten)")
 		)
 		return
 	elif command == "BREAK_STARTED":
@@ -3605,16 +3727,17 @@ func _handle_message(raw: String) -> void:
 		print("☕ Break started! (%.0f min), Tama est partie en pause" % break_dur_min)
 		
 	elif not on_break and _was_on_break:
-		# Break ended — hide overlay
+		# Break ended — but ONLY if the drone isn't still showing the break timer
+		# (Race condition: state sync may arrive with is_on_break=false before
+		#  BREAK_STARTED command sets it back to true)
+		if _drone_state == "BREAK_TIMER":
+			print("☕ Break end signal ignored — drone still in BREAK_TIMER mode")
+			return
+		# Hide overlay
 		if _tama_ui:
 			_tama_ui.hide_break_overlay()
 		if _session_ding_player and _session_ding_player.stream:
 			_session_ding_player.play()
-			
-		# Hide the drone break timer
-		if _drone_state == "BREAK_TIMER":
-			_drone_state = "HIDDEN"
-			_drone_exit_glitch()
 			
 		# Réafficher la fenêtre de Tama à son retour
 		if _tama_window:
@@ -3622,7 +3745,7 @@ func _handle_message(raw: String) -> void:
 		var tama_node = get_node_or_null("Tama")
 		if tama_node:
 			tama_node.visible = true
-			_trigger_entrance() # Replay WalkIn/Teleport if possible or just appear
+			_trigger_entrance()
 			
 		print("💪 Break ended — back to work!")
 	_was_on_break = on_break
@@ -4296,8 +4419,11 @@ func _trigger_entrance() -> void:
 	# Show drone START if it was pending (fallback if ghost was skipped)
 	if _drone_start_pending:
 		_drone_start_pending = false
-		_show_drone_start_widget()
-		print("🛸 Drone START affiché (entrée sans ghost)")
+		# Delay drone — let Tama finish greeting first
+		var drone_tw2 := create_tween().bind_node(self)
+		drone_tw2.tween_interval(4.0)
+		drone_tw2.tween_callback(_show_drone_start_widget)
+		print("🛸 Drone START différé (4s) — Tama parle d'abord")
 
 
 func _setup_greeting_audio() -> void:
@@ -4374,9 +4500,9 @@ func _show_ghost_silhouette() -> void:
 	if _drone_start_pending:
 		_drone_start_pending = false
 		var drone_tw := create_tween().bind_node(self)
-		drone_tw.tween_interval(2.0)  # Let Tama's ghost unfold first
+		drone_tw.tween_interval(5.0)  # Let Tama materialize + finish greeting
 		drone_tw.tween_callback(_show_drone_start_widget)
-		print("🛸 Drone START différé — arrivera dans 2s")
+		print("🛸 Drone START différé — arrivera dans 5s")
 	print("👻 Hologram ALPHA_HASH activé — dissolution progressive...")
 
 	# 8. Wink immédiat (E9 + hide left iris)

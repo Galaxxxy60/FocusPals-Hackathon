@@ -64,7 +64,7 @@ def _update_click_through():
 
 # ─── Menu Action Handler ───────────────────────────────────
 
-def _handle_menu_action(action: str):
+def _handle_menu_action(action: str, data: dict = None):
     """Handle radial menu item clicks."""
     if action in ("session", "start_session", "call_tama"):
         if not state["is_session_active"]:
@@ -72,15 +72,19 @@ def _handle_menu_action(action: str):
         else:
             print("⏸️ Session déjà en cours.")
     elif action == "talk":
+        context = data.get("context", "") if data else ""
         if state["is_session_active"]:
             print("🫰 Déjà en session Deep Work — Tama t'écoute déjà !")
         elif state["conversation_requested"] or state["current_mode"] == "conversation":
             print("🫰 Hey Tama déjà actif.")
         else:
             state["conversation_requested"] = True
-            print("🫰 Hey Tama activé !")
-            # Immediately notify Godot that we're connecting
-            # This gives instant visual feedback before the Gemini API connection is established
+            if context == "break_ended":
+                state["_post_break_greeting"] = True
+                state["_api_connections"] = 0  # Not a crash — fresh connection
+                print("🫰 Post-break conversation activée !")
+            else:
+                print("🫰 Hey Tama activé !")
             import websockets as _ws_lib
             _connecting_msg = json.dumps({"command": "CONNECTION_STATUS", "status": "connecting"})
             _ws_lib.broadcast(state["connected_ws_clients"], _connecting_msg)
@@ -353,7 +357,7 @@ async def ws_handler(websocket):
                     _update_click_through()  # manager checks all flags
                 elif cmd == "MENU_ACTION":
                     action = data.get("action", "")
-                    _handle_menu_action(action)
+                    _handle_menu_action(action, data)
                 elif cmd == "SHOW_QUIT":
                     state["_quit_dialog_open"] = True
                     _update_click_through()

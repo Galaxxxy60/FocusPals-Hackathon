@@ -86,6 +86,8 @@ def quit_app(icon, item):
 def start_session(source="UI"):
     """Start a deep work session."""
     if not state["is_session_active"]:
+        # Detect if this is a post-break restart
+        was_on_break = state.get("is_on_break", False)
         state["is_session_active"] = True
         state["session_start_time"] = time.time()
         state["current_break_index"] = 0
@@ -93,12 +95,17 @@ def start_session(source="UI"):
         state["is_on_break"] = False
         state["session_completed"] = False
         state["just_started_session"] = True
+        if was_on_break:
+            state["_post_break_restart"] = True
+            # Reset stealth counters — the disconnect was intentional (break), not a crash
+            # Without this, Gemini reconnects in stealth mode and stays MUZZLED
+            state["_api_connections"] = 0
         # Log dynamic break schedule
         total_min = state.get("session_duration_minutes", 50)
         dyn_cp, dyn_dur = get_dynamic_break_checkpoints(total_min)
         print(f"  📋 Session: {total_min}min | Breaks at: {dyn_cp} | Durations: {dyn_dur}")
         update_display(TamaState.CALM, f"🚀 SESSION COMMENCÉE via {source} !")
-        start_msg = json.dumps({"command": "START_SESSION"})
+        start_msg = json.dumps({"command": "START_SESSION", "session_duration_secs": total_min * 60})
         broadcast_to_godot(start_msg)
 
 
