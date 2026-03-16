@@ -3413,17 +3413,18 @@ func _handle_message(raw: String) -> void:
 				_anim_tree_module.onboarding_hold = false  # Safety: release hold
 				if _anim_tree_module.current_state == _anim_tree_module.State.STAND_TALK:
 					_anim_tree_module.end_stand_talk()
-				if _anim_tree_module.is_on_ground():
-					if _anim_tree_module.current_state == 8:  # GROUND_TALK
-						_anim_tree_module.end_ground_talk()
-				elif _anim_tree_module.current_state == 2:  # WALL_TALK
+				if _anim_tree_module.current_state == _anim_tree_module.State.LIE_TALK:
+					_anim_tree_module.end_lie_talk()
+				elif _anim_tree_module.current_state == _anim_tree_module.State.GROUND_TALK:
+					_anim_tree_module.end_ground_talk()
+				elif _anim_tree_module.current_state == _anim_tree_module.State.WALL_TALK:
 					_anim_tree_module.end_wall_talk()
 				elif _anim_tree_module.is_standing():
 					if _dodge_active:
 						_anim_tree_module.sit_ground()
 					else:
 						_anim_tree_module.return_to_wall()
-				# else already on wall/ground — nothing to do
+				# else already on wall/ground/lying — nothing to do
 		return
 	elif command == "SHOW_RADIAL":
 		if settings_panel and settings_panel.is_open:

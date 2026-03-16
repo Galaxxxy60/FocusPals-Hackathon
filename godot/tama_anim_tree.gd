@@ -23,7 +23,7 @@ signal strike_sequence_started()  # Strike sequence just kicked off
 
 # ─── States ───────────────────────────────────────────────────
 enum State { OFF_SCREEN, ON_WALL, WALL_TALK, LEAVING_WALL, STANDING, RETURNING_WALL, STRIKING,
-	ON_GROUND, GROUND_TALK, LEAVING_GROUND, SITTING_GROUND, STAND_TALK }
+	ON_GROUND, GROUND_TALK, LEAVING_GROUND, SITTING_GROUND, STAND_TALK, LYING, LIE_TALK }
 var current_state: int = State.OFF_SCREEN
 
 # ─── Internals ────────────────────────────────────────────────
@@ -54,10 +54,16 @@ const WANTED = {
 	"idle_ground_standup": "Idle_ground_StandUp",
 	"hello": "Hello",
 	"stand_talk": "StandTalk",
+	"idle_lie": "Idle_lie",
+	"idle_lie_talk": "Idle_lie_talk",
+	"idle_wall_thinks": "Idle_wall_Thinks",
+	"idle_wall_write": "Idle_wall_write",
+	"idle_ground_thinks": "Idle_ground_Thinks",
+	"idle_ground_write": "Idle_ground_write",
 }
 
 # Which animations should loop
-const LOOPS = ["idle_wall", "idle", "idle_ground"]
+const LOOPS = ["idle_wall", "idle", "idle_ground", "idle_lie", "idle_wall_write", "idle_ground_write"]
 
 # ─── Strike Sync (animation-position trigger) ─────────────────────
 # Configure at which SECOND in the animation the hand should fire.
@@ -83,6 +89,18 @@ var onboarding_hold: bool = false
 var _idle_hair_timer: float = 0.0
 const IDLE_HAIR_MIN_CD: float = 20.0   # Min seconds between hair fixes
 const IDLE_HAIR_MAX_CD: float = 60.0   # Max seconds between hair fixes
+
+# ─── Random Thinks Timer (wall & ground) ────────────────
+var _idle_thinks_timer: float = 0.0
+const IDLE_THINKS_MIN_CD: float = 30.0  # Min seconds before random thinks
+const IDLE_THINKS_MAX_CD: float = 90.0  # Max seconds before random thinks
+var _thinks_write_timer: float = 0.0    # Timer for write phase inside thinks
+const THINKS_WRITE_DELAY: float = 3.0   # Seconds in thinks pose before starting write
+const THINKS_WRITE_DURATION: float = 8.0 # How long she writes before reversing out
+var _in_thinks_chain: bool = false       # True during thinks/write sequence
+
+# ─── Lying random chance ────────────────────────────────
+const LIE_PROBABILITY: float = 0.3       # 30% chance to lie instead of sit
 
 # ─── Crossfade durations per transition type ─────────────────
 const XFADE_TRANSITION: float = 0.15   # Wall ↔ OffThewall
@@ -179,9 +197,21 @@ func _build_tree() -> void:
 		"sit_ground": Vector2(600, 250),  # reverse standup
 		# Hello (startup greeting)
 		"hello": Vector2(-400, 0),
-		# StandTalk (talking while standing — onboarding explanation)
+		# StandTalk (talking while standing)
 		"stand_talk": Vector2(400, -100),
 		"stand_talk_return": Vector2(400, -200),
+		# Lying (alternative ground pose)
+		"idle_lie": Vector2(1000, 100),
+		"idle_lie_talk": Vector2(1000, -50),
+		"idle_lie_talk_return": Vector2(1000, -150),
+		# Wall Thinks/Write chain
+		"idle_wall_thinks": Vector2(-100, -100),
+		"idle_wall_thinks_return": Vector2(-100, -200),
+		"idle_wall_write": Vector2(-200, -100),
+		# Ground Thinks/Write chain
+		"idle_ground_thinks": Vector2(800, -200),
+		"idle_ground_thinks_return": Vector2(800, -300),
+		"idle_ground_write": Vector2(900, -200),
 	}
 
 	for key in _names:
@@ -336,6 +366,75 @@ func _build_tree() -> void:
 		# Allow standing up from ground talk
 		_add_trans(sm, "idle_ground_talk", "idle_ground_standup", XFADE_TRANSITION)
 
+	# ── Lying System (alternative ground pose) ───────────────
+	if _names.has("idle_lie"):
+		# sit_ground can also lead to idle_lie (choice made in code)
+		if _names.has("idle_ground_standup"):
+			_add_trans(sm, "sit_ground", "idle_lie", XFADE_TRANSITION)
+		# From lying → direct to idle (TP, no standup anim exists)
+		_add_trans(sm, "idle_lie", "idle", XFADE_MOOD)
+		# Lying → strike
+		_add_trans(sm, "idle_lie", "strike_base", XFADE_STRIKE)
+		_add_trans(sm, "strike_base", "idle_lie", XFADE_MOOD)
+
+		# idle_lie_talk — same talk pattern
+		if _names.has("idle_lie_talk"):
+			var rev_lt := AnimationNodeAnimation.new()
+			rev_lt.animation = _names["idle_lie_talk"]
+			rev_lt.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
+			sm.add_node("idle_lie_talk_return", rev_lt, positions.get("idle_lie_talk_return", Vector2.ZERO))
+			_add_trans(sm, "idle_lie", "idle_lie_talk", XFADE_WALL_TALK)
+			_add_trans(sm, "idle_lie_talk", "idle_lie_talk_return", XFADE_WALL_TALK)
+			_add_trans(sm, "idle_lie_talk_return", "idle_lie", XFADE_WALL_TALK, true)
+			# Can TP out from lie talk too
+			_add_trans(sm, "idle_lie_talk", "idle", XFADE_MOOD)
+			_add_trans(sm, "idle_lie_talk", "strike_base", XFADE_STRIKE)
+
+	# ── Wall Thinks/Write Chain ──────────────────────────
+	if _names.has("idle_wall_thinks"):
+		var rev_wt := AnimationNodeAnimation.new()
+		rev_wt.animation = _names["idle_wall_thinks"]
+		rev_wt.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
+		sm.add_node("idle_wall_thinks_return", rev_wt, positions.get("idle_wall_thinks_return", Vector2.ZERO))
+		# idle_wall → thinks (forward, holds)
+		_add_trans(sm, "idle_wall", "idle_wall_thinks", XFADE_WALL_TALK)
+		# thinks → write (optional loop)
+		if _names.has("idle_wall_write"):
+			_add_trans(sm, "idle_wall_thinks", "idle_wall_write", XFADE_WALL_TALK)
+			_add_trans(sm, "idle_wall_write", "idle_wall_thinks_return", XFADE_WALL_TALK)
+		# thinks → return (skip write)
+		_add_trans(sm, "idle_wall_thinks", "idle_wall_thinks_return", XFADE_WALL_TALK)
+		# return → idle_wall (auto)
+		_add_trans(sm, "idle_wall_thinks_return", "idle_wall", XFADE_WALL_TALK, true)
+		# Interruptions
+		_add_trans(sm, "idle_wall_thinks", "off_wall", XFADE_TRANSITION)
+		if _names.has("idle_wall_write"):
+			_add_trans(sm, "idle_wall_write", "off_wall", XFADE_TRANSITION)
+		if _names.has("idle_wall_talk"):
+			_add_trans(sm, "idle_wall_thinks", "idle_wall_talk", XFADE_WALL_TALK)
+
+	# ── Ground Thinks/Write Chain ───────────────────────
+	if _names.has("idle_ground_thinks"):
+		var rev_gt := AnimationNodeAnimation.new()
+		rev_gt.animation = _names["idle_ground_thinks"]
+		rev_gt.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
+		sm.add_node("idle_ground_thinks_return", rev_gt, positions.get("idle_ground_thinks_return", Vector2.ZERO))
+		# idle_ground → thinks
+		_add_trans(sm, "idle_ground", "idle_ground_thinks", XFADE_WALL_TALK)
+		# thinks → write (optional loop)
+		if _names.has("idle_ground_write"):
+			_add_trans(sm, "idle_ground_thinks", "idle_ground_write", XFADE_WALL_TALK)
+			_add_trans(sm, "idle_ground_write", "idle_ground_thinks_return", XFADE_WALL_TALK)
+		# thinks → return (skip write)
+		_add_trans(sm, "idle_ground_thinks", "idle_ground_thinks_return", XFADE_WALL_TALK)
+		# return → idle_ground (auto)
+		_add_trans(sm, "idle_ground_thinks_return", "idle_ground", XFADE_WALL_TALK, true)
+		# Interruptions
+		if _names.has("idle_ground_standup"):
+			_add_trans(sm, "idle_ground_thinks", "idle_ground_standup", XFADE_TRANSITION)
+			if _names.has("idle_ground_write"):
+				_add_trans(sm, "idle_ground_write", "idle_ground_standup", XFADE_TRANSITION)
+
 	# ── Create AnimationTree node ──
 	_tree = AnimationTree.new()
 	_tree.name = "TamaAnimTree"
@@ -468,6 +567,12 @@ func go_away() -> void:
 		stand_from_ground()
 		print("🎬 → go_away() — standing from ground first, then GoAway")
 		return
+	# If lying, TP to standing first → queue go_away
+	if current_state == State.LYING or current_state == State.LIE_TALK:
+		_queued_standing = "go_away"
+		force_stand_from_lie()
+		print("🎬 → go_away() — TP from lying to standing first, then GoAway")
+		return
 	if current_state == State.LEAVING_WALL or current_state == State.RETURNING_WALL \
 		or current_state == State.LEAVING_GROUND or current_state == State.SITTING_GROUND:
 		_queued_standing = "go_away"
@@ -495,6 +600,19 @@ func return_to_wall() -> void:
 		# End ground talk, stay sitting
 		end_ground_talk()
 		print("🎬 return_to_wall() → end_ground_talk() (ground equivalent)")
+		return
+	if current_state == State.LIE_TALK:
+		end_lie_talk()
+		print("🎬 return_to_wall() → end_lie_talk() (lying equivalent)")
+		return
+	if current_state == State.LYING:
+		print("🎬 return_to_wall() ignored — lying on ground (state: LYING)")
+		return
+	if current_state == State.STAND_TALK:
+		end_stand_talk()
+		# After stand_talk_return → idle, then return_wall
+		# This will need a queued action — but for now we let it go to idle
+		print("🎬 return_to_wall() → end_stand_talk() first")
 		return
 	if current_state == State.LEAVING_GROUND:
 		print("🎬 return_to_wall() ignored — currently leaving ground")
@@ -539,6 +657,13 @@ func set_standing_anim(key: String) -> void:
 		if _queued_standing not in ["strike", "go_away"]:
 			_queued_standing = key
 		stand_from_ground()
+		return
+
+	if current_state == State.LYING or current_state == State.LIE_TALK:
+		# No standup anim for lie — TP directly to standing + queue the mood
+		if _queued_standing not in ["strike", "go_away"]:
+			_queued_standing = key
+		force_stand_from_lie()
 		return
 
 	if current_state == State.LEAVING_WALL or current_state == State.LEAVING_GROUND:
@@ -678,6 +803,92 @@ func end_ground_talk() -> void:
 	print("🎬 → end_ground_talk()")
 
 
+# ─── Lying API (alternative ground pose) ──────────────────────
+
+func play_lie_talk() -> void:
+	"""Play Idle_lie_talk — she talks while lying down."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.LYING:
+		print("🎬 lie_talk ignored — not lying (state: %s)" % State.keys()[current_state])
+		return
+	if not _names.has("idle_lie_talk"):
+		return
+	_playback.travel("idle_lie_talk")
+	print("🎬 → play_lie_talk()")
+
+
+func end_lie_talk() -> void:
+	"""End lie talk — plays reverse back to idle_lie."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.LIE_TALK:
+		return
+	_set_state(State.LYING)
+	_playback.travel("idle_lie_talk_return")
+	print("🎬 → end_lie_talk()")
+
+
+func force_stand_from_lie() -> void:
+	"""LYING → direct TP to idle (STANDING). No standup animation exists for lying."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.LYING and current_state != State.LIE_TALK:
+		return
+	_playback.travel("idle")
+	_set_state(State.STANDING)
+	_current_standing = "idle"
+	print("🎬 → force_stand_from_lie() — TP to idle!")
+
+
+# ─── Thinks/Write API (wall & ground) ────────────────────────
+
+func trigger_wall_thinks() -> void:
+	"""ON_WALL → idle_wall_thinks. Random cosmetic variation."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.ON_WALL:
+		return
+	if not _names.has("idle_wall_thinks"):
+		return
+	_in_thinks_chain = true
+	_thinks_write_timer = 0.0
+	_playback.travel("idle_wall_thinks")
+	print("🎬 → trigger_wall_thinks()")
+
+
+func end_wall_thinks() -> void:
+	"""End thinks/write chain on wall → reverse thinks → idle_wall."""
+	if not _ready_ok or not _playback:
+		return
+	_in_thinks_chain = false
+	_playback.travel("idle_wall_thinks_return")
+	print("🎬 → end_wall_thinks()")
+
+
+func trigger_ground_thinks() -> void:
+	"""ON_GROUND → idle_ground_thinks. Random cosmetic variation."""
+	if not _ready_ok or not _playback:
+		return
+	if current_state != State.ON_GROUND:
+		return
+	if not _names.has("idle_ground_thinks"):
+		return
+	_in_thinks_chain = true
+	_thinks_write_timer = 0.0
+	_playback.travel("idle_ground_thinks")
+	print("🎬 → trigger_ground_thinks()")
+
+
+func end_ground_thinks() -> void:
+	"""End thinks/write chain on ground → reverse thinks → idle_ground."""
+	if not _ready_ok or not _playback:
+		return
+	_in_thinks_chain = false
+	_playback.travel("idle_ground_thinks_return")
+	print("🎬 → end_ground_thinks()")
+
+
 func play_strike() -> void:
 	"""Enter strike sequence. Must be STANDING first."""
 	if not _ready_ok or not _playback:
@@ -732,8 +943,11 @@ func apply_mood(mood: String, intensity: float) -> void:
 			if is_on_wall() and _names.has("idle_wall_talk"):
 				play_wall_talk()
 				return
-			if is_on_ground() and _names.has("idle_ground_talk"):
+			if current_state == State.ON_GROUND and _names.has("idle_ground_talk"):
 				play_ground_talk()
+				return
+			if current_state == State.LYING and _names.has("idle_lie_talk"):
+				play_lie_talk()
 				return
 			key = "idle"
 		"curious":
@@ -741,8 +955,11 @@ func apply_mood(mood: String, intensity: float) -> void:
 				if is_on_wall() and _names.has("idle_wall_talk"):
 					play_wall_talk()
 					return
-				if is_on_ground() and _names.has("idle_ground_talk"):
+				if current_state == State.ON_GROUND and _names.has("idle_ground_talk"):
 					play_ground_talk()
+					return
+				if current_state == State.LYING and _names.has("idle_lie_talk"):
+					play_lie_talk()
 					return
 			key = "suspicious"
 		"suspicious", "sarcastic", "disappointed":
@@ -757,8 +974,11 @@ func apply_mood(mood: String, intensity: float) -> void:
 			if is_on_wall() and _names.has("idle_wall_talk"):
 				play_wall_talk()
 				return
-			if is_on_ground() and _names.has("idle_ground_talk"):
+			if current_state == State.ON_GROUND and _names.has("idle_ground_talk"):
 				play_ground_talk()
+				return
+			if current_state == State.LYING and _names.has("idle_lie_talk"):
+				play_lie_talk()
 				return
 			key = "idle"
 	set_standing_anim(key)
@@ -771,7 +991,7 @@ func is_on_wall() -> bool:
 	return current_state == State.ON_WALL or current_state == State.WALL_TALK
 
 func is_on_ground() -> bool:
-	return current_state == State.ON_GROUND or current_state == State.GROUND_TALK
+	return current_state in [State.ON_GROUND, State.GROUND_TALK, State.LYING, State.LIE_TALK]
 
 func is_standing() -> bool:
 	return current_state == State.STANDING or current_state == State.STAND_TALK
@@ -845,6 +1065,46 @@ func _process(delta: float) -> void:
 			_playback.travel("idle_wall_hair")
 			_idle_hair_timer = randf_range(IDLE_HAIR_MIN_CD, IDLE_HAIR_MAX_CD)
 			print("🎬 → idle_wall_hair (random trigger, next in %.0fs)" % _idle_hair_timer)
+
+	# ── Random thinks trigger (wall & ground) ──
+	if not _in_thinks_chain:
+		if (current_state == State.ON_WALL and cur_node == "idle_wall" and _names.has("idle_wall_thinks")) \
+			or (current_state == State.ON_GROUND and cur_node == "idle_ground" and _names.has("idle_ground_thinks")):
+			_idle_thinks_timer -= delta
+			if _idle_thinks_timer <= 0:
+				_idle_thinks_timer = randf_range(IDLE_THINKS_MIN_CD, IDLE_THINKS_MAX_CD)
+				if current_state == State.ON_WALL:
+					trigger_wall_thinks()
+				else:
+					trigger_ground_thinks()
+
+	# ── Thinks chain management (write delay & duration) ──
+	if _in_thinks_chain:
+		_thinks_write_timer += delta
+		# Phase 1: After delay, start writing (if write anim exists)
+		if cur_node in ["idle_wall_thinks", "idle_ground_thinks"]:
+			if _thinks_write_timer >= THINKS_WRITE_DELAY:
+				if cur_node == "idle_wall_thinks" and _names.has("idle_wall_write"):
+					_playback.travel("idle_wall_write")
+					_thinks_write_timer = 0.0
+					print("🎬 thinks → write (wall)")
+				elif cur_node == "idle_ground_thinks" and _names.has("idle_ground_write"):
+					_playback.travel("idle_ground_write")
+					_thinks_write_timer = 0.0
+					print("🎬 thinks → write (ground)")
+				else:
+					# No write anim → just reverse out
+					if cur_node == "idle_wall_thinks":
+						end_wall_thinks()
+					else:
+						end_ground_thinks()
+		# Phase 2: After writing for a while, reverse out
+		elif cur_node in ["idle_wall_write", "idle_ground_write"]:
+			if _thinks_write_timer >= THINKS_WRITE_DURATION:
+				if cur_node == "idle_wall_write":
+					end_wall_thinks()
+				else:
+					end_ground_thinks()
 
 	# ── Strike fire detection (animation position trigger) ──
 	if current_state == State.STRIKING:
@@ -977,9 +1237,8 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 			elif q == "go_away": go_away()
 			else: set_standing_anim(q)
 
-	# sit_ground just ended → on ground
+	# sit_ground just ended → on ground (or lying randomly)
 	elif from_node == "sit_ground" and to_node == "idle_ground":
-		_set_state(State.ON_GROUND)
 		if _queued_standing != "":
 			var q := _queued_standing
 			_queued_standing = ""
@@ -987,7 +1246,14 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 			elif q == "go_away": go_away()
 			else: set_standing_anim(q)
 		else:
-			print("🎬 Sitting on ground")
+			# 🆕 Random chance to lie down instead of sitting
+			if _names.has("idle_lie") and randf() < LIE_PROBABILITY:
+				_playback.travel("idle_lie")
+				# State will be set to LYING when sit_ground→idle_lie is detected
+				print("🎬 Sitting → lying down! (%.0f%% chance)" % (LIE_PROBABILITY * 100))
+			else:
+				_set_state(State.ON_GROUND)
+				print("🎬 Sitting on ground")
 
 	# idle_ground_talk started
 	elif to_node == "idle_ground_talk":
@@ -1018,6 +1284,41 @@ func _on_sm_node_changed(from_node: String, to_node: String) -> void:
 			if q == "strike": play_strike()
 			elif q == "go_away": go_away()
 			else: set_standing_anim(q)
+
+	# ── Lying State Detection ──
+
+	# sit_ground → idle_lie (random choice)
+	elif from_node == "sit_ground" and to_node == "idle_lie":
+		_set_state(State.LYING)
+		print("🎬 Lying down on ground")
+
+	# idle_lie_talk started
+	elif to_node == "idle_lie_talk":
+		_set_state(State.LIE_TALK)
+
+	# idle_lie_talk_return ended → back to idle_lie
+	elif from_node == "idle_lie_talk_return" and to_node == "idle_lie":
+		_set_state(State.LYING)
+
+	# idle_lie → idle (forced TP when angry)
+	elif from_node == "idle_lie" and to_node == "idle":
+		_set_state(State.STANDING)
+		_current_standing = "idle"
+		off_wall_complete.emit()
+
+	# ── Wall Thinks/Write State Detection ──
+
+	# idle_wall_thinks_return ended → back to idle_wall
+	elif from_node == "idle_wall_thinks_return" and to_node == "idle_wall":
+		_set_state(State.ON_WALL)
+		_in_thinks_chain = false
+
+	# ── Ground Thinks/Write State Detection ──
+
+	# idle_ground_thinks_return ended → back to idle_ground
+	elif from_node == "idle_ground_thinks_return" and to_node == "idle_ground":
+		_set_state(State.ON_GROUND)
+		_in_thinks_chain = false
 
 
 func _on_strike_complete() -> void:
