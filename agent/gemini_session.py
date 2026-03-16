@@ -511,22 +511,14 @@ def prepare_close_tab(reason: str, target_window: str = None):
                 target = get_cached_window_by_title(target_window)
 
         if not target:
-            # Fallback: target the ACTIVE window (99% of the time, the distraction IS the foreground window)
-            active_title = get_cached_active_title()
-            if active_title:
-                # 🛡️ FIX : On empêche Tama de fermer sa propre interface ou son jeu
-                title_lower = active_title.lower()
-                if "tama" in title_lower or "focuspals" in title_lower:
-                    print(f"  🛡️ Shield: Refus de strike l'UI système ({active_title})")
-                    return {"status": "error", "message": "Cannot close Tama's own UI."}
-
-                target = get_cached_window_by_title(active_title)
-                if target:
-                    print(f"  Strike: title mismatch, fallback to active window: '{active_title[:50]}'")
-        if not target:
-            # Give Gemini the REAL window list so it can retry with the correct title
-            current_titles = [w.title for w in _cached_windows if w.title.strip()][:8]
-            return {"status": "error", "message": f"Window not found. Current open windows: {current_titles}"}
+            # 🛡️ FIX: NO MORE BLIND FALLBACK to active window!
+            # The active window might be innocent work (IDE, Gemini, etc.).
+            # Flash-Lite detects background distractions — the distraction
+            # is often NOT the foreground window.
+            # Return error so the LLM retries with the correct title.
+            current_titles = [w.title for w in _cached_windows if w.title.strip()][:10]
+            print(f"  🛡️ Strike: target '{target_window}' not found. No blind fallback — returning title list.")
+            return {"status": "error", "message": f"Window '{target_window}' not found. Pick the correct title from: {current_titles}"}
 
         title = target.title.lower()
         hwnd = target._hWnd
@@ -981,11 +973,13 @@ async def run_gemini_loop(pya):
                     state["_convo_nudge_sent"] = False
                     # ── Onboarding: situation context, not instructions ──
                     greeting_text = (
-                        "L'utilisateur vient de t'appeler. La session de travail n'a pas encore commencé — "
-                        "il doit d'abord cliquer sur le bouton Start sur le drone au-dessus de ta tête. Salue-le."
+                        "L'utilisateur vient de t'appeler. La session de travail n'a pas encore commencé. "
+                        "Il réglera ses affaires puis appuiera sur le bouton Start sur le drone quand il sera prêt. "
+                        "Contente-toi de le saluer chaleureusement et naturellement, sans lui donner d'ordres."
                         if state.get("language") != "en" else
-                        "The user just called you. The work session hasn't started yet — "
-                        "they need to click the Start button on the drone above your head first. Greet them."
+                        "The user just called you. The work session hasn't started yet. "
+                        "They will hit the Start button on the drone when they are ready. "
+                        "Just greet them warmly and naturally, don't give them any orders."
                     )
                     try:
                         await session.send_client_content(
@@ -1386,11 +1380,11 @@ async def run_gemini_loop(pya):
                                 try:
                                     if state.get("language") == "en":
                                         await session.send_realtime_input(
-                                            text="[SYSTEM] He hasn't pressed the Start button yet."
+                                            text="[SYSTEM] The user hasn't started the session yet. Gently ask if they are ready to work, and mention the drone's Start button if they need help finding it."
                                         )
                                     else:
                                         await session.send_realtime_input(
-                                            text="[SYSTEM] Il n'a pas appuyé sur le bouton Start."
+                                            text="[SYSTEM] L'internaute n'a toujours pas démarré la session. Demande-lui gentiment s'il est prêt à travailler, et mentionne le bouton Start sur le drone s'il ne le trouve pas."
                                         )
                                     print("  ⏰ Onboarding nudge sent to Gemini")
                                 except Exception:
@@ -1706,9 +1700,9 @@ async def run_gemini_loop(pya):
                             _strike_delay = 15.0 * C
                             _ultimatum_delay = 8.0 * C
                             if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > _strike_delay):
-                                speak_directive = f"STRIKE: User is still on '{active_title}'. Call close_distracting_tab NOW."
+                                speak_directive = f"STRIKE: User is still distracted. Identify the distracting window from your [EYES] and the open windows list, then call close_distracting_tab with its EXACT title. Do NOT close the active window if it's a work tool."
                             elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > _ultimatum_delay):
-                                speak_directive = f"ULTIMATUM: Give final warning explicitly naming '{active_title}'."
+                                speak_directive = f"ULTIMATUM: Give final warning. Name the ACTUAL distraction you see (from [EYES] and the windows list), not just the active window."
                             elif state["suspicion_above_3_start"]:
                                 # ── Organic mode: give Gemini context, let it decide ──
                                 # Instead of forcing "WARNING" or "SUSPICIOUS", we send
@@ -1724,9 +1718,9 @@ async def run_gemini_loop(pya):
                                 if current_ali >= 0.8 and current_cat == "SANTE":
                                     ctx_parts.append(f"User is working on '{active_title}' (S elevated from past).")
                                 elif current_ali <= 0.5 and current_cat == "BANNIE":
-                                    ctx_parts.append(f"User on banned app '{active_title}' — confront them specifically about it.")
+                                    ctx_parts.append(f"User on banned app — check [EYES] and the open windows list to find the actual distraction. Active window '{active_title}' may NOT be the distraction!")
                                 elif current_ali <= 0.5:
-                                    ctx_parts.append(f"User drifting on '{active_title}' — nudge using this window name.")
+                                    ctx_parts.append(f"User drifting — check [EYES] to identify the real distraction. Active: '{active_title}'.")
                                 speak_directive = " | ".join(ctx_parts)
 
                         # 🛑 FIX TÂCHE : Retirer "task:NONE" — les LLM paniquent et demandent la tâche
@@ -1765,7 +1759,7 @@ async def run_gemini_loop(pya):
 
                             # ── Smart pulse: compact when nothing changed ──
                             # Truncate window titles for token savings
-                            short_titles = [t[:40] for t in open_win_titles[:5]]
+                            short_titles = [t[:60] for t in open_win_titles[:8]]
                             _pulse_count = state.get("_identity_pulse_count", 0)
                             state["_identity_pulse_count"] = _pulse_count + 1
 
