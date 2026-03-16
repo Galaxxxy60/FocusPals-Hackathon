@@ -1,15 +1,22 @@
-# Godot
+# Godot editor cache
 .godot/
 *.import
 export_presets.cfg
-*.exe
-*.pck
+
+# Godot temp files
 *.TMP
+
+# Test/debug builds (keep main focuspals.exe)
+focuspals_test.exe
+focuspals_test.pck
+focuspals_test.console.exe
+focuspals.console.exe
 
 # Python
 __pycache__/
 *.pyc
 agent/.env
+agent/gcp_key.json
 
 # Old web stuff (safe to delete)
 node_modules/
@@ -27,21 +34,10 @@ agent/tama_memory.json
 
 # Gemini/Agent local config
 .agent/
-# Large binary files (GLB, Blender, audio, images, fonts, archives)
-*.glb
+
+# Blender source files (too large for git, not needed to run)
 *.blend
 *.blend1
-*.zip
-*.ogg
-*.wav
-*.mp3
-*.png
-*.jpg
-*.jpeg
-*.svg
-*.ttf
-*.otf
-*.woff
-*.woff2
-agent/model.zip
 
+# Large archives
+agent/model.zip

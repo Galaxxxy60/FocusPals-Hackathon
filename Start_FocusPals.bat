@@ -17,6 +17,15 @@ chcp 65001 >nul
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
+:: Install dependencies if needed (first launch on a new machine)
+pip show google-genai >nul 2>&1
+if %errorlevel% neq 0 (
+    echo   Installing dependencies...
+    pip install -r "%~dp0agent\requirements.txt" --quiet
+    echo   Done!
+    echo.
+)
+
 :: L'agent Python lance Godot + click-through + IA tout seul
 python "%~dp0agent\tama_agent.py"
 
