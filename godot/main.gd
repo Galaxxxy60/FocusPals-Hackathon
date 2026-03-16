@@ -418,6 +418,71 @@ var _tama_cam: Camera3D = null              # Clone camera inside _tama_window
 const TAMA_LAYER_BIT: int = 2              # Render layer 2 bitmask
 var _init_done: bool = false                # True after all deferred setups complete
 
+# ─── Widget Drone (Remplace la Main Magique) ──────────────────
+var _drone_window: Window = null
+var _drone_state: String = "HIDDEN"  # États : HIDDEN, WAITING_START, TIMER, STRIKING, WAITING_BREAK, BREAK_TIMER
+var _break_timer_start: float = 0.0  # Timestamp when break started (for drone countdown)
+var _break_timer_duration: float = 300.0  # Break duration in seconds
+var _confetti_window: Window = null
+var _confetti_rect: ColorRect = null
+var _drone_panel: Panel = null        # Fallback 2D (if Wings.glb missing)
+var _drone_mesh: MeshInstance3D = null # Wings 3D model
+var _drone_model: Node3D = null       # Reference to the Wings 3D root (for scale tweening)
+var _drone_screen_mat: StandardMaterial3D = null  # Screen material (slot 1)
+var _drone_screen_vp: SubViewport = null          # SubViewport for screen text
+var _drone_screen_label: Label = null             # Dynamic text on the screen
+var _drone_anim: AnimationPlayer = null           # Wings AnimationPlayer (idle/dash/strike)
+var _drone_anim_names: Dictionary = {}            # Resolved anim names
+var _drone_glitch_mat: ShaderMaterial = null       # Glitch effect shader material
+var _drone_glitch_quad: MeshInstance3D = null       # Glitch quad reference
+var _celebration_sfx: AudioStreamPlayer = null      # celebration.ogg player
+
+# ─── Jarvis Hand (Gentle Tap Animation) ─────────────────────
+var _jarvis_hand: Window = null
+const JARVIS_EMOJIS = {
+	"open_app": "👆",
+	"switch_window": "👆",
+	"minimize": "👇",
+	"maximize": "☝️",
+	"shortcut": "⌨️",
+	"type_text": "⌨️",
+	"open_url": "🌐",
+	"search_web": "🔍",
+	"screenshot": "📸",
+	"volume_up": "🔊",
+	"volume_down": "🔉",
+	"volume_mute": "🔇",
+}
+
+# ─── Quit UI ───
+var _quit_layer: CanvasLayer = null
+
+# ─── Gaze Angle Limits ───
+const GAZE_MAX_YAW: float = 40.0   # Left/right
+const GAZE_MAX_PITCH: float = 45.0  # Up/down (increased for more range)
+const GAZE_PITCH_OFFSET_DEG: float = -8.0
+var GAZE_PRESET_OFFSETS = {
+	GazeTarget.USER: Vector3(0, 0.3, 2.0),            # Slightly up toward user (webcam is above screen)
+	GazeTarget.BOOK: Vector3(-0.3, -0.8, 0.5),         # Down in front (fallback if bone not found)
+	GazeTarget.AWAY: Vector3(2.0, 0.2, -0.5),          # Behind to the right
+}
+
+# ─── Ghost Transparency ───
+var _ghost_original_transparency: Dictionary = {}  # Material → original BaseMaterial3D.Transparency
+var _drone_start_pending: bool = false  # Deferred drone START — shown after Tama's ghost appears
+
+# How much to hide pupils (3D spheres) per eye slot. 0.0 = fully visible, 1.0 = fully hidden.
+# Slots not listed default to 0.0 (visible).
+const PUPIL_HIDE_AMOUNT = {
+	"E1": 0.8,   # Plissés fort — mostly hidden
+	"E2": 1.0,   # Fermés — fully hidden
+	"E4": 1.0,   # Happy ^^^ — fully hidden
+	"E6": 1.0,   # Semi-closed (blink) — fully hidden
+	"E7": 0.5,   # Plissés léger — half hidden
+	"E9": 0.5,   # Happy Wink — one eye closed, half hidden
+	# E0, E3, E5, E8: pupils fully visible (not listed = 0.0)
+}
+
 func _ready() -> void:
 	# Prevent V-Sync stacking across multiple windows (kills FPS otherwise)
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -652,6 +717,10 @@ func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 		# F2: Lock gaze on screen during strike animation
 		_strike_gaze_locked = true
 		set_gaze(GazeTarget.SCREEN_CENTER, GAZE_SPEED_SNAP)
+		# 🎯 FIX : STRIKING→STANDING est instantané dans l'AnimTree, donc le
+		# signal strike_fire_point n'a jamais le temps de fire. On lance le drone
+		# ici. Le guard dans _spawn_drone_strike évite le double-fire si le signal arrive aussi.
+		_on_tree_strike_fire()
 
 	# ── Gaze follows animation state ──
 	if new_state == "WALL_TALK":
@@ -914,24 +983,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_teleport_to_screen_of_target(Vector2(rect.position.x + 100, rect.position.y + 100))
 		return
 
-# ─── Widget Drone (Remplace la Main Magique) ──────────────────
-var _drone_window: Window = null
-var _drone_state: String = "HIDDEN"  # États : HIDDEN, WAITING_START, TIMER, STRIKING, WAITING_BREAK, BREAK_TIMER
-var _break_timer_start: float = 0.0  # Timestamp when break started (for drone countdown)
-var _break_timer_duration: float = 300.0  # Break duration in seconds
-var _confetti_window: Window = null
-var _confetti_rect: ColorRect = null
-var _drone_panel: Panel = null        # Fallback 2D (if Wings.glb missing)
-var _drone_mesh: MeshInstance3D = null # Wings 3D model
-var _drone_model: Node3D = null       # Reference to the Wings 3D root (for scale tweening)
-var _drone_screen_mat: StandardMaterial3D = null  # Screen material (slot 1)
-var _drone_screen_vp: SubViewport = null          # SubViewport for screen text
-var _drone_screen_label: Label = null             # Dynamic text on the screen
-var _drone_anim: AnimationPlayer = null           # Wings AnimationPlayer (idle/dash/strike)
-var _drone_anim_names: Dictionary = {}            # Resolved anim names
-var _drone_glitch_mat: ShaderMaterial = null       # Glitch effect shader material
-var _drone_glitch_quad: MeshInstance3D = null       # Glitch quad reference
-var _celebration_sfx: AudioStreamPlayer = null      # celebration.ogg player
 
 func _get_hand_bone_screen_pos() -> Vector2i:
 	"""Get Tama's hand bone projected to screen coords, or center fallback."""
@@ -998,7 +1049,11 @@ func _animate_pooled_window(win: Window, target_pos: Vector2i, start_emoji: Stri
 func _drone_play(anim_key: String, crossfade: float = 0.2) -> void:
 	"""Play a drone animation by key (idle/dash/strike)."""
 	if _drone_anim and _drone_anim_names.has(anim_key):
-		_drone_anim.play(_drone_anim_names[anim_key], crossfade)
+		var anim_name = _drone_anim_names[anim_key]
+		# Ne pas relancer l'animation si elle tourne déjà (empêche le gel à la frame 0 !)
+		if _drone_anim.current_animation == anim_name and _drone_anim.is_playing():
+			return
+		_drone_anim.play(anim_name, crossfade)
 
 func _spawn_drone_strike() -> void:
 	"""Strike : Le drone charge son attaque et fonce sur l'onglet avec un mouvement d'ange !"""
@@ -1007,7 +1062,9 @@ func _spawn_drone_strike() -> void:
 	_drone_state = "STRIKING"
 	if not _drone_window or not is_instance_valid(_drone_window):
 		return
-	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
+	# 🛑 NE PAS activer FLAG_MOUSE_PASSTHROUGH ici !
+	# Sur Windows, DWM arrête de rafraîchir le rendu d'une Window passthrough,
+	# ce qui gèle l'animation 3D ET le SubViewport texte du drone.
 
 	var aim: Vector2i = _strike_target if _strike_target.x > -99990 else DisplayServer.mouse_get_position()
 	
@@ -1074,8 +1131,9 @@ func _spawn_drone_strike() -> void:
 	var start_pos = _drone_window.position
 
 	# 🔝 Force Z-order: drone MUST be on top of the distraction window
-	_drone_window.always_on_top = false
-	_drone_window.always_on_top = true
+	# 🛑 NE PAS toggler always_on_top ! Sous Windows, DWM détruit et recrée
+	# la surface de rendu, ce qui freeze le SubViewport du drone.
+	# La fenêtre est DÉJÀ always_on_top depuis sa création.
 	_drone_window.move_to_foreground()
 	_drone_window.visible = true
 
@@ -1627,7 +1685,7 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 
 func _update_drone_timer() -> void:
 	"""Flottaison organique du drone (suit Tama) et affichage du Timer/Break."""
-	if _drone_state not in ["WAITING_START", "TIMER", "WAITING_BREAK", "BREAK_TIMER"]:
+	if _drone_state not in ["WAITING_START", "TIMER", "WAITING_BREAK", "BREAK_TIMER", "STRIKING"]:
 		return
 	if not _drone_window or not is_instance_valid(_drone_window):
 		return
@@ -1643,29 +1701,31 @@ func _update_drone_timer() -> void:
 			target_scale = Vector3(1.0, 1.0, 1.0)  # Taille normale
 		_drone_model.scale = _drone_model.scale.lerp(target_scale, 5.0 * delta)
 
-	# ── Calcul de la Cible (Au-dessus de la tête) ──
-	var target_x: float = 0.0
-	var target_y: float = 0.0
+	# ── Positionnement organique (SKIP pendant STRIKING — le tween gère la position) ──
+	if _drone_state != "STRIKING":
+		# ── Calcul de la Cible (Au-dessus de la tête) ──
+		var target_x: float = 0.0
+		var target_y: float = 0.0
 
-	if head_screen_pos.x > 0 and head_screen_pos.y > 0 and _tama_window:
-		target_x = float(_tama_window.position.x) + head_screen_pos.x - _drone_window.size.x / 2.0
-		target_y = float(_tama_window.position.y) + head_screen_pos.y - _drone_window.size.y - 60.0  # Bien au-dessus de la tête
-	else:
-		var tama_center = _get_tama_screen_center()
-		target_x = float(tama_center.x - _drone_window.size.x / 2.0)
-		target_y = float(tama_center.y - 280.0)
+		if head_screen_pos.x > 0 and head_screen_pos.y > 0 and _tama_window:
+			target_x = float(_tama_window.position.x) + head_screen_pos.x - _drone_window.size.x / 2.0
+			target_y = float(_tama_window.position.y) + head_screen_pos.y - _drone_window.size.y - 60.0  # Bien au-dessus de la tête
+		else:
+			var tama_center = _get_tama_screen_center()
+			target_x = float(tama_center.x - _drone_window.size.x / 2.0)
+			target_y = float(tama_center.y - 280.0)
 
-	# ── Flottement organique (Mouvement sinusoïdal d'ange) ──
-	var time_sec = Time.get_ticks_msec() / 1000.0
-	target_y += sin(time_sec * 2.5) * 12.0
-	target_x += cos(time_sec * 1.5) * 4.0
+		# ── Flottement organique (Mouvement sinusoïdal d'ange) ──
+		var time_sec = Time.get_ticks_msec() / 1000.0
+		target_y += sin(time_sec * 2.5) * 12.0
+		target_x += cos(time_sec * 1.5) * 4.0
 
-	# ── Déplacement Lerp Fluide ──
-	var current_pos = Vector2(_drone_window.position)
-	var new_pos = current_pos.lerp(Vector2(target_x, target_y), 6.0 * delta)
-	if current_pos.distance_to(Vector2(target_x, target_y)) > 600:
-		new_pos = Vector2(target_x, target_y)  # Téléportation si Tama a fait un grand bond
-	_drone_window.position = Vector2i(new_pos)
+		# ── Déplacement Lerp Fluide ──
+		var current_pos = Vector2(_drone_window.position)
+		var new_pos = current_pos.lerp(Vector2(target_x, target_y), 6.0 * delta)
+		if current_pos.distance_to(Vector2(target_x, target_y)) > 600:
+			new_pos = Vector2(target_x, target_y)  # Téléportation si Tama a fait un grand bond
+		_drone_window.position = Vector2i(new_pos)
 
 	# ── Mise à jour du Texte ──
 	if _drone_state == "TIMER":
@@ -1726,24 +1786,6 @@ func _hide_drone_timer() -> void:
 	print("🛸 Drone timer masqué")
 
 
-# ─── Jarvis Hand (Gentle Tap Animation) ─────────────────────
-var _jarvis_hand: Window = null
-
-# Emoji per action — gives visual feedback about WHAT Tama is doing
-const JARVIS_EMOJIS = {
-	"open_app": "👆",
-	"switch_window": "👆",
-	"minimize": "👇",
-	"maximize": "☝️",
-	"shortcut": "⌨️",
-	"type_text": "⌨️",
-	"open_url": "🌐",
-	"search_web": "🔍",
-	"screenshot": "📸",
-	"volume_up": "🔊",
-	"volume_down": "🔉",
-	"volume_mute": "🔇",
-}
 
 func _spawn_jarvis_hand(target: Vector2i, action: String) -> void:
 	"""Jarvis: gentle tap toward target (pooled window)."""
@@ -1804,8 +1846,8 @@ func _on_radial_action(action_id: String) -> void:
 		# 1. Lancer la conversation → Tama arrive avec le glitch
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "talk"}))
-		# 2. Drone START apparaît immédiatement
-		_show_drone_start_widget()
+		# 2. Drone START will appear AFTER Tama is visible (deferred in _show_ghost_silhouette)
+		_drone_start_pending = true
 		if radial_menu:
 			radial_menu.close()
 		_safe_restore_passthrough()
@@ -1830,7 +1872,6 @@ func _on_radial_hide() -> void:
 	# _safe_restore_passthrough() already checks all panel states internally
 	_safe_restore_passthrough()
 
-var _quit_layer: CanvasLayer = null
 
 func _show_quit_confirmation() -> void:
 	if _quit_layer:
@@ -2167,35 +2208,35 @@ func _dodge_to_taskbar() -> void:
 	var found_window := false
 	var target_usable = usable
 
-	# 🎯 PERCH ON A DESKTOP WINDOW (Désactivé temporairement à la demande de l'utilisateur)
-	# Only try if we have a desktop map from Python
-	if false and _desktop_windows.size() > 0:
+	# 🎯 CHERCHER UNE FENÊTRE COMME PERCHOIR
+	if _desktop_windows.size() > 0:
 		var candidates: Array = []
 		for dwin in _desktop_windows:
 			var wx := float(dwin.get("x", 0))
 			var wy := float(dwin.get("y", 0))
 			var ww := float(dwin.get("w", 0))
 			var wh := float(dwin.get("h", 0))
+			var title := str(dwin.get("title", "")).to_lower()
 
-			if wy <= 5: continue
-			if ww < win_size.x: continue
-			if wh < 150: continue
+			# Ignore les fenêtres FocusPals, invisibles, collées en haut, ou trop petites
+			if "focuspals" in title or "tama" in title: continue
+			if wy <= 5 or ww < win_size.x or wh < 150: continue
 
 			# 🌟 FIX MULTI-MONITOR: Trouver l'écran REEL de cette fenêtre candidate
 			var win_center = Vector2(wx + ww / 2.0, wy + wh / 2.0)
 			var win_screen = _get_screen_for_point(win_center)
 			var win_usable = DisplayServer.screen_get_usable_rect(win_screen)
 
-			var perch_y := int(wy - win_size.y + 50)
+			var perch_y := int(wy - win_size.y + 40) # +40 pour asseoir sur la bordure
 
 			# On vérifie avec le "usable" de son écran à elle
-			if perch_y < win_usable.position.y - 30:
+			if perch_y < win_usable.position.y - 10:
 				continue
 
 			candidates.append({"data": dwin, "perch_y": perch_y, "usable": win_usable})
 
 		if candidates.size() > 0:
-			var pick = candidates[randi() % candidates.size()]
+			var pick = candidates[0] # Prendre la première fenêtre valide (souvent l'active)
 			var chosen = pick["data"]
 			var cx := float(chosen.get("x", 0))
 			var cw := float(chosen.get("w", 0))
@@ -2206,12 +2247,8 @@ func _dodge_to_taskbar() -> void:
 
 			found_window = true
 			_perched_on = str(chosen.get("title", ""))
-			_perch_last_rect = {"x": int(cx), "y": int(chosen.get("y", 0)), "w": int(chosen.get("w", 0)), "h": int(chosen.get("h", 0))}
+			_perch_last_rect = {"x": int(cx), "y": int(chosen.get("y", 0)), "w": int(cw), "h": int(chosen.get("h", 0))}
 			print("⚡ Dodge! Tama se perche sur '%s' → (%d, %d)" % [_perched_on, target_x, target_y])
-		else:
-			print("🖥️ Desktop map: %d fenêtres, mais aucune perchable" % _desktop_windows.size())
-	else:
-		if false: print("🖥️ Desktop map vide — pas de radar Python ?")
 
 	# 🏠 FALLBACK: Taskbar area (bottom-left of screen)
 	if not found_window:
@@ -2662,6 +2699,7 @@ func _handle_message(raw: String) -> void:
 			else:
 				# Silhouette fantôme — se matérialise au premier son de l'IA
 				print("🚀 Session lancée ! (Silhouette fantôme — attente voix IA)")
+				_drone_start_pending = true
 				_show_ghost_silhouette()
 		return
 	elif command == "START_CONVERSATION":
@@ -2670,6 +2708,7 @@ func _handle_message(raw: String) -> void:
 			_convo_engagement = 0  # Reset engagement counter
 			# Silhouette fantôme — se matérialise au premier son de l'IA
 			print("💬 Mode conversation ! (Silhouette fantôme — attente voix IA)")
+			_drone_start_pending = true
 			_show_ghost_silhouette()
 		return
 	elif command == "BREAK_DEPARTURE":
@@ -2874,19 +2913,21 @@ func _handle_message(raw: String) -> void:
 					break
 
 		if not map_window.is_empty():
-			var mx := int(map_window.get("x", 0))
-			var my := int(map_window.get("y", 0))
-			var mw := int(map_window.get("w", 0))
-			tx = mx + mw - 25
-			ty = my + 15
-			if command == "STRIKE_TARGET":
-				_strike_target = Vector2i(tx, ty)
-				print("  🎯 Strike target FROM DESKTOP MAP: (%d, %d)" % [tx, ty])
-			
-			# 🔥 NOUVEAU: On perche Tama DIRECTEMENT sur la distraction avec le système d'esquive
-			# DESACTIVE TEMPORAIREMENT : L'utilisateur préfère la barre des tâches
-			# _perch_on_distraction(map_window)
-			# return
+			# 🛑 FIX : On n'écrase tx/ty avec la Desktop Map QUE si Python a échoué (sentinel) !
+			if tx <= -90000 or ty <= -90000:
+				var mx := int(map_window.get("x", 0))
+				var my := int(map_window.get("y", 0))
+				var mw := int(map_window.get("w", 0))
+				tx = mx + mw - 25
+				ty = my + 15
+				if command == "STRIKE_TARGET":
+					_strike_target = Vector2i(tx, ty)
+					print("  🎯 Strike target FROM DESKTOP MAP FALLBACK: (%d, %d)" % [tx, ty])
+			else:
+				# On garde les coordonnées UIA parfaites de Python !
+				if command == "STRIKE_TARGET":
+					_strike_target = Vector2i(tx, ty)
+					print("  🎯 Strike target FROM PYTHON UIA: (%d, %d)" % [tx, ty])
 
 		# ── Fallback si la fenêtre n'est pas dans le radar ──
 		var force_scr = int(data.get("screen_index", -1))
@@ -3295,6 +3336,15 @@ func _update_suspicion_anim() -> void:
 		return
 	if _anim_tree_module.is_transitioning():
 		return
+
+	# 🛑 FIX : Ne JAMAIS interrompre un Strike en cours ou en préparation !
+	if _strike_gaze_locked or _pending_strike or _drone_state == "STRIKING":
+		return
+	if _anim_tree_module:
+		var q_stand = _anim_tree_module.get("_queued_standing")
+		if q_stand != null and str(q_stand) in ["strike", "strike_base"]:
+			return
+
 	var tier := _get_tier()
 	if tier == _prev_suspicion_tier:
 		return
@@ -3543,17 +3593,6 @@ func _set_expression_slot(slot_type: String, slot: String) -> void:
 	elif slot_type == "mouth":
 		_set_mouth(slot)
 
-# How much to hide pupils (3D spheres) per eye slot. 0.0 = fully visible, 1.0 = fully hidden.
-# Slots not listed default to 0.0 (visible).
-const PUPIL_HIDE_AMOUNT = {
-	"E1": 0.8,   # Plissés fort — mostly hidden
-	"E2": 1.0,   # Fermés — fully hidden
-	"E4": 1.0,   # Happy ^^^ — fully hidden
-	"E6": 1.0,   # Semi-closed (blink) — fully hidden
-	"E7": 0.5,   # Plissés léger — half hidden
-	"E9": 0.5,   # Happy Wink — one eye closed, half hidden
-	# E0, E3, E5, E8: pupils fully visible (not listed = 0.0)
-}
 
 func _set_eyes(slot: String) -> void:
 	_current_eye_slot = slot
@@ -3941,6 +3980,11 @@ func _trigger_entrance() -> void:
 	elif not _started:
 		_start_idle_wall()
 	print("✨ Entrée synchronisée ! Tama apparaît avec sa voix.")
+	# Show drone START if it was pending (fallback if ghost was skipped)
+	if _drone_start_pending:
+		_drone_start_pending = false
+		_show_drone_start_widget()
+		print("🛸 Drone START affiché (entrée sans ghost)")
 
 
 func _setup_greeting_audio() -> void:
@@ -4013,6 +4057,13 @@ func _show_ghost_silhouette() -> void:
 	# Grace period
 	_dodge_cooldown_timer = 10.0
 	_dodge_armed = false
+	# 8. Spawn drone START widget with delay (Tama ghost appears first, then drone)
+	if _drone_start_pending:
+		_drone_start_pending = false
+		var drone_tw := create_tween().bind_node(self)
+		drone_tw.tween_interval(2.0)  # Let Tama's ghost unfold first
+		drone_tw.tween_callback(_show_drone_start_widget)
+		print("🛸 Drone START différé — arrivera dans 2s")
 	print("👻 Hologram ALPHA_HASH activé — dissolution progressive...")
 
 	# 8. Wink immédiat (E9 + hide left iris)
@@ -4138,7 +4189,6 @@ func _collect_tama_materials() -> void:
 	print("👻 Collected %d materials for ghost effect" % _ghost_materials.size())
 
 
-var _ghost_original_transparency: Dictionary = {}  # Material → original BaseMaterial3D.Transparency
 
 
 func _scan_materials_recursive(node: Node) -> void:
@@ -4590,24 +4640,6 @@ func _find_skeleton(node: Node) -> Skeleton3D:
 			return found
 	return null
 
-# Max rotation angles (degrees) — prevent neck-breaking
-const GAZE_MAX_YAW: float = 40.0   # Left/right
-const GAZE_MAX_PITCH: float = 45.0  # Up/down (increased for more range)
-
-# Constant pitch offset (degrees) to compensate for camera–head height mismatch.
-# Positive = tilts gaze upward (counters "looking down" bias).
-# Adjust visually: if head looks too high, make this MORE NEGATIVE; too low, MORE POSITIVE.
-const GAZE_PITCH_OFFSET_DEG: float = -8.0
-
-# Preset targets → 3D world offsets from head (X=right, Y=up, Z=toward camera)
-# These are relative to the head bone position
-# Used ONLY for targets that don't map to a screen point (USER, BOOK, AWAY)
-# BOOK is dynamic when _book_bone_idx is found (uses Jnt_L_thumb world pos)
-var GAZE_PRESET_OFFSETS = {
-	GazeTarget.USER: Vector3(0, 0.3, 2.0),            # Slightly up toward user (webcam is above screen)
-	GazeTarget.BOOK: Vector3(-0.3, -0.8, 0.5),         # Down in front (fallback if bone not found)
-	GazeTarget.AWAY: Vector3(2.0, 0.2, -0.5),          # Behind to the right
-}
 
 func _get_book_world_pos() -> Vector3:
 	"""Get the BOOK target position from Jnt_L_thumb bone, or fallback to offset."""

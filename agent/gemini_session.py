@@ -1444,6 +1444,28 @@ async def run_gemini_loop(pya):
                         active_title = get_cached_active_title()
                         open_win_titles = [w.title for w in get_cached_windows()]
 
+                        # ── Envoyer la carte du bureau à Godot (perchoir + strike targeting) ──
+                        try:
+                            _EXCLUDE = {"TamaMain", "TamaUI", "TamaHand_Jarvis", "TamaDrone",
+                                        "focuspals", "FocusPals", "Program Manager",
+                                        "Windows Input Experience"}
+                            windows_data = []
+                            for win in get_cached_windows()[:15]:
+                                t = (win.title or "").strip()
+                                if not t or t in _EXCLUDE or win.width < 200 or win.height < 100:
+                                    continue
+                                windows_data.append({
+                                    "title": t,
+                                    "x": win.left,
+                                    "y": win.top,
+                                    "w": win.width,
+                                    "h": win.height
+                                })
+                            if windows_data:
+                                map_msg = json.dumps({"command": "DESKTOP_MAP", "windows": windows_data})
+                                broadcast_to_godot(map_msg)
+                        except Exception as e:
+                            print(f"  ⚠️ Desktop Map pulse error: {e}")
 
                         # ── Flash-Lite: capture + classify via standard API ──
                         lite_result = None
@@ -2044,6 +2066,10 @@ async def run_gemini_loop(pya):
                                                 state["suspicion_above_6_start"] = None
                                                 state["suspicion_above_3_start"] = None
 
+                                                # 🛡️ FIX : Indiquer au système qu'un flux de Strike est initié ──
+                                                # Évite que le 'fire_strike' de Gemini soit ignoré comme un Ghost Strike
+                                                state["_strike_in_progress"] = True
+
                                                 # Send tool response IMMEDIATELY — system-only, Gemini must NOT read this aloud
                                                 function_responses_to_send.append(
                                                     types.FunctionResponse(
@@ -2114,9 +2140,9 @@ async def run_gemini_loop(pya):
                                                 if is_ghost:
                                                     si_now = state["current_suspicion_index"]
                                                     print(f"  🥊👻 Ghost strike ignored (S={si_now:.0f}, no strike flow active)")
-                                                elif state.get("_strike_in_progress"):
+                                                elif state.get("_strike_requested"):
                                                     # ── Anti-doublon: block re-fires during an active strike flow ──
-                                                    print("  🥊 Strike already in progress — ignoring duplicate fire_strike")
+                                                    print("  🥊 Strike already requested — ignoring duplicate fire_strike")
                                                 else:
                                                     state["_strike_in_progress"] = True
 
@@ -2134,7 +2160,9 @@ async def run_gemini_loop(pya):
                                                         if state.get("_strike_requested"):
                                                             print("  🥊⏰ Strike request timed out (4s) — close_distracting_tab never came")
                                                             state["_strike_requested"] = False
-                                                            state["_strike_in_progress"] = False
+                                                            # 🛡️ FIX : On libère le in_progress UNIQUEMENT si aucune fermeture physique n'est attendue
+                                                            if state.get("_pending_strike") is None:
+                                                                state["_strike_in_progress"] = False
                                                     asyncio.create_task(strike_request_timeout())
 
                                                 # ALWAYS send tool response — Gemini requires responses to
