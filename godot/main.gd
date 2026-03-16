@@ -1752,18 +1752,40 @@ func _setup_drone_window_fallback() -> void:
 	_drone_panel = Panel.new()
 	_drone_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.05, 0.08, 0.12, 0.95)
-	style.border_color = Color(0.2, 0.8, 1.0, 0.8)
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(20)
-	style.shadow_color = Color(0, 0.5, 1.0, 0.3)
-	style.shadow_size = 15
+	style.bg_color = Color(0.906, 0.933, 0.965, 0.97)  # #e7eef6
+	style.border_color = Color(0.502, 0.682, 0.890, 0.9)  # #80aee3
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(4)
+	style.shadow_color = Color(0.553, 0.737, 0.918, 0.3)  # #8dbcea
+	style.shadow_size = 6
 	_drone_panel.add_theme_stylebox_override("panel", style)
 	_drone_window.add_child(_drone_panel)
+
+	# --- Title Bar ---
+	var title_bg = ColorRect.new()
+	title_bg.color = Color(0.227, 0.353, 0.541)  # RETRO_TEXT
+	title_bg.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	title_bg.custom_minimum_size.y = 20
+	title_bg.offset_left = 2
+	title_bg.offset_right = -2
+	title_bg.offset_top = 2
+	title_bg.offset_bottom = 22
+	_drone_panel.add_child(title_bg)
+
+	var title_lbl = Label.new()
+	title_lbl.text = "Drone"
+	title_lbl.add_theme_font_size_override("font_size", 10)
+	title_lbl.add_theme_color_override("font_color", Color.WHITE)
+	title_lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title_lbl.offset_left = 4
+	title_bg.add_child(title_lbl)
 
 	_drone_screen_label = Label.new()
 	_drone_screen_label.name = "EmojiLabel"
 	_drone_screen_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_drone_screen_label.offset_top = 22
 	_drone_screen_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_drone_screen_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_drone_panel.add_child(_drone_screen_label)
@@ -2288,13 +2310,12 @@ func _show_quit_confirmation() -> void:
 	# Panel
 	var panel := PanelContainer.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.09, 0.14, 0.95)
-	style.border_color = Color(0.3, 0.35, 0.55, 0.5)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(12)
-	style.set_content_margin_all(20)
-	style.shadow_color = Color(0, 0, 0, 0.4)
-	style.shadow_size = 8
+	style.bg_color = Color(0.906, 0.933, 0.965, 0.97)  # #e7eef6
+	style.border_color = Color(0.502, 0.682, 0.890)     # #80aee3
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(3)
+	style.shadow_color = Color(0.553, 0.737, 0.918, 0.3)  # #8dbcea
+	style.shadow_size = 4
 	panel.add_theme_stylebox_override("panel", style)
 	panel.custom_minimum_size = Vector2(220, 0)
 	_quit_layer.add_child(panel)
@@ -2302,14 +2323,45 @@ func _show_quit_confirmation() -> void:
 	var vp_size := _ui_window.size if _ui_window else Vector2i(get_viewport().get_visible_rect().size)
 	panel.position = Vector2(vp_size.x / 2 - 110, vp_size.y / 2 - 50)
 
+	var root_vbox := VBoxContainer.new()
+	root_vbox.add_theme_constant_override("separation", 0)
+	panel.add_child(root_vbox)
+
+	# --- Title Bar ---
+	var title_panel := PanelContainer.new()
+	var t_style := StyleBoxFlat.new()
+	t_style.bg_color = Color(0.227, 0.353, 0.541)  # RETRO_TEXT
+	t_style.border_color = Color(0.345, 0.537, 0.769)  # RETRO_DARK
+	t_style.set_border_width_all(1)
+	t_style.content_margin_left = 6
+	t_style.content_margin_right = 6
+	t_style.content_margin_top = 4
+	t_style.content_margin_bottom = 4
+	title_panel.add_theme_stylebox_override("panel", t_style)
+	root_vbox.add_child(title_panel)
+	
+	var title_lbl := Label.new()
+	title_lbl.text = "Quitter"
+	title_lbl.add_theme_font_size_override("font_size", 12)
+	title_lbl.add_theme_color_override("font_color", Color.WHITE)
+	title_panel.add_child(title_lbl)
+
+	# --- Content Area ---
+	var content_margin := MarginContainer.new()
+	content_margin.add_theme_constant_override("margin_top", 16)
+	content_margin.add_theme_constant_override("margin_bottom", 16)
+	content_margin.add_theme_constant_override("margin_left", 20)
+	content_margin.add_theme_constant_override("margin_right", 20)
+	root_vbox.add_child(content_margin)
+
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 14)
-	panel.add_child(vbox)
+	content_margin.add_child(vbox)
 
 	var lbl := Label.new()
 	lbl.text = "Tu veux vraiment\npartir ? 😿"
 	lbl.add_theme_font_size_override("font_size", 14)
-	lbl.add_theme_color_override("font_color", Color(0.9, 0.92, 1.0))
+	lbl.add_theme_color_override("font_color", Color(0.227, 0.353, 0.541))  # #3a5a8a
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(lbl)
 
@@ -2319,11 +2371,11 @@ func _show_quit_confirmation() -> void:
 	vbox.add_child(row)
 
 	row.add_child(_build_styled_button("  Oui  ",
-		Color(0.6, 0.2, 0.2, 0.8), Color(0.8, 0.25, 0.25, 0.9),
-		Color(1, 0.9, 0.9), _do_quit))
+		Color(0.878, 0.533, 0.533, 0.5), Color(0.878, 0.533, 0.533, 0.7),
+		Color(0.227, 0.353, 0.541), _do_quit))
 	row.add_child(_build_styled_button("  Non  ",
-		Color(0.15, 0.2, 0.35, 0.8), Color(0.25, 0.35, 0.55, 0.9),
-		Color(0.85, 0.9, 1.0), _hide_quit_confirmation))
+		Color(0.863, 0.910, 0.957, 0.8), Color(0.710, 0.816, 0.941, 0.9),
+		Color(0.227, 0.353, 0.541), _hide_quit_confirmation))
 
 func _build_styled_button(text: String, bg: Color, hover_bg: Color,
 		font_color: Color, callback: Callable) -> Button:
@@ -2333,12 +2385,16 @@ func _build_styled_button(text: String, bg: Color, hover_bg: Color,
 	btn.add_theme_font_size_override("font_size", 13)
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg
-	s.set_corner_radius_all(8)
+	s.border_color = Color(0.502, 0.682, 0.890, 0.6)  # #80aee3
+	s.set_border_width_all(1)
+	s.set_corner_radius_all(3)
 	s.set_content_margin_all(8)
 	btn.add_theme_stylebox_override("normal", s)
 	var h := StyleBoxFlat.new()
 	h.bg_color = hover_bg
-	h.set_corner_radius_all(8)
+	h.border_color = Color(0.345, 0.537, 0.769, 0.8)  # #5889c4
+	h.set_border_width_all(2)
+	h.set_corner_radius_all(3)
 	h.set_content_margin_all(8)
 	btn.add_theme_stylebox_override("hover", h)
 	btn.add_theme_color_override("font_color", font_color)
@@ -2387,13 +2443,12 @@ func _show_onboarding_dialog(lang: String = "en") -> void:
 	# Panel
 	var panel := PanelContainer.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.09, 0.14, 0.95)
-	style.border_color = Color(0.35, 0.45, 0.75, 0.5)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(12)
-	style.set_content_margin_all(24)
-	style.shadow_color = Color(0, 0, 0, 0.4)
-	style.shadow_size = 8
+	style.bg_color = Color(0.906, 0.933, 0.965, 0.97)  # #e7eef6
+	style.border_color = Color(0.502, 0.682, 0.890)     # #80aee3
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(3)
+	style.shadow_color = Color(0.553, 0.737, 0.918, 0.3)  # #8dbcea
+	style.shadow_size = 4
 	panel.add_theme_stylebox_override("panel", style)
 	panel.custom_minimum_size = Vector2(280, 0)
 	_onboarding_layer.add_child(panel)
@@ -2401,17 +2456,40 @@ func _show_onboarding_dialog(lang: String = "en") -> void:
 	var vp_size := _ui_window.size if _ui_window else Vector2i(get_viewport().get_visible_rect().size)
 	panel.position = Vector2(vp_size.x / 2 - 140, vp_size.y / 2 - 60)
 
+	var root_vbox := VBoxContainer.new()
+	root_vbox.add_theme_constant_override("separation", 0)
+	panel.add_child(root_vbox)
+
+	# --- Title Bar ---
+	var title_panel := PanelContainer.new()
+	var t_style := StyleBoxFlat.new()
+	t_style.bg_color = Color(0.227, 0.353, 0.541)  # RETRO_TEXT
+	t_style.border_color = Color(0.345, 0.537, 0.769)  # RETRO_DARK
+	t_style.set_border_width_all(1)
+	t_style.content_margin_left = 6
+	t_style.content_margin_right = 6
+	t_style.content_margin_top = 4
+	t_style.content_margin_bottom = 4
+	title_panel.add_theme_stylebox_override("panel", t_style)
+	root_vbox.add_child(title_panel)
+	
+	var title_lbl := Label.new()
+	title_lbl.text = "FocusPals"
+	title_lbl.add_theme_font_size_override("font_size", 12)
+	title_lbl.add_theme_color_override("font_color", Color.WHITE)
+	title_panel.add_child(title_lbl)
+
+	# --- Content Area ---
+	var content_margin := MarginContainer.new()
+	content_margin.add_theme_constant_override("margin_top", 16)
+	content_margin.add_theme_constant_override("margin_bottom", 16)
+	content_margin.add_theme_constant_override("margin_left", 20)
+	content_margin.add_theme_constant_override("margin_right", 20)
+	root_vbox.add_child(content_margin)
+
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 16)
-	panel.add_child(vbox)
-
-	# Title
-	var title := Label.new()
-	title.text = "✨ FocusPals" if lang == "en" else "✨ FocusPals"
-	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
+	content_margin.add_child(vbox)
 
 	# Question
 	var lbl := Label.new()
@@ -2420,7 +2498,7 @@ func _show_onboarding_dialog(lang: String = "en") -> void:
 	else:
 		lbl.text = "Want me to explain\nhow this works? 🎓"
 	lbl.add_theme_font_size_override("font_size", 13)
-	lbl.add_theme_color_override("font_color", Color(0.9, 0.92, 1.0))
+	lbl.add_theme_color_override("font_color", Color(0.227, 0.353, 0.541))  # #3a5a8a
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(lbl)
 
@@ -2434,11 +2512,11 @@ func _show_onboarding_dialog(lang: String = "en") -> void:
 	var no_text: String = "  Non  " if lang == "fr" else "  Skip  "
 
 	row.add_child(_build_styled_button(yes_text,
-		Color(0.15, 0.3, 0.2, 0.8), Color(0.2, 0.45, 0.3, 0.9),
-		Color(0.85, 1.0, 0.9), _onboarding_answer.bind("Y")))
+		Color(0.533, 0.784, 0.627, 0.5), Color(0.533, 0.784, 0.627, 0.7),
+		Color(0.227, 0.353, 0.541), _onboarding_answer.bind("Y")))
 	row.add_child(_build_styled_button(no_text,
-		Color(0.15, 0.15, 0.25, 0.6), Color(0.2, 0.2, 0.35, 0.8),
-		Color(0.7, 0.72, 0.8), _onboarding_answer.bind("N")))
+		Color(0.863, 0.910, 0.957, 0.6), Color(0.710, 0.816, 0.941, 0.8),
+		Color(0.227, 0.353, 0.541), _onboarding_answer.bind("N")))
 
 func _onboarding_answer(answer: String) -> void:
 	_hide_onboarding_dialog()

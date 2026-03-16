@@ -112,16 +112,12 @@ func _build_ui() -> void:
 
 	_panel = PanelContainer.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.03, 0.03, 0.08, 0.95)
-	style.border_color = Color(0.8, 0.4, 0.2, 0.6)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(8)
-	style.content_margin_left = 12
-	style.content_margin_right = 12
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	style.shadow_color = Color(0, 0, 0, 0.4)
-	style.shadow_size = 5
+	style.bg_color = Color(0.906, 0.933, 0.965, 0.97)  # #e7eef6
+	style.border_color = Color(0.502, 0.682, 0.890)     # #80aee3
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(3)
+	style.shadow_color = Color(0.553, 0.737, 0.918, 0.3)  # #8dbcea
+	style.shadow_size = 4
 	_panel.add_theme_stylebox_override("panel", style)
 
 	var panel_w := 300.0
@@ -129,31 +125,55 @@ func _build_ui() -> void:
 	_panel.position = Vector2(20, vp.y * 0.15)
 	add_child(_panel)
 
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
-	_panel.add_child(vbox)
+	var root_vbox := VBoxContainer.new()
+	root_vbox.add_theme_constant_override("separation", 0)
+	_panel.add_child(root_vbox)
 
-	# Title
+	# --- Title Bar ---
+	var title_panel := PanelContainer.new()
+	var t_style := StyleBoxFlat.new()
+	t_style.bg_color = Color(0.227, 0.353, 0.541)  # RETRO_TEXT
+	t_style.border_color = Color(0.345, 0.537, 0.769)  # RETRO_DARK
+	t_style.set_border_width_all(1)
+	t_style.content_margin_left = 6
+	t_style.content_margin_right = 6
+	t_style.content_margin_top = 4
+	t_style.content_margin_bottom = 4
+	title_panel.add_theme_stylebox_override("panel", t_style)
+	root_vbox.add_child(title_panel)
+
 	var title_row := HBoxContainer.new()
-	vbox.add_child(title_row)
+	title_panel.add_child(title_row)
 
 	var title := Label.new()
-	title.text = "🔧  Debug Tweaks"
-	title.add_theme_font_size_override("font_size", 14)
-	title.add_theme_color_override("font_color", Color(1.0, 0.7, 0.3))
+	title.text = "🔧 Debug Tweaks"
+	title.add_theme_font_size_override("font_size", 12)
+	title.add_theme_color_override("font_color", Color.WHITE)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(title)
 
 	var hint := Label.new()
 	hint.text = "F2"
 	hint.add_theme_font_size_override("font_size", 10)
-	hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+	hint.add_theme_color_override("font_color", Color(0.863, 0.910, 0.957, 0.8))  # Light blue
 	title_row.add_child(hint)
+
+	# --- Content Area ---
+	var content_margin := MarginContainer.new()
+	content_margin.add_theme_constant_override("margin_top", 12)
+	content_margin.add_theme_constant_override("margin_bottom", 12)
+	content_margin.add_theme_constant_override("margin_left", 16)
+	content_margin.add_theme_constant_override("margin_right", 16)
+	root_vbox.add_child(content_margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	content_margin.add_child(vbox)
 
 	# Separator
 	var sep := HSeparator.new()
 	var sep_style := StyleBoxFlat.new()
-	sep_style.bg_color = Color(0.8, 0.4, 0.2, 0.2)
+	sep_style.bg_color = Color(0.502, 0.682, 0.890, 0.4)  # #80aee3
 	sep_style.set_content_margin_all(0)
 	sep_style.content_margin_top = 3
 	sep_style.content_margin_bottom = 3
@@ -167,7 +187,7 @@ func _build_ui() -> void:
 	# ── Stability Toggles ──
 	var sep2 := HSeparator.new()
 	var sep2_style := StyleBoxFlat.new()
-	sep2_style.bg_color = Color(0.4, 0.2, 0.2, 0.3)
+	sep2_style.bg_color = Color(0.502, 0.682, 0.890, 0.4)  # #80aee3
 	sep2_style.set_content_margin_all(0)
 	sep2_style.content_margin_top = 6
 	sep2_style.content_margin_bottom = 3
@@ -175,9 +195,9 @@ func _build_ui() -> void:
 	vbox.add_child(sep2)
 
 	var toggle_title := Label.new()
-	toggle_title.text = "⚠️  Stability (reconnects)"
+	toggle_title.text = "⚠️ Stability (reconnects)"
 	toggle_title.add_theme_font_size_override("font_size", 10)
-	toggle_title.add_theme_color_override("font_color", Color(1.0, 0.5, 0.3))
+	toggle_title.add_theme_color_override("font_color", Color(0.345, 0.537, 0.769))  # RETRO_DARK
 	vbox.add_child(toggle_title)
 
 	for toggle in STABILITY_TOGGLES:
@@ -185,25 +205,25 @@ func _build_ui() -> void:
 
 	# Reset button
 	var reset_btn := Button.new()
-	reset_btn.text = "↩️  Reset All"
+	reset_btn.text = "↩️ Reset All"
 	reset_btn.custom_minimum_size.y = 28
 	var btn_style := StyleBoxFlat.new()
-	btn_style.bg_color = Color(0.15, 0.08, 0.08, 0.7)
-	btn_style.border_color = Color(0.8, 0.3, 0.3, 0.4)
+	btn_style.bg_color = Color(0.863, 0.910, 0.957)  # #dce8f4
+	btn_style.border_color = Color(0.878, 0.533, 0.533, 0.4)  # Light red border
 	btn_style.set_border_width_all(1)
-	btn_style.set_corner_radius_all(4)
+	btn_style.set_corner_radius_all(3)
 	btn_style.set_content_margin_all(4)
 	var btn_hover := StyleBoxFlat.new()
-	btn_hover.bg_color = Color(0.25, 0.12, 0.12, 0.8)
-	btn_hover.border_color = Color(1.0, 0.4, 0.4, 0.5)
-	btn_hover.set_border_width_all(1)
-	btn_hover.set_corner_radius_all(4)
+	btn_hover.bg_color = Color(0.878, 0.533, 0.533, 0.2)
+	btn_hover.border_color = Color(0.878, 0.533, 0.533, 0.8)
+	btn_hover.set_border_width_all(2)
+	btn_hover.set_corner_radius_all(3)
 	btn_hover.set_content_margin_all(4)
 	reset_btn.add_theme_stylebox_override("normal", btn_style)
 	reset_btn.add_theme_stylebox_override("hover", btn_hover)
 	reset_btn.add_theme_stylebox_override("pressed", btn_hover)
 	reset_btn.add_theme_font_size_override("font_size", 11)
-	reset_btn.add_theme_color_override("font_color", Color(0.9, 0.6, 0.6))
+	reset_btn.add_theme_color_override("font_color", Color(0.878, 0.533, 0.533))
 	reset_btn.pressed.connect(_on_reset_all)
 	vbox.add_child(reset_btn)
 
@@ -214,7 +234,7 @@ func _add_slider(parent: VBoxContainer, tweak: Dictionary) -> void:
 	var lbl := Label.new()
 	lbl.text = tweak["label"]
 	lbl.add_theme_font_size_override("font_size", 10)
-	lbl.add_theme_color_override("font_color", Color(0.6, 0.65, 0.75))
+	lbl.add_theme_color_override("font_color", Color(0.345, 0.537, 0.769))  # RETRO_DARK
 	parent.add_child(lbl)
 
 	# Row: slider + value
@@ -232,12 +252,16 @@ func _add_slider(parent: VBoxContainer, tweak: Dictionary) -> void:
 
 	# Style
 	var track := StyleBoxFlat.new()
-	track.bg_color = Color(0.08, 0.1, 0.18, 0.8)
-	track.set_corner_radius_all(3)
+	track.bg_color = Color(0.227, 0.353, 0.541, 0.8)  # RETRO_TEXT (dark background for contrast)
+	track.border_color = Color(0.1, 0.2, 0.3, 0.5)
+	track.set_border_width_all(1)
+	track.set_corner_radius_all(2)
 	track.set_content_margin_all(0)
+	track.content_margin_top = 4
+	track.content_margin_bottom = 4
 	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(0.9, 0.5, 0.2, 0.8)
-	fill.set_corner_radius_all(3)
+	fill.bg_color = Color(0.553, 0.737, 0.918)  # RETRO_SURCONTOUR
+	fill.set_corner_radius_all(2)
 	fill.set_content_margin_all(0)
 	slider.add_theme_stylebox_override("slider", track)
 	slider.add_theme_stylebox_override("grabber_area", fill)
@@ -249,7 +273,7 @@ func _add_slider(parent: VBoxContainer, tweak: Dictionary) -> void:
 	var val_label := Label.new()
 	val_label.text = _format_val(tweak["default"], tweak)
 	val_label.add_theme_font_size_override("font_size", 11)
-	val_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.4))
+	val_label.add_theme_color_override("font_color", Color(0.227, 0.353, 0.541))  # RETRO_TEXT
 	val_label.custom_minimum_size.x = 48
 	val_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	row.add_child(val_label)
@@ -283,7 +307,7 @@ func _add_toggle(parent: VBoxContainer, toggle: Dictionary) -> void:
 	checkbox.text = toggle["label"]
 	checkbox.button_pressed = toggle["default"]
 	checkbox.add_theme_font_size_override("font_size", 11)
-	checkbox.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if toggle["default"] else Color(1.0, 0.4, 0.4))
+	checkbox.add_theme_color_override("font_color", Color(0.533, 0.784, 0.627) if toggle["default"] else Color(0.878, 0.533, 0.533))
 	checkbox.toggled.connect(_on_toggle_changed.bind(key))
 	parent.add_child(checkbox)
 	_toggles[key] = checkbox
@@ -293,7 +317,7 @@ func _on_toggle_changed(pressed: bool, key: String) -> void:
 	# Update checkbox color
 	if _toggles.has(key):
 		var cb: CheckBox = _toggles[key]
-		cb.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if pressed else Color(1.0, 0.4, 0.4))
+		cb.add_theme_color_override("font_color", Color(0.533, 0.784, 0.627) if pressed else Color(0.878, 0.533, 0.533))
 	# Send to Python
 	tweak_changed.emit(key, val)
 	var main_node = get_parent()
@@ -332,7 +356,7 @@ func _on_reset_all() -> void:
 			var cb: CheckBox = _toggles[key]
 			var was_on: bool = cb.button_pressed
 			cb.set_pressed_no_signal(toggle["default"])
-			cb.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5) if toggle["default"] else Color(1.0, 0.4, 0.4))
+			cb.add_theme_color_override("font_color", Color(0.533, 0.784, 0.627) if toggle["default"] else Color(0.878, 0.533, 0.533))
 			if was_on != toggle["default"]:
 				needs_reconnect = true
 		var main_node = get_parent()

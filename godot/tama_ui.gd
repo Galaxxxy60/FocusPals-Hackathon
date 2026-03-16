@@ -73,7 +73,7 @@ func _setup_status_indicator() -> void:
 	_status_label = Label.new()
 	_status_label.text = ""
 	_status_label.add_theme_font_size_override("font_size", 13)
-	_status_label.add_theme_color_override("font_color", Color(0.5, 0.7, 1.0, 0.9))
+	_status_label.add_theme_color_override("font_color", Color(0.345, 0.537, 0.769, 0.9))  # #5889c4
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_status_label.offset_top = -40
@@ -129,10 +129,10 @@ func _draw_break_overlay() -> void:
 	var remaining := maxf(_break_duration_secs - elapsed, 0.0)
 	var progress := clampf(elapsed / _break_duration_secs, 0.0, 1.0)
 
-	# ── Soft background tint ──
+	# ── Soft background tint (retro blue) ──
 	_break_control.draw_rect(
 		Rect2(Vector2.ZERO, vp_size),
-		Color(0.1, 0.15, 0.25, 0.12)
+		Color(0.502, 0.682, 0.890, 0.08)  # #80aee3 subtle
 	)
 
 	# ── Break timer (above head, same position logic) ──
@@ -157,11 +157,11 @@ func _draw_break_overlay() -> void:
 	var text_x := center_x - ts.x * 0.5
 	var text_y := timer_y
 
-	# Pill background
+	# Pill background (retro style)
 	var pill := Rect2(text_x - 14, text_y - ts.y - 6, ts.x + 28, ts.y + 14)
-	var text_color := Color(0.4, 0.7, 1.0, 0.9).lerp(Color(0.3, 1.0, 0.5, 0.9), progress)
-	_break_control.draw_rect(pill, Color(0.08, 0.1, 0.18, 0.65), true)
-	_break_control.draw_rect(pill, Color(text_color.r, text_color.g, text_color.b, 0.25), false, 1.0)
+	var text_color := Color(0.345, 0.537, 0.769, 0.9).lerp(Color(0.533, 0.784, 0.627, 0.9), progress)  # #5889c4 → #88c8a0
+	_break_control.draw_rect(pill, Color(0.906, 0.933, 0.965, 0.92), true)  # #e7eef6
+	_break_control.draw_rect(pill, Color(0.502, 0.682, 0.890, 0.6), false, 2.0)  # #80aee3 border
 	_break_control.draw_string(font, Vector2(text_x, text_y), time_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, text_color)
 
 	# Progress bar under pill
@@ -169,5 +169,5 @@ func _draw_break_overlay() -> void:
 	var bar_h := 3.0
 	var bar_x := pill.position.x + 4.0
 	var bar_y := pill.position.y + pill.size.y + 3.0
-	_break_control.draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.2, 0.25, 0.35, 0.4))
+	_break_control.draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.553, 0.737, 0.918, 0.3))  # #8dbcea ghost
 	_break_control.draw_rect(Rect2(bar_x, bar_y, bar_w * progress, bar_h), text_color)

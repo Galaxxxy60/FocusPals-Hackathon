@@ -205,15 +205,15 @@ func _draw_panel() -> void:
 	var alpha := _progress
 	var pr := _panel_rect()
 
-	# Panel background
-	_canvas.draw_rect(pr, Color(0.06, 0.06, 0.12, 0.95 * alpha), true)
-	_canvas.draw_rect(pr, Color(0.3, 0.5, 0.9, 0.4 * alpha), false, 1.5)
+	# Panel background (retro style)
+	_canvas.draw_rect(pr, Color(0.906, 0.933, 0.965, 0.97 * alpha), true)  # #e7eef6
+	_canvas.draw_rect(pr, Color(0.502, 0.682, 0.890, 0.8 * alpha), false, 2.0)  # #80aee3
 
 	# Title
 	var font := ThemeDB.fallback_font
 	_canvas.draw_string(font, Vector2(pr.position.x + PADDING, pr.position.y + 22),
 		"🎤  Microphone", HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 15,
-		Color(0.7, 0.85, 1.0, alpha))
+		Color(0.345, 0.537, 0.769, alpha))  # #5889c4
 
 	# ── Vertical Segment VU Meter (LEFT side) ──
 	var num_segments := 12
@@ -226,9 +226,9 @@ func _draw_panel() -> void:
 
 	# Background
 	_canvas.draw_rect(Rect2(vu_x_pos - 3, vu_y_start - 3, VU_WIDTH + 6, vu_h_total + 6),
-		Color(0.04, 0.04, 0.08, 0.9 * alpha), true)
+		Color(0.863, 0.910, 0.957, 0.9 * alpha), true)  # #dce8f4
 	_canvas.draw_rect(Rect2(vu_x_pos - 3, vu_y_start - 3, VU_WIDTH + 6, vu_h_total + 6),
-		Color(0.2, 0.3, 0.5, 0.3 * alpha), false, 1.0)
+		Color(0.502, 0.682, 0.890, 0.4 * alpha), false, 1.0)  # #80aee3
 
 	for s in range(num_segments):
 		var segment_index := num_segments - 1 - s  # top = highest index
@@ -250,7 +250,7 @@ func _draw_panel() -> void:
 	var sep_y := pr.position.y + 28
 	_canvas.draw_line(Vector2(pr.position.x + PADDING, sep_y),
 		Vector2(pr.position.x + PANEL_WIDTH - PADDING, sep_y),
-		Color(0.3, 0.5, 0.8, 0.3 * alpha), 1.0)
+		Color(0.502, 0.682, 0.890, 0.3 * alpha), 1.0)  # #80aee3
 
 	# Mic items
 	for i in _mics.size():
@@ -266,25 +266,25 @@ func _draw_mic_item(index: int, alpha: float) -> void:
 	var font := ThemeDB.fallback_font
 
 	if is_selected:
-		_canvas.draw_rect(rect, Color(0.15, 0.45, 0.25, 0.7 * alpha), true)
-		_canvas.draw_rect(Rect2(rect.position.x, rect.position.y, 3, rect.size.y), Color(0.3, 1.0, 0.5, alpha), true)
-		_canvas.draw_rect(rect, Color(0.3, 1.0, 0.5, 0.5 * alpha), false, 1.0)
+		_canvas.draw_rect(rect, Color(0.710, 0.816, 0.941, 0.7 * alpha), true)  # #b5d0f0
+		_canvas.draw_rect(Rect2(rect.position.x, rect.position.y, 3, rect.size.y), Color(0.345, 0.537, 0.769, alpha), true)  # #5889c4
+		_canvas.draw_rect(rect, Color(0.502, 0.682, 0.890, 0.7 * alpha), false, 1.0)  # #80aee3
 	elif is_hovered:
-		_canvas.draw_rect(rect, Color(0.2, 0.35, 0.6, 0.4 * alpha), true)
-		_canvas.draw_rect(rect, Color(0.4, 0.7, 1.0, 0.4 * alpha), false, 1.0)
+		_canvas.draw_rect(rect, Color(0.553, 0.737, 0.918, 0.3 * alpha), true)  # #8dbcea
+		_canvas.draw_rect(rect, Color(0.502, 0.682, 0.890, 0.4 * alpha), false, 1.0)  # #80aee3
 
 	var ix := rect.position.x + 12
 	var iy := rect.position.y + rect.size.y * 0.5
 	if is_selected:
-		_canvas.draw_circle(Vector2(ix, iy), 7, Color(0.3, 1.0, 0.5, alpha))
-		_canvas.draw_string(font, Vector2(ix - 5, iy + 5), "✓", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0, 0, 0, alpha))
+		_canvas.draw_circle(Vector2(ix, iy), 7, Color(0.345, 0.537, 0.769, alpha))  # #5889c4
+		_canvas.draw_string(font, Vector2(ix - 5, iy + 5), "✓", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, alpha))
 	else:
-		_canvas.draw_circle(Vector2(ix, iy), 6, Color(0.4, 0.5, 0.6, 0.3 * alpha))
-		_canvas.draw_circle(Vector2(ix, iy), 4, Color(0.06, 0.06, 0.12, 0.9 * alpha))
+		_canvas.draw_circle(Vector2(ix, iy), 6, Color(0.502, 0.682, 0.890, 0.3 * alpha))  # #80aee3
+		_canvas.draw_circle(Vector2(ix, iy), 4, Color(0.906, 0.933, 0.965, 0.9 * alpha))  # #e7eef6
 
 	if mic_name.length() > 25:
 		mic_name = mic_name.substr(0, 23) + "…"
-	var text_color := Color(1, 1, 1, alpha) if is_selected else Color(0.7, 0.75, 0.8, alpha)
+	var text_color := Color(0.227, 0.353, 0.541, alpha) if is_selected else Color(0.345, 0.537, 0.769, alpha)
 	_canvas.draw_string(font, Vector2(ix + 16, rect.position.y + rect.size.y * 0.65),
 		mic_name, HORIZONTAL_ALIGNMENT_LEFT, int(rect.size.x - 55), 12, text_color)
 
@@ -292,5 +292,5 @@ func _draw_mic_item(index: int, alpha: float) -> void:
 		var bs := font.get_string_size("ACTIF", HORIZONTAL_ALIGNMENT_LEFT, -1, 9)
 		var bx := rect.position.x + rect.size.x - bs.x - 10
 		var by := iy - bs.y * 0.3
-		_canvas.draw_rect(Rect2(bx - 4, by - 2, bs.x + 8, bs.y + 4), Color(0.2, 0.8, 0.4, 0.3 * alpha), true)
-		_canvas.draw_string(font, Vector2(bx, by + bs.y - 1), "ACTIF", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(0.4, 1.0, 0.6, alpha))
+		_canvas.draw_rect(Rect2(bx - 4, by - 2, bs.x + 8, bs.y + 4), Color(0.502, 0.682, 0.890, 0.3 * alpha), true)
+		_canvas.draw_string(font, Vector2(bx, by + bs.y - 1), "ACTIF", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(0.345, 0.537, 0.769, alpha))

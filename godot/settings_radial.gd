@@ -1,21 +1,32 @@
 extends CanvasLayer
-## Radial semicircular settings menu
+## Radial semicircular settings menu — Retro Pixel Art Y2K Style
 ## Clicks are required. Uses a 1% opacity background to capture clicks securely
-## and prevent them from passing through to desktop windows.
+## and prevents them from passing through to desktop windows.
 
 signal action_triggered(action_id: String)
 signal request_hide()
 
 var _L = preload("res://locale.gd").new()
 
+# ── Retro Color Palette ──
+const RETRO_BG       := Color(0.906, 0.933, 0.965)  # #e7eef6 — centre
+const RETRO_BORDER   := Color(0.502, 0.682, 0.890)  # #80aee3 — contour
+const RETRO_SURCONTOUR := Color(0.553, 0.737, 0.918)  # #8dbcea — sur-contour
+const RETRO_ACCENT   := Color(0.659, 0.784, 0.941)  # #a8c8f0
+const RETRO_DARK     := Color(0.345, 0.537, 0.769)  # #5889c4
+const RETRO_TEXT     := Color(0.227, 0.353, 0.541)  # #3a5a8a
+const RETRO_PANEL_BG := Color(0.863, 0.910, 0.957)  # #dce8f4
+const RETRO_HOVER    := Color(0.710, 0.816, 0.941)  # #b5d0f0
+const RETRO_GRID     := Color(0.502, 0.682, 0.890, 0.12)  # Grid lines
+
 var ITEMS := [
-	{"icon": "⚙️", "label": "Settings",      "id": "settings", "color": Color(0.4, 0.8, 1.0),  "scale": 0.85, "loc_key": "radial_settings"},
-	{"icon": "🛸", "label": "Appeler Tama",   "id": "call_tama",  "color": Color(0.4, 1.0, 0.5),  "scale": 1.35, "loc_key": "radial_call_tama"},
-	{"icon": "⛔", "label": "Quit",           "id": "quit",     "color": Color(1.0, 0.3, 0.3),  "scale": 0.85, "loc_key": "radial_quit"},
+	{"icon": "⚙️", "label": "Settings",      "id": "settings", "color": RETRO_BORDER,  "scale": 1.0, "loc_key": "radial_settings"},
+	{"icon": "🛸", "label": "Appeler Tama",   "id": "call_tama",  "color": RETRO_DARK,  "scale": 1.5, "loc_key": "radial_call_tama"},
+	{"icon": "⛔", "label": "Quit",           "id": "quit",     "color": Color(0.878, 0.533, 0.533),  "scale": 1.0, "loc_key": "radial_quit"},
 ]
 
-const ARC_RADIUS := 120.0
-const ITEM_SIZE  := 28.0
+const ARC_RADIUS := 110.0
+const ITEM_SIZE  := 32.0
 const ARC_SPREAD := 2.4
 
 var is_open := false
@@ -57,7 +68,9 @@ func _item_pos(index: int) -> Vector2:
 	var step: float = ARC_SPREAD / maxf(n - 1, 1)
 	var angle := -half + step * index
 	var center := _arc_center()
-	var r := ARC_RADIUS * _progress
+	# Push call_tama further out so the label doesn't overlap
+	var extra := 30.0 if ITEMS[index]["id"] == "call_tama" else 0.0
+	var r := (ARC_RADIUS + extra) * _progress
 	return center + Vector2(-r * cos(angle), r * sin(angle))
 
 func set_lang(lang_code: String) -> void:
@@ -111,7 +124,7 @@ func _update_hover(delta: float) -> void:
 		# Skip disabled items for hover
 		if ITEMS[i]["id"] == "call_tama" and tama_active:
 			continue
-		if mouse.distance_to(_item_pos(i)) < ITEM_SIZE * 1.6:
+		if mouse.distance_to(_item_pos(i)) < ITEM_SIZE * 1.8:
 			_hovered = i
 			break
 	if is_open and _progress >= 0.5:
@@ -145,17 +158,97 @@ func _draw_menu() -> void:
 	
 	var center := _arc_center()
 	var alpha := _progress
-	for ring in range(4):
-		var rr := (ARC_RADIUS + 40 - ring * 12) * _progress
-		var col := Color(0.25, 0.55, 1.0, 0.03 * alpha * (4 - ring))
-		_draw_arc_segments(center, rr, 8.0 * _progress, col)
+	
+	# ── Retro Grid Pattern (subtle background grid) ──
+	_draw_retro_grid(center, alpha)
+	
+	# ── Retro Arc Rings (double-border Y2K style) ──
+	# Sur-contour ring (outer glow)
+	var outer_r := (ARC_RADIUS + 50) * _progress
+	_draw_pixel_arc(center, outer_r, 3.0 * _progress, Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, 0.25 * alpha))
+	# Main contour ring
+	var main_r := (ARC_RADIUS + 38) * _progress
+	_draw_pixel_arc(center, main_r, 2.0 * _progress, Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.4 * alpha))
+	# Inner ring
+	var inner_r := (ARC_RADIUS - 10) * _progress
+	_draw_pixel_arc(center, inner_r, 1.5 * _progress, Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.15 * alpha))
+	
+	# ── Retro Connection Lines (dashed/pixel style) ──
 	for i in ITEMS.size():
-		_canvas.draw_line(center, _item_pos(i), Color(0.35, 0.55, 0.85, 0.25 * alpha), 1.5)
+		_draw_pixel_line(center, _item_pos(i), Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.3 * alpha), 2.0)
+	
+	# ── Draw Items ──
 	for i in ITEMS.size():
 		_draw_item(i)
+	
+	# ── Center Label ──
 	_draw_center_label(center, alpha)
-	var dot_a := 0.85 * alpha * (1.0 - _label_alpha * 0.7)
-	_canvas.draw_circle(center, 5 * _progress, Color(0.45, 0.7, 1.0, dot_a))
+	
+	# ── Center Dot (retro style) ──
+	var dot_a := 0.9 * alpha * (1.0 - _label_alpha * 0.7)
+	# Double border dot (retro style)
+	_canvas.draw_circle(center, 8 * _progress, Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, dot_a * 0.5))
+	_canvas.draw_circle(center, 6 * _progress, Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, dot_a))
+	_canvas.draw_circle(center, 4 * _progress, Color(RETRO_BG.r, RETRO_BG.g, RETRO_BG.b, dot_a))
+
+func _draw_retro_grid(center: Vector2, alpha: float) -> void:
+	"""Draw a subtle retro grid pattern around the arc area."""
+	var grid_size := 16.0
+	var grid_radius := (ARC_RADIUS + 80) * _progress
+	var grid_col := Color(RETRO_GRID.r, RETRO_GRID.g, RETRO_GRID.b, RETRO_GRID.a * alpha * 0.5)
+	
+	var start_x := center.x - grid_radius
+	var end_x := center.x + 20
+	var start_y := center.y - grid_radius
+	var end_y := center.y + grid_radius
+	
+	# Vertical lines
+	var x := start_x
+	while x <= end_x:
+		var dist_from_center := center.distance_to(Vector2(x, center.y))
+		if dist_from_center < grid_radius:
+			var fade = 1.0 - (dist_from_center / grid_radius)
+			_canvas.draw_line(
+				Vector2(x, maxf(start_y, center.y - sqrt(maxf(grid_radius * grid_radius - (x - center.x) * (x - center.x), 0)))),
+				Vector2(x, minf(end_y, center.y + sqrt(maxf(grid_radius * grid_radius - (x - center.x) * (x - center.x), 0)))),
+				Color(grid_col.r, grid_col.g, grid_col.b, grid_col.a * fade),
+				1.0
+			)
+		x += grid_size
+	
+	# Horizontal lines
+	var y := start_y
+	while y <= end_y:
+		var dist_from_center := center.distance_to(Vector2(center.x, y))
+		if dist_from_center < grid_radius:
+			var fade = 1.0 - (dist_from_center / grid_radius)
+			_canvas.draw_line(
+				Vector2(maxf(start_x, center.x - sqrt(maxf(grid_radius * grid_radius - (y - center.y) * (y - center.y), 0))), y),
+				Vector2(minf(end_x, center.x + sqrt(maxf(grid_radius * grid_radius - (y - center.y) * (y - center.y), 0))), y),
+				Color(grid_col.r, grid_col.g, grid_col.b, grid_col.a * fade),
+				1.0
+			)
+		y += grid_size
+
+func _draw_pixel_arc(center: Vector2, radius: float, width: float, color: Color) -> void:
+	"""Draw a pixelated arc (stepped segments for retro feel)."""
+	var segs := 24
+	var half := ARC_SPREAD / 2.0
+	for j in segs:
+		var a1 := -half + (ARC_SPREAD / segs) * j
+		var a2 := -half + (ARC_SPREAD / segs) * (j + 1)
+		var p1 := center + Vector2(-radius * cos(a1), radius * sin(a1))
+		var p2 := center + Vector2(-radius * cos(a2), radius * sin(a2))
+		# Snap to pixel grid for retro feel
+		p1 = Vector2(roundf(p1.x), roundf(p1.y))
+		p2 = Vector2(roundf(p2.x), roundf(p2.y))
+		_canvas.draw_line(p1, p2, color, width)
+
+func _draw_pixel_line(from: Vector2, to: Vector2, color: Color, width: float) -> void:
+	"""Draw a line snapped to pixel grid."""
+	var f := Vector2(roundf(from.x), roundf(from.y))
+	var t := Vector2(roundf(to.x), roundf(to.y))
+	_canvas.draw_line(f, t, color, width)
 
 func _draw_center_label(center: Vector2, alpha: float) -> void:
 	if _hovered >= 0:
@@ -167,25 +260,23 @@ func _draw_center_label(center: Vector2, alpha: float) -> void:
 	if _label_alpha < 0.01:
 		return
 	var font := ThemeDB.fallback_font
-	var ts := font.get_string_size(_label_text, HORIZONTAL_ALIGNMENT_CENTER, -1, 16)
+	var ts := font.get_string_size(_label_text, HORIZONTAL_ALIGNMENT_CENTER, -1, 14)
 	var lpos := center + Vector2(-ARC_RADIUS * 0.5 * _progress, 0)
-	var pw := ts.x + 18.0
-	var ph := ts.y + 12.0
+	var pw := ts.x + 20.0
+	var ph := ts.y + 14.0
 	var pill := Rect2(lpos.x - pw / 2, lpos.y - ph / 2, pw, ph)
-	_canvas.draw_rect(pill, Color(0.05, 0.05, 0.1, 0.85 * _label_alpha * alpha), true)
-	_canvas.draw_rect(pill, Color(_label_color.r, _label_color.g, _label_color.b, 0.5 * _label_alpha * alpha), false, 1.5)
+	
+	# Retro window-style label (double border like Windows 98)
+	# Sur-contour (outer)
+	var outer_pill := Rect2(pill.position.x - 2, pill.position.y - 2, pill.size.x + 4, pill.size.y + 4)
+	_canvas.draw_rect(outer_pill, Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, 0.5 * _label_alpha * alpha), false, 1.5)
+	# Main border
+	_canvas.draw_rect(pill, Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.7 * _label_alpha * alpha), false, 2.0)
+	# Background fill
+	_canvas.draw_rect(pill, Color(RETRO_BG.r, RETRO_BG.g, RETRO_BG.b, 0.92 * _label_alpha * alpha), true)
+	# Text (dark on light bg — retro style)
 	_canvas.draw_string(font, Vector2(lpos.x - ts.x / 2, lpos.y + ts.y * 0.3),
-		_label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, _label_alpha * alpha))
-
-func _draw_arc_segments(center: Vector2, radius: float, width: float, color: Color) -> void:
-	var segs := 24
-	var half := ARC_SPREAD / 2.0
-	for j in segs:
-		var a1 := -half + (ARC_SPREAD / segs) * j
-		var a2 := -half + (ARC_SPREAD / segs) * (j + 1)
-		var p1 := center + Vector2(-radius * cos(a1), radius * sin(a1))
-		var p2 := center + Vector2(-radius * cos(a2), radius * sin(a2))
-		_canvas.draw_line(p1, p2, color, width)
+		_label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(RETRO_TEXT.r, RETRO_TEXT.g, RETRO_TEXT.b, _label_alpha * alpha))
 
 func _draw_item(index: int) -> void:
 	var item: Dictionary = ITEMS[index]
@@ -195,23 +286,36 @@ func _draw_item(index: int) -> void:
 	var item_scale := 1.0
 	if item.has("scale"):
 		item_scale = float(item["scale"])
-	var r := ITEM_SIZE * item_scale * (1.0 + hover * 0.25)
+	var r := ITEM_SIZE * item_scale * (1.0 + hover * 0.2)
 	var accent: Color = item["color"]
 	# Grey out disabled items
 	var is_disabled = (item["id"] == "call_tama" and tama_active)
 	if is_disabled:
-		accent = Color(0.3, 0.3, 0.3)
+		accent = Color(0.6, 0.6, 0.65)
 		alpha *= 0.3
 	
+	# ── Retro Circle Drawing (triple-ring pixel art style) ──
+	
+	# Hover glow (retro scanline-like rings)
 	if hover > 0.01:
 		for g in range(3):
-			var gr := r + (5 + g * 4) * hover
-			var ga := 0.12 * hover * (3.0 - g) / 3.0
-			_canvas.draw_circle(pos, gr, Color(accent.r, accent.g, accent.b, ga))
-	_canvas.draw_circle(pos, r + 2, Color(accent.r, accent.g, accent.b, 0.6 * alpha))
-	_canvas.draw_circle(pos, r, Color(0.07, 0.07, 0.13, 0.92 * alpha))
+			var gr := r + (6 + g * 5) * hover
+			var ga := 0.10 * hover * (3.0 - g) / 3.0
+			_canvas.draw_circle(pos, gr, Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, ga))
+	
+	# Sur-contour ring (outer)   #8dbcea
+	_canvas.draw_circle(pos, r + 6, Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, 0.6 * alpha))
+	# Main contour ring          #80aee3
+	_canvas.draw_circle(pos, r + 4, Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.85 * alpha))
+	# Center fill                #e7eef6
+	_canvas.draw_circle(pos, r, Color(RETRO_BG.r, RETRO_BG.g, RETRO_BG.b, 0.95 * alpha))
+	
+	# Inner accent ring (subtle, for depth)
+	_canvas.draw_circle(pos, r - 3, Color(RETRO_PANEL_BG.r, RETRO_PANEL_BG.g, RETRO_PANEL_BG.b, 0.3 * alpha))
+	
+	# Icon
 	var font := ThemeDB.fallback_font
-	var fs := int((18 + hover * 4) * item_scale)
+	var fs := int((20 + hover * 4) * item_scale)
 	var icon_str: String = item["icon"]
 	var ts := font.get_string_size(icon_str, HORIZONTAL_ALIGNMENT_CENTER, -1, fs)
 	_canvas.draw_string(font, pos + Vector2(-ts.x / 2, ts.y * 0.3),

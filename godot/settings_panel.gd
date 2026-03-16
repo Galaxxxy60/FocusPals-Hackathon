@@ -79,97 +79,116 @@ var _screen_share_toggle: CheckButton = null
 var _mic_toggle: CheckButton = null
 var _memory_empty: bool = true
 
-# ─── Styles ────────────────────────────────────────────────
+# ─── Retro Pixel Art Styles (Y2K Pastel Blue) ─────────────
+# Palette: #e7eef6 (bg), #80aee3 (border), #8dbcea (surcontour)
+
+const RETRO_BG       := Color(0.906, 0.933, 0.965)  # #e7eef6
+const RETRO_BORDER   := Color(0.502, 0.682, 0.890)  # #80aee3
+const RETRO_SURCONTOUR := Color(0.553, 0.737, 0.918)  # #8dbcea
+const RETRO_ACCENT   := Color(0.659, 0.784, 0.941)  # #a8c8f0
+const RETRO_DARK     := Color(0.345, 0.537, 0.769)  # #5889c4
+const RETRO_TEXT     := Color(0.227, 0.353, 0.541)  # #3a5a8a
+const RETRO_PANEL_BG := Color(0.863, 0.910, 0.957)  # #dce8f4
+const RETRO_HOVER    := Color(0.710, 0.816, 0.941)  # #b5d0f0
+const RETRO_SUCCESS  := Color(0.533, 0.784, 0.627)  # #88c8a0
+const RETRO_DANGER   := Color(0.878, 0.533, 0.533)  # #e08888
 
 func _make_panel_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.04, 0.04, 0.09, 0.96)
-	s.border_color = Color(0.3, 0.5, 0.9, 0.5)
-	s.set_border_width_all(1)
-	s.set_corner_radius_all(8)
-	s.content_margin_left = 14
-	s.content_margin_right = 14
-	s.content_margin_top = 10
-	s.content_margin_bottom = 10
-	s.shadow_color = Color(0, 0, 0, 0.4)
-	s.shadow_size = 6
+	s.bg_color = Color(RETRO_BG.r, RETRO_BG.g, RETRO_BG.b, 0.97)
+	s.border_color = RETRO_BORDER
+	s.set_border_width_all(2)
+	s.set_corner_radius_all(3)  # Blocky retro corners
+	s.shadow_color = Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, 0.3)
+	s.shadow_size = 4
+	# Double border effect (retro window style)
+	s.border_blend = true
 	return s
 
 func _make_input_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.06, 0.06, 0.12, 0.95)
-	s.border_color = Color(0.3, 0.5, 0.8, 0.4)
+	s.bg_color = Color(1.0, 1.0, 1.0, 0.85)
+	s.border_color = RETRO_BORDER
 	s.set_border_width_all(1)
-	s.set_corner_radius_all(4)
+	s.set_corner_radius_all(2)
 	s.set_content_margin_all(6)
 	return s
 
 func _make_input_focus_style() -> StyleBoxFlat:
 	var s := _make_input_style()
-	s.border_color = Color(0.4, 0.7, 1.0, 0.7)
-	s.bg_color = Color(0.08, 0.08, 0.16, 0.98)
+	s.border_color = RETRO_DARK
+	s.bg_color = Color(1.0, 1.0, 1.0, 0.95)
+	s.set_border_width_all(2)
 	return s
 
 func _make_btn_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.12, 0.2, 0.35, 0.8)
-	s.border_color = Color(0.3, 0.55, 0.9, 0.4)
+	s.bg_color = RETRO_PANEL_BG
+	s.border_color = RETRO_BORDER
 	s.set_border_width_all(1)
-	s.set_corner_radius_all(4)
+	s.set_corner_radius_all(2)
 	s.set_content_margin_all(4)
 	return s
 
 func _make_btn_hover_style() -> StyleBoxFlat:
 	var s := _make_btn_style()
-	s.bg_color = Color(0.18, 0.3, 0.5, 0.9)
-	s.border_color = Color(0.45, 0.7, 1.0, 0.6)
+	s.bg_color = RETRO_HOVER
+	s.border_color = RETRO_DARK
+	s.set_border_width_all(2)
 	return s
 
 func _make_btn_pressed_style() -> StyleBoxFlat:
 	var s := _make_btn_style()
-	s.bg_color = Color(0.1, 0.35, 0.2, 0.85)
-	s.border_color = Color(0.3, 0.9, 0.5, 0.6)
+	s.bg_color = Color(RETRO_ACCENT.r, RETRO_ACCENT.g, RETRO_ACCENT.b, 0.9)
+	s.border_color = RETRO_DARK
+	s.set_border_width_all(2)
 	return s
 
 func _make_mic_btn_style(selected: bool) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	if selected:
-		s.bg_color = Color(0.12, 0.35, 0.2, 0.7)
-		s.border_color = Color(0.3, 1.0, 0.5, 0.5)
+		s.bg_color = Color(RETRO_HOVER.r, RETRO_HOVER.g, RETRO_HOVER.b, 0.8)
+		s.border_color = RETRO_DARK
 	else:
-		s.bg_color = Color(0.06, 0.06, 0.1, 0.3)
-		s.border_color = Color(0.2, 0.3, 0.5, 0.2)
+		s.bg_color = Color(1.0, 1.0, 1.0, 0.5)
+		s.border_color = Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.4)
 	s.set_border_width_all(1)
-	s.set_corner_radius_all(4)
+	s.set_corner_radius_all(2)
 	s.set_content_margin_all(6)
 	return s
 
 func _make_mic_btn_hover_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.15, 0.25, 0.45, 0.5)
-	s.border_color = Color(0.4, 0.65, 1.0, 0.4)
+	s.bg_color = Color(RETRO_HOVER.r, RETRO_HOVER.g, RETRO_HOVER.b, 0.6)
+	s.border_color = RETRO_DARK
 	s.set_border_width_all(1)
-	s.set_corner_radius_all(4)
+	s.set_corner_radius_all(2)
 	s.set_content_margin_all(6)
 	return s
 
 func _make_slider_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.08, 0.1, 0.18, 0.8)
-	s.set_corner_radius_all(4)
+	# Fond du slider (trough) — plus sombre pour la lisibilité
+	s.bg_color = Color(0.227, 0.353, 0.541, 0.8)  # RETRO_TEXT (dark)
+	s.border_color = Color(0.1, 0.2, 0.3, 0.5)
+	s.set_border_width_all(1)
+	s.set_corner_radius_all(2)
 	s.set_content_margin_all(0)
+	s.content_margin_top = 4
+	s.content_margin_bottom = 4
 	return s
 
 func _make_slider_fill_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.3, 0.55, 0.95, 0.85)
-	s.set_corner_radius_all(4)
+	# Remplissage vif (clair)
+	s.bg_color = Color(0.553, 0.737, 0.918)  # RETRO_SURCONTOUR
+	s.set_corner_radius_all(2)
 	s.set_content_margin_all(0)
 	return s
 
 func _make_separator_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.25, 0.4, 0.7, 0.15)
+	s.bg_color = Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.2)
 	s.set_content_margin_all(0)
 	s.content_margin_top = 4
 	s.content_margin_bottom = 2
@@ -177,10 +196,10 @@ func _make_separator_style() -> StyleBoxFlat:
 
 func _make_optionbtn_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.06, 0.06, 0.12, 0.9)
-	s.border_color = Color(0.3, 0.5, 0.8, 0.4)
+	s.bg_color = Color(1.0, 1.0, 1.0, 0.8)
+	s.border_color = RETRO_BORDER
 	s.set_border_width_all(1)
-	s.set_corner_radius_all(4)
+	s.set_corner_radius_all(2)
 	s.set_content_margin_all(6)
 	return s
 
@@ -294,34 +313,51 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	root_vbox.add_theme_constant_override("separation", 0)
 	_panel_container.add_child(root_vbox)
 
-	# ── Title bar ──
+	# --- Title Row (Retro Window Title Bar) ---
+	var title_panel := PanelContainer.new()
+	var t_style := StyleBoxFlat.new()
+	t_style.bg_color = RETRO_TEXT  # Dark blue title bar
+	t_style.border_color = RETRO_DARK
+	t_style.set_border_width_all(1)
+	t_style.content_margin_left = 8
+	t_style.content_margin_right = 8
+	t_style.content_margin_top = 4
+	t_style.content_margin_bottom = 4
+	title_panel.add_theme_stylebox_override("panel", t_style)
+	root_vbox.add_child(title_panel)
+
 	var title_bar := HBoxContainer.new()
 	title_bar.add_theme_constant_override("separation", 0)
-	root_vbox.add_child(title_bar)
+	title_panel.add_child(title_bar)
 
 	var title := Label.new()
 	title.text = _L.t("settings_title")
-	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(1, 1, 1))  # White text on dark bar
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_bar.add_child(title)
 
 	var close_btn := Button.new()
 	close_btn.text = "✕"
-	close_btn.custom_minimum_size = Vector2(28, 28)
+	close_btn.custom_minimum_size = Vector2(24, 24)
 	var close_style := StyleBoxFlat.new()
-	close_style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	close_style.bg_color = Color(0.8, 0.85, 0.9)  # Light gray-blue button
+	close_style.border_color = Color(1, 1, 1)     # Inner light highlight
+	close_style.set_border_width_all(1)
+	close_style.set_corner_radius_all(2)
 	close_style.set_content_margin_all(2)
 	var close_hover := StyleBoxFlat.new()
-	close_hover.bg_color = Color(1.0, 0.3, 0.3, 0.25)
-	close_hover.set_corner_radius_all(4)
+	close_hover.bg_color = Color(RETRO_DANGER.r, RETRO_DANGER.g, RETRO_DANGER.b, 0.9)
+	close_hover.border_color = Color(1, 1, 1)
+	close_hover.set_border_width_all(1)
+	close_hover.set_corner_radius_all(2)
 	close_hover.set_content_margin_all(2)
 	close_btn.add_theme_stylebox_override("normal", close_style)
 	close_btn.add_theme_stylebox_override("hover", close_hover)
 	close_btn.add_theme_stylebox_override("pressed", close_hover)
-	close_btn.add_theme_font_size_override("font_size", 14)
-	close_btn.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-	close_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.4, 0.4))
+	close_btn.add_theme_font_size_override("font_size", 12)
+	close_btn.add_theme_color_override("font_color", Color(0.1, 0.1, 0.1))
+	close_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
 	close_btn.pressed.connect(close)
 	title_bar.add_child(close_btn)
 
@@ -338,10 +374,19 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_scroll.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	root_vbox.add_child(_scroll)
 
+	# Margin container for scroll content (replaces panel content_margin)
+	var scroll_margin := MarginContainer.new()
+	scroll_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll_margin.add_theme_constant_override("margin_left", 14)
+	scroll_margin.add_theme_constant_override("margin_right", 14)
+	scroll_margin.add_theme_constant_override("margin_top", 6)
+	scroll_margin.add_theme_constant_override("margin_bottom", 10)
+	_scroll.add_child(scroll_margin)
+
 	_vbox = VBoxContainer.new()
 	_vbox.add_theme_constant_override("separation", 2)
 	_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_scroll.add_child(_vbox)
+	scroll_margin.add_child(_vbox)
 
 	# ══════ SECTION: Session ══════
 	var sess_section := _make_collapsible_section(_L.t("section_session"), false)
@@ -351,7 +396,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var sess_lbl := Label.new()
 	sess_lbl.text = _L.t("deep_work_duration")
 	sess_lbl.add_theme_font_size_override("font_size", 10)
-	sess_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	sess_lbl.add_theme_color_override("font_color", RETRO_DARK)
 	sess_content.add_child(sess_lbl)
 
 	var sess_row := HBoxContainer.new()
@@ -374,7 +419,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_session_label = Label.new()
 	_session_label.text = str(session_duration) + " min"
 	_session_label.add_theme_font_size_override("font_size", 12)
-	_session_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	_session_label.add_theme_color_override("font_color", RETRO_TEXT)
 	_session_label.custom_minimum_size.x = 55
 	_session_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	sess_row.add_child(_session_label)
@@ -388,7 +433,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var mic_lbl := Label.new()
 	mic_lbl.text = _L.t("microphone")
 	mic_lbl.add_theme_font_size_override("font_size", 10)
-	mic_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	mic_lbl.add_theme_color_override("font_color", RETRO_DARK)
 	audio_content.add_child(mic_lbl)
 
 	# VU meter (segmented bars)
@@ -409,7 +454,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var vol_lbl := Label.new()
 	vol_lbl.text = _L.t("volume_tama")
 	vol_lbl.add_theme_font_size_override("font_size", 10)
-	vol_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	vol_lbl.add_theme_color_override("font_color", RETRO_DARK)
 	audio_content.add_child(vol_lbl)
 
 	var vol_row := HBoxContainer.new()
@@ -432,7 +477,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_volume_label = Label.new()
 	_volume_label.text = str(int(volume * 100)) + "%"
 	_volume_label.add_theme_font_size_override("font_size", 12)
-	_volume_label.add_theme_color_override("font_color", Color(0.7, 0.85, 0.95))
+	_volume_label.add_theme_color_override("font_color", RETRO_TEXT)
 	_volume_label.custom_minimum_size.x = 40
 	_volume_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	vol_row.add_child(_volume_label)
@@ -446,7 +491,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var key_lbl := Label.new()
 	key_lbl.text = _L.t("api_key_label")
 	key_lbl.add_theme_font_size_override("font_size", 10)
-	key_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	key_lbl.add_theme_color_override("font_color", RETRO_DARK)
 	api_content.add_child(key_lbl)
 
 	var api_row := HBoxContainer.new()
@@ -459,9 +504,9 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_api_key_input.add_theme_stylebox_override("normal", _make_input_style())
 	_api_key_input.add_theme_stylebox_override("focus", _make_input_focus_style())
 	_api_key_input.add_theme_font_size_override("font_size", 11)
-	_api_key_input.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
-	_api_key_input.add_theme_color_override("font_placeholder_color", Color(0.4, 0.4, 0.5))
-	_api_key_input.add_theme_color_override("caret_color", Color(0.5, 0.8, 1.0))
+	_api_key_input.add_theme_color_override("font_color", RETRO_TEXT)
+	_api_key_input.add_theme_color_override("font_placeholder_color", Color(RETRO_DARK.r, RETRO_DARK.g, RETRO_DARK.b, 0.5))
+	_api_key_input.add_theme_color_override("caret_color", RETRO_DARK)
 	if _api_key_has_key:
 		if _api_key_hint.length() > 0:
 			# Show obfuscated hint so user can identify the key (e.g. "••••••••ab1Z")
@@ -500,7 +545,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var usage_lbl := Label.new()
 	usage_lbl.text = _L.t("api_usage_label")
 	usage_lbl.add_theme_font_size_override("font_size", 10)
-	usage_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	usage_lbl.add_theme_color_override("font_color", RETRO_DARK)
 	api_content.add_child(usage_lbl)
 
 	_usage_label = RichTextLabel.new()
@@ -509,14 +554,14 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_usage_label.scroll_active = false
 	_usage_label.custom_minimum_size.y = 80
 	_usage_label.add_theme_font_size_override("normal_font_size", 10)
-	_usage_label.add_theme_color_override("default_color", Color(0.6, 0.7, 0.8))
+	_usage_label.add_theme_color_override("default_color", RETRO_TEXT)
 	_update_usage_text()
 	api_content.add_child(_usage_label)
 
 	var note := Label.new()
 	note.text = _L.t("api_since_launch")
 	note.add_theme_font_size_override("font_size", 9)
-	note.add_theme_color_override("font_color", Color(0.4, 0.45, 0.55, 0.6))
+	note.add_theme_color_override("font_color", Color(RETRO_DARK.r, RETRO_DARK.g, RETRO_DARK.b, 0.6))
 	api_content.add_child(note)
 
 	# ══════ SECTION: General (Language + Tama Size) ══════
@@ -529,7 +574,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var lang_lbl := Label.new()
 	lang_lbl.text = _L.t("language_label")
 	lang_lbl.add_theme_font_size_override("font_size", 10)
-	lang_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	lang_lbl.add_theme_color_override("font_color", RETRO_DARK)
 	gen_content.add_child(lang_lbl)
 
 	_lang_btn = OptionButton.new()
@@ -537,7 +582,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	_lang_btn.add_theme_stylebox_override("hover", _make_btn_hover_style())
 	_lang_btn.add_theme_stylebox_override("pressed", _make_btn_pressed_style())
 	_lang_btn.add_theme_font_size_override("font_size", 12)
-	_lang_btn.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+	_lang_btn.add_theme_color_override("font_color", RETRO_TEXT)
 	var selected_lang_idx := 0
 	for i in LANGUAGES.size():
 		_lang_btn.add_item(LANGUAGES[i]["label"], i)
@@ -553,7 +598,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var size_lbl := Label.new()
 	size_lbl.text = _L.t("tama_size")
 	size_lbl.add_theme_font_size_override("font_size", 10)
-	size_lbl.add_theme_color_override("font_color", Color(0.5, 0.6, 0.7))
+	size_lbl.add_theme_color_override("font_color", RETRO_DARK)
 	gen_content.add_child(size_lbl)
 
 	var size_row := HBoxContainer.new()
@@ -570,7 +615,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	icon_small.text = person_char
 	icon_small.add_theme_font_override("font", fa_font)
 	icon_small.add_theme_font_size_override("font_size", 12)
-	icon_small.add_theme_color_override("font_color", Color(0.5, 0.6, 0.8, 0.7))
+	icon_small.add_theme_color_override("font_color", Color(RETRO_DARK.r, RETRO_DARK.g, RETRO_DARK.b, 0.7))
 	icon_small.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	size_row.add_child(icon_small)
 
@@ -592,14 +637,14 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	icon_big.text = person_char
 	icon_big.add_theme_font_override("font", fa_font)
 	icon_big.add_theme_font_size_override("font_size", 20)
-	icon_big.add_theme_color_override("font_color", Color(0.7, 0.75, 0.95, 0.9))
+	icon_big.add_theme_color_override("font_color", Color(RETRO_TEXT.r, RETRO_TEXT.g, RETRO_TEXT.b, 0.9))
 	icon_big.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	size_row.add_child(icon_big)
 
 	_size_label = Label.new()
 	_size_label.text = str(tama_scale) + "%"
 	_size_label.add_theme_font_size_override("font_size", 12)
-	_size_label.add_theme_color_override("font_color", Color(0.85, 0.7, 1.0))
+	_size_label.add_theme_color_override("font_color", RETRO_TEXT)
 	_size_label.custom_minimum_size.x = 42
 	_size_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	size_row.add_child(_size_label)
@@ -622,19 +667,19 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var screen_title := Label.new()
 	screen_title.text = _L.t("screen_share_title")
 	screen_title.add_theme_font_size_override("font_size", 11)
-	screen_title.add_theme_color_override("font_color", Color(0.8, 0.85, 0.95))
+	screen_title.add_theme_color_override("font_color", RETRO_TEXT)
 	screen_lbl_box.add_child(screen_title)
 
 	var screen_desc := Label.new()
 	screen_desc.text = _L.t("screen_share_desc")
 	screen_desc.add_theme_font_size_override("font_size", 9)
-	screen_desc.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
+	screen_desc.add_theme_color_override("font_color", Color(RETRO_DARK.r, RETRO_DARK.g, RETRO_DARK.b, 0.7))
 	screen_lbl_box.add_child(screen_desc)
 
 	_screen_share_toggle = CheckButton.new()
 	_screen_share_toggle.button_pressed = _screen_share_allowed
 	_screen_share_toggle.custom_minimum_size = Vector2(50, 28)
-	_screen_share_toggle.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
+	_screen_share_toggle.add_theme_color_override("font_color", RETRO_TEXT)
 	_screen_share_toggle.toggled.connect(_on_screen_share_toggled)
 	screen_row.add_child(_screen_share_toggle)
 
@@ -653,19 +698,19 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var mic_title := Label.new()
 	mic_title.text = _L.t("mic_permission_title")
 	mic_title.add_theme_font_size_override("font_size", 11)
-	mic_title.add_theme_color_override("font_color", Color(0.8, 0.85, 0.95))
+	mic_title.add_theme_color_override("font_color", RETRO_TEXT)
 	mic_lbl_box.add_child(mic_title)
 
 	var mic_desc := Label.new()
 	mic_desc.text = _L.t("mic_permission_desc")
 	mic_desc.add_theme_font_size_override("font_size", 9)
-	mic_desc.add_theme_color_override("font_color", Color(0.45, 0.5, 0.6))
+	mic_desc.add_theme_color_override("font_color", Color(RETRO_DARK.r, RETRO_DARK.g, RETRO_DARK.b, 0.7))
 	mic_lbl_box.add_child(mic_desc)
 
 	_mic_toggle = CheckButton.new()
 	_mic_toggle.button_pressed = _mic_allowed
 	_mic_toggle.custom_minimum_size = Vector2(50, 28)
-	_mic_toggle.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
+	_mic_toggle.add_theme_color_override("font_color", RETRO_TEXT)
 	_mic_toggle.toggled.connect(_on_mic_toggled)
 	mic_row.add_child(_mic_toggle)
 
@@ -677,7 +722,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	var reset_desc := Label.new()
 	reset_desc.text = _L.t("reset_memory_desc")
 	reset_desc.add_theme_font_size_override("font_size", 9)
-	reset_desc.add_theme_color_override("font_color", Color(0.5, 0.45, 0.45))
+	reset_desc.add_theme_color_override("font_color", Color(RETRO_DANGER.r, RETRO_DANGER.g, RETRO_DANGER.b, 0.8))
 	reset_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	danger_content.add_child(reset_desc)
 
@@ -782,21 +827,25 @@ func _make_collapsible_section(title: String, expanded: bool = true) -> Dictiona
 	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	header.custom_minimum_size.y = 28
 	var header_style := StyleBoxFlat.new()
-	header_style.bg_color = Color(0.06, 0.08, 0.14, 0.6)
-	header_style.set_corner_radius_all(4)
+	header_style.bg_color = Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, 0.3)
+	header_style.border_color = Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.3)
+	header_style.set_border_width_all(1)
+	header_style.set_corner_radius_all(2)
 	header_style.set_content_margin_all(4)
 	header_style.content_margin_left = 8
 	var header_hover := StyleBoxFlat.new()
-	header_hover.bg_color = Color(0.1, 0.15, 0.25, 0.7)
-	header_hover.set_corner_radius_all(4)
+	header_hover.bg_color = Color(RETRO_HOVER.r, RETRO_HOVER.g, RETRO_HOVER.b, 0.5)
+	header_hover.border_color = RETRO_BORDER
+	header_hover.set_border_width_all(1)
+	header_hover.set_corner_radius_all(2)
 	header_hover.set_content_margin_all(4)
 	header_hover.content_margin_left = 8
 	header.add_theme_stylebox_override("normal", header_style)
 	header.add_theme_stylebox_override("hover", header_hover)
 	header.add_theme_stylebox_override("pressed", header_hover)
 	header.add_theme_font_size_override("font_size", 13)
-	header.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
-	header.add_theme_color_override("font_hover_color", Color(0.75, 0.9, 1.0))
+	header.add_theme_color_override("font_color", RETRO_DARK)
+	header.add_theme_color_override("font_hover_color", RETRO_TEXT)
 	root.add_child(header)
 
 	# Content container
@@ -833,7 +882,7 @@ func _make_sub_sep() -> HSeparator:
 	## Lighter separator for sub-sections within a collapsible section
 	var sep := HSeparator.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.2, 0.3, 0.5, 0.1)
+	style.bg_color = Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.12)
 	style.set_content_margin_all(0)
 	style.content_margin_top = 3
 	style.content_margin_bottom = 3
@@ -866,9 +915,9 @@ func _add_mic_button(index: int) -> void:
 	btn.add_theme_stylebox_override("pressed", _make_mic_btn_hover_style())
 	btn.add_theme_font_size_override("font_size", 11)
 	if is_selected:
-		btn.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
+		btn.add_theme_color_override("font_color", RETRO_DARK)
 	else:
-		btn.add_theme_color_override("font_color", Color(0.7, 0.75, 0.8))
+		btn.add_theme_color_override("font_color", RETRO_TEXT)
 	btn.pressed.connect(_on_mic_btn_pressed.bind(mic_index))
 	row.add_child(btn)
 
@@ -1054,16 +1103,16 @@ func _update_api_status() -> void:
 		return
 	if _api_key_checking:
 		_api_status_label.text = _L.t("api_status_checking")
-		_api_status_label.add_theme_color_override("font_color", Color(0.6, 0.7, 0.9, 0.8))
+		_api_status_label.add_theme_color_override("font_color", RETRO_DARK)
 	elif _api_key_valid == 1:
 		_api_status_label.text = _L.t("api_status_valid")
-		_api_status_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4, 0.9))
+		_api_status_label.add_theme_color_override("font_color", RETRO_SUCCESS)
 	elif _api_key_valid == 0:
 		_api_status_label.text = _L.t("api_status_invalid")
-		_api_status_label.add_theme_color_override("font_color", Color(0.95, 0.3, 0.25, 0.9))
+		_api_status_label.add_theme_color_override("font_color", RETRO_DANGER)
 	else:
 		_api_status_label.text = _L.t("api_status_required")
-		_api_status_label.add_theme_color_override("font_color", Color(0.9, 0.5, 0.3, 0.8))
+		_api_status_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.4, 0.9))
 
 # ─── API Usage Text ───────────────────────────────────────
 
@@ -1083,19 +1132,19 @@ func _update_usage_text() -> void:
 
 	var time_str := _format_duration(connect_secs)
 	_usage_label.text = ""
-	_usage_label.append_text("[color=#8899bb]🔌 " + _L.t("usage_connections") + "[/color]  [color=#ccddf4]" + str(connections) + "[/color]")
-	_usage_label.append_text("      [color=#8899bb]⏱ " + _L.t("usage_time") + "[/color]  [color=#ccddf4]" + time_str + "[/color]\n")
-	_usage_label.append_text("[color=#8899bb]📸 " + _L.t("usage_scans") + "[/color]  [color=#ccddf4]" + _format_number(screen_pulses) + "[/color]")
-	_usage_label.append_text("      [color=#8899bb]⚙ Fn calls[/color]  [color=#ccddf4]" + _format_number(function_calls) + "[/color]\n")
-	_usage_label.append_text("[color=#8899bb]🎤 Audio ↑[/color]  [color=#ccddf4]" + _format_number(audio_sent) + "[/color]")
-	_usage_label.append_text("      [color=#8899bb]🔊 Audio ↓[/color]  [color=#ccddf4]" + _format_number(audio_recv) + "[/color]\n")
+	_usage_label.append_text("[color=#5889c4]🔌 " + _L.t("usage_connections") + "[/color]  [color=#3a5a8a]" + str(connections) + "[/color]")
+	_usage_label.append_text("      [color=#5889c4]⏱ " + _L.t("usage_time") + "[/color]  [color=#3a5a8a]" + time_str + "[/color]\n")
+	_usage_label.append_text("[color=#5889c4]📸 " + _L.t("usage_scans") + "[/color]  [color=#3a5a8a]" + _format_number(screen_pulses) + "[/color]")
+	_usage_label.append_text("      [color=#5889c4]⚙ Fn calls[/color]  [color=#3a5a8a]" + _format_number(function_calls) + "[/color]\n")
+	_usage_label.append_text("[color=#5889c4]🎤 Audio ↑[/color]  [color=#3a5a8a]" + _format_number(audio_sent) + "[/color]")
+	_usage_label.append_text("      [color=#5889c4]🔊 Audio ↓[/color]  [color=#3a5a8a]" + _format_number(audio_recv) + "[/color]\n")
 	# Flash-Lite 3.1 secondary agent stats
 	if lite_calls > 0:
-		_usage_label.append_text("[color=#66bbcc]⚡ Lite[/color]  [color=#9de0ec]" + _format_number(lite_calls) + " calls[/color]")
-		_usage_label.append_text("  [color=#66bbcc]↑[/color] [color=#9de0ec]" + _format_number(lite_in) + "[/color]")
-		_usage_label.append_text("  [color=#66bbcc]↓[/color] [color=#9de0ec]" + _format_number(lite_out) + " tok[/color]")
+		_usage_label.append_text("[color=#80aee3]⚡ Lite[/color]  [color=#5889c4]" + _format_number(lite_calls) + " calls[/color]")
+		_usage_label.append_text("  [color=#80aee3]↑[/color] [color=#5889c4]" + _format_number(lite_in) + "[/color]")
+		_usage_label.append_text("  [color=#80aee3]↓[/color] [color=#5889c4]" + _format_number(lite_out) + " tok[/color]")
 		if lite_errors > 0:
-			_usage_label.append_text("  [color=#e06666]⚠ " + str(lite_errors) + "[/color]")
+			_usage_label.append_text("  [color=#e08888]⚠ " + str(lite_errors) + "[/color]")
 
 # ─── Process ──────────────────────────────────────────────
 
