@@ -1,7 +1,7 @@
 """
 FocusPals — App Control (Jarvis Mode) 🤖
 OS-level application control: open, switch, minimize, shortcuts, typing, URLs, volume.
-Tama can help Nicolas inside his apps — not just watch him.
+Tama can help the user inside his apps — not just watch him.
 """
 
 import ctypes

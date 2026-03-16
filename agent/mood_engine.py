@@ -87,17 +87,17 @@ def get_mood_context(lang: str = "en") -> str:
     # Build mood description from bias
     if lang == "en":
         if bias <= -1.0:
-            mood = "You're in a great mood — Nicolas has been working well, you're relaxed and tolerant."
+            mood = "You're in a great mood — the user has been working well, you're relaxed and tolerant."
         elif bias <= -0.5:
-            mood = "You're in a good mood. Nicolas is working well. You're more patient than usual."
+            mood = "You're in a good mood. The user is working well. You're more patient than usual."
         elif bias <= 0.2:
             mood = "Neutral mood. Nothing special, you're observing normally."
         elif bias <= 0.7:
-            mood = "You're a bit irritable. Nicolas has had a few slips recently."
+            mood = "You're a bit irritable. The user has had a few slips recently."
         elif bias <= 1.0:
-            mood = "You're irritable. Nicolas has procrastinated multiple times. Your patience is razor-thin."
+            mood = "You're irritable. The user has procrastinated multiple times. Your patience is razor-thin."
         else:
-            mood = "You're on the edge. Nicolas has pushed too far. The slightest slip and you'll explode."
+            mood = "You're on the edge. The user has pushed too far. The slightest slip and you'll explode."
 
         # Overlay confidence context
         if C < 0.3:
@@ -108,17 +108,17 @@ def get_mood_context(lang: str = "en") -> str:
             mood += " You trust him right now. He's been working steadily."
     else:
         if bias <= -1.0:
-            mood = "Tu es de très bonne humeur — Nicolas a bien bossé, tu es détendue et tolérante."
+            mood = "Tu es de très bonne humeur — l'utilisateur a bien bossé, tu es détendue et tolérante."
         elif bias <= -0.5:
-            mood = "Tu es de bonne humeur. Nicolas travaille bien. Tu es plus patiente que d'habitude."
+            mood = "Tu es de bonne humeur. L'utilisateur travaille bien. Tu es plus patiente que d'habitude."
         elif bias <= 0.2:
             mood = "Humeur neutre. Rien de spécial, tu observes normalement."
         elif bias <= 0.7:
-            mood = "Tu es un peu irritable. Nicolas a fait quelques écarts récemment."
+            mood = "Tu es un peu irritable. L'utilisateur a fait quelques écarts récemment."
         elif bias <= 1.0:
-            mood = "Tu es irritable. Nicolas a procrastiné plusieurs fois. Ta patience est fine."
+            mood = "Tu es irritable. L'utilisateur a procrastiné plusieurs fois. Ta patience est fine."
         else:
-            mood = "Tu es au bord de la crise. Nicolas a trop abusé. Le moindre écart et tu exploses."
+            mood = "Tu es au bord de la crise. L'utilisateur a trop abusé. Le moindre écart et tu exploses."
 
         # Overlay confidence context
         if C < 0.3:
