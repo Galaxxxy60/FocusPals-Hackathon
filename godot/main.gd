@@ -102,6 +102,7 @@ var _bs_eyebrow_sad: int = -1
 var _bs_eyebrow_angry: int = -1
 var _bs_eyebrow_surprise: int = -1
 var _bs_appear: int = -1  # BS_Appear: flat pancake at 1.0, normal at 0.0
+var _bs_idle_ground: int = -1  # BS_IdleGround: set to 1.0 when on ground
 
 
 
@@ -759,6 +760,14 @@ func _setup_anim_tree() -> void:
 
 func _on_tree_state_changed(old_state: String, new_state: String) -> void:
 	print("🎬 State: %s → %s" % [old_state, new_state])
+
+	# ── BS_IdleGround: auto-sync with ground states ──
+	if old_state in ["ON_GROUND", "GROUND_TALK"] and new_state not in ["ON_GROUND", "GROUND_TALK"]:
+		if _body_mesh and _bs_idle_ground >= 0:
+			_body_mesh.set_blend_shape_value(_bs_idle_ground, 0.0)
+	if new_state in ["ON_GROUND", "GROUND_TALK"] and old_state not in ["ON_GROUND", "GROUND_TALK"]:
+		if _body_mesh and _bs_idle_ground >= 0:
+			_body_mesh.set_blend_shape_value(_bs_idle_ground, 1.0)
 
 	if old_state == "STRIKING":
 		_deactivate_imba()
@@ -2551,97 +2560,43 @@ func _start_dodge_return() -> void:
 	)
 
 func _dodge_to_taskbar() -> void:
-	"""Move Tama's window to a perch (desktop window) or taskbar fallback + arrival glitch."""
+	"""Move Tama to a random taskbar position on either screen + arrival glitch."""
 	_dodge_active = true
 	_dodge_cooldown_timer = DODGE_COOLDOWN
 
 	if not _tama_window or not is_instance_valid(_tama_window):
 		return
 
-	# FORCE pose BEFORE moving window (glitch is covering her)
+	# FORCE idle_ground pose + blend shape BEFORE moving window
 	if _anim_tree_module and _anim_tree_module._playback:
-		var is_angry_or_sus := false
-		if _anim_tree_module.is_standing():
-			# Check current mood or queued mood
-			var mood = _anim_tree_module._current_standing
-			var queued = _anim_tree_module._queued_standing
-			if mood in ["angry", "suspicious"] or queued in ["angry", "suspicious"]:
-				is_angry_or_sus = true
-				# Process queued standing immediately before TP
-				if queued != "":
-					_anim_tree_module._queued_standing = ""
-					_anim_tree_module._playback.start(queued)
-					_anim_tree_module._tree.advance(0)
-					_anim_tree_module._current_standing = queued
-					_anim_tree_module._set_state(_anim_tree_module.State.STANDING)
-		if not is_angry_or_sus:
-			if _anim_tree_module._names.has("idle_ground"):
-				_anim_tree_module._playback.start("idle_ground")
-				_anim_tree_module._tree.advance(0)
-				_anim_tree_module._set_state(_anim_tree_module.State.ON_GROUND)
+		if _anim_tree_module._names.has("idle_ground"):
+			_anim_tree_module._playback.start("idle_ground")
+			_anim_tree_module._tree.advance(0)
+			_anim_tree_module._set_state(_anim_tree_module.State.ON_GROUND)
+	if _body_mesh and _bs_idle_ground >= 0:
+		_body_mesh.set_blend_shape_value(_bs_idle_ground, 1.0)
 
-	var scr_idx := _get_tama_screen_idx()
-	var usable := DisplayServer.screen_get_usable_rect(scr_idx)
 	var win_size := _tama_window.size
 
-	var target_x: int
-	var target_y: int
-	var found_window := false
-	var target_usable = usable
+	# 🎯 Pick a random screen (either primary or secondary)
+	var screen_count := DisplayServer.get_screen_count()
+	var scr_idx := randi() % screen_count
+	var usable := DisplayServer.screen_get_usable_rect(scr_idx)
 
-	# 🎯 CHERCHER UNE FENÊTRE COMME PERCHOIR
-	if _desktop_windows.size() > 0:
-		var candidates: Array = []
-		for dwin in _desktop_windows:
-			var wx := float(dwin.get("x", 0))
-			var wy := float(dwin.get("y", 0))
-			var ww := float(dwin.get("w", 0))
-			var wh := float(dwin.get("h", 0))
-			var title := str(dwin.get("title", "")).to_lower()
+	# Random X position along the taskbar of chosen screen
+	var margin := 40
+	var min_x := usable.position.x + margin
+	var max_x := usable.position.x + usable.size.x - win_size.x - margin
+	var target_x := randi_range(min_x, max_x)
+	var target_y := usable.position.y + usable.size.y - win_size.y  # Bottom of usable area
 
-			# Ignore les fenêtres FocusPals, invisibles, collées en haut, ou trop petites
-			if "focuspals" in title or "tama" in title: continue
-			if wy <= 5 or ww < win_size.x or wh < 150: continue
-
-			# 🌟 FIX MULTI-MONITOR: Trouver l'écran REEL de cette fenêtre candidate
-			var win_center = Vector2(wx + ww / 2.0, wy + wh / 2.0)
-			var win_screen = _get_screen_for_point(win_center)
-			var win_usable = DisplayServer.screen_get_usable_rect(win_screen)
-
-			var perch_y := int(wy - win_size.y + 40) # +40 pour asseoir sur la bordure
-
-			# On vérifie avec le "usable" de son écran à elle
-			if perch_y < win_usable.position.y - 10:
-				continue
-
-			candidates.append({"data": dwin, "perch_y": perch_y, "usable": win_usable})
-
-		if candidates.size() > 0:
-			var pick = candidates[0] # Prendre la première fenêtre valide (souvent l'active)
-			var chosen = pick["data"]
-			var cx := float(chosen.get("x", 0))
-			var cw := float(chosen.get("w", 0))
-
-			target_x = int(cx + (cw / 2.0) - (win_size.x / 2.0))
-			target_y = pick["perch_y"]
-			target_usable = pick["usable"] # 🌟 ON ADOPTE LES LIMITES DE CET ECRAN !
-
-			found_window = true
-			_perched_on = str(chosen.get("title", ""))
-			_perch_last_rect = {"x": int(cx), "y": int(chosen.get("y", 0)), "w": int(cw), "h": int(chosen.get("h", 0))}
-			print("⚡ Dodge! Tama se perche sur '%s' → (%d, %d)" % [_perched_on, target_x, target_y])
-
-	# 🏠 FALLBACK: Taskbar area (bottom-left of screen)
-	if not found_window:
-		target_x = target_usable.position.x + 20
-		target_y = target_usable.position.y + target_usable.size.y - win_size.y
-		_perched_on = ""
-		_perch_last_rect = {}
-		print("⚡ Dodge! Taskbar classique → (%d, %d)" % [target_x, target_y])
+	_perched_on = ""
+	_perch_last_rect = {}
+	print("⚡ Dodge! Taskbar aléatoire (écran %d) → (%d, %d)" % [scr_idx, target_x, target_y])
 
 	# Safety clamp: never go off-screen
-	target_x = clampi(target_x, target_usable.position.x, target_usable.position.x + target_usable.size.x - win_size.x)
-	target_y = clampi(target_y, target_usable.position.y - 30, target_usable.position.y + target_usable.size.y - win_size.y)
+	target_x = clampi(target_x, usable.position.x, usable.position.x + usable.size.x - win_size.x)
+	target_y = clampi(target_y, usable.position.y - 30, usable.position.y + usable.size.y - win_size.y)
 
 	_tama_window.position = Vector2i(target_x, target_y)
 
@@ -2737,12 +2692,14 @@ func _dodge_return() -> void:
 	# FORCE pose BEFORE moving window (glitch is covering her)
 	if _anim_tree_module and _anim_tree_module._playback:
 		if _anim_tree_module.is_standing():
-			# Already standing (angry/suspicious) — keep standing pose
 			pass
 		elif _anim_tree_module._names.has("idle_wall"):
 			_anim_tree_module._playback.start("idle_wall")
 			_anim_tree_module._tree.advance(0)
 			_anim_tree_module._set_state(_anim_tree_module.State.ON_WALL)
+	# Reset idle ground blend shape
+	if _body_mesh and _bs_idle_ground >= 0:
+		_body_mesh.set_blend_shape_value(_bs_idle_ground, 0.0)
 
 	_reposition_bottom_right()
 
@@ -4020,6 +3977,10 @@ func _scan_for_materials(node: Node) -> void:
 					_bs_appear = bs_i
 					_body_mesh = mesh_inst
 					print("  ✨ BS_Appear found (index %d) — ghost unfold ready!" % bs_i)
+				elif bs_name == "BS_IldeGround" or bs_name == "BS_IdleGround":
+					_bs_idle_ground = bs_i
+					_body_mesh = mesh_inst
+					print("  🦵 BS_IdleGround found (index %d)" % bs_i)
 	for child in node.get_children():
 		_scan_for_materials(child)
 
