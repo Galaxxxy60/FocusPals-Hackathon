@@ -241,10 +241,44 @@ func _build_strings() -> void:
 			"ja": "Tamaを呼ぶ",
 			"zh": "呼叫Tama",
 		},
+		"radial_activity": {
+			"fr": "Activité",
+			"en": "Activity",
+			"ja": "アクティビティ",
+			"zh": "活动",
+		},
 		"radial_quit": {
 			"fr": "Quitter",
 			"en": "Quit",
 			"ja": "終了",
 			"zh": "退出",
+		},
+		# ── Activity Panel ──
+		"activity_title": {
+			"fr": "Activité", "en": "Activity", "ja": "アクティビティ", "zh": "活动",
+		},
+		"activity_streak": {
+			"fr": "Série", "en": "Streak", "ja": "連続", "zh": "连续",
+		},
+		"activity_focus": {
+			"fr": "Focus", "en": "Focus", "ja": "集中", "zh": "专注",
+		},
+		"activity_sessions": {
+			"fr": "Sessions", "en": "Sessions", "ja": "セッション", "zh": "会话",
+		},
+		"activity_achievements": {
+			"fr": "Achievements", "en": "Achievements", "ja": "実績", "zh": "成就",
+		},
+		"activity_months": {
+			"fr": "jan.|fév.|mars|avr.|mai|juin|juil.|août|sept.|oct.|nov.|déc.",
+			"en": "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec",
+			"ja": "1月|2月|3月|4月|5月|6月|7月|8月|9月|10月|11月|12月",
+			"zh": "1月|2月|3月|4月|5月|6月|7月|8月|9月|10月|11月|12月",
+		},
+		"activity_days": {
+			"fr": "L|M|M|J|V|S|D",
+			"en": "M|T|W|T|F|S|S",
+			"ja": "月|火|水|木|金|土|日",
+			"zh": "一|二|三|四|五|六|日",
 		},
 	}

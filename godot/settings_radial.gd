@@ -20,8 +20,9 @@ const RETRO_HOVER    := Color(0.710, 0.816, 0.941)  # #b5d0f0
 const RETRO_GRID     := Color(0.502, 0.682, 0.890, 0.12)  # Grid lines
 
 var ITEMS := [
+	{"icon": "tama", "label": "Appeler Tama",   "id": "call_tama",  "color": RETRO_DARK,  "scale": 1.8, "loc_key": "radial_call_tama"},
+	{"icon": "trophy", "label": "Activité",   "id": "activity", "color": Color(1.0, 0.85, 0.3),  "scale": 1.0, "loc_key": "radial_activity"},
 	{"icon": "cog", "label": "Settings",      "id": "settings", "color": RETRO_BORDER,  "scale": 1.0, "loc_key": "radial_settings"},
-	{"icon": "tama", "label": "Appeler Tama",   "id": "call_tama",  "color": RETRO_DARK,  "scale": 1.5, "loc_key": "radial_call_tama"},
 	{"icon": "quit", "label": "Quit",           "id": "quit",     "color": Color(0.878, 0.533, 0.533),  "scale": 1.0, "loc_key": "radial_quit"},
 ]
 
@@ -63,11 +64,11 @@ func _ready() -> void:
 	add_child(_canvas)
 
 func _arc_center() -> Vector2:
-	# Anchor to the right edge of our parent window (works wherever Tama is)
+	# Anchor near the right edge of our parent window, inset so large items aren't clipped
 	var parent_win := get_window()
 	var win_size := parent_win.size if parent_win else Vector2i(400, 500)
-	# Right edge of window, 70% down
-	return Vector2(float(win_size.x), float(win_size.y) * 0.7)
+	# 30px inward from right edge, 70% down
+	return Vector2(float(win_size.x) - 30.0, float(win_size.y) * 0.7)
 
 func _item_pos(index: int) -> Vector2:
 	var n := ITEMS.size()
@@ -274,7 +275,7 @@ func _draw_center_label(center: Vector2, alpha: float) -> void:
 		return
 	var font := ThemeDB.fallback_font
 	var ts := font.get_string_size(_label_text, HORIZONTAL_ALIGNMENT_CENTER, -1, 14)
-	var lpos := center + Vector2(-ARC_RADIUS * 0.5 * _progress, 0)
+	var lpos := center + Vector2(-ARC_RADIUS * 0.5 * _progress + 20.0, 0)
 	var pw := ts.x + 20.0
 	var ph := ts.y + 14.0
 	var pill := Rect2(lpos.x - pw / 2, lpos.y - ph / 2, pw, ph)
@@ -337,6 +338,9 @@ func _draw_item(index: int) -> void:
 		var tint := Color(RETRO_TEXT.r, RETRO_TEXT.g, RETRO_TEXT.b, alpha)
 		if icon_id == "cog":
 			icon_str = char(0xF013)
+		elif icon_id == "trophy":
+			icon_str = char(0xF091)
+			tint = Color(1.0, 0.75, 0.15, alpha)  # Gold
 		elif icon_id == "quit":
 			icon_str = char(0xF011)
 			var danger := Color(0.878, 0.533, 0.533)

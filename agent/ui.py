@@ -1,6 +1,6 @@
 """
-FocusPals — UI: Display, System Tray, Settings Popup
-Console display, tray icon management, and tkinter settings window.
+FocusPals — UI: Display & Godot Communication
+Console display and WebSocket broadcast utilities.
 """
 
 import json
@@ -9,9 +9,6 @@ import time
 import asyncio
 import threading
 
-import pystray
-from pystray import MenuItem as item
-from PIL import ImageDraw, Image
 from enum import Enum
 
 from config import state, BREAK_CHECKPOINTS, get_dynamic_break_checkpoints
@@ -231,14 +228,9 @@ def setup_tray():
     
     image = create_tray_image(TamaState.CALM)
     menu = (
-        item('Appeler Tama 🛸', start_session_from_tray),
-        item('☕ Accepter la pause', accept_break_from_tray),
-        item('💪 Refuser la pause', refuse_break_from_tray),
-        pystray.Menu.SEPARATOR,
-        item('Réglages 🎤', open_settings_popup),
-        item('Stop Tama 🥷', quit_app)
+        item('Stop FocusPals', quit_app),
     )
-    state["tray_icon"] = pystray.Icon("Tama", image, "Tama Agent 🥷 — 🟢 En veille", menu)
+    state["tray_icon"] = pystray.Icon("FocusPals", image, "FocusPals 🥷", menu)
     threading.Thread(target=state["tray_icon"].run, daemon=True).start()
 
 

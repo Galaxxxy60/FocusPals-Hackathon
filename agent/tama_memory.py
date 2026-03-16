@@ -28,6 +28,10 @@ _DEFAULT_MEMORY = {
     "total_strikes": 0,             # Total drone strikes fired across all sessions
     "longest_streak_minutes": 0,    # Best single session focus time (minutes)
 
+    # Per-day history for calendar heatmap
+    # { "2026-03-16": { "minutes": 50, "sessions": 1 }, ... }
+    "daily_history": {},
+
     # Relationship progression
     "relationship_level": 0,        # 0 = stranger, 1-5 = acquaintance, 6-10 = friend, 11+ = veteran
     "memorable_moments": [],        # Short notable events (max 20, FIFO)
@@ -171,6 +175,15 @@ def record_session_end(focus_minutes: float):
     if focus_minutes >= 60:
         _memory["relationship_level"] += 1  # Bonus for long sessions
 
+    # Track daily history for calendar heatmap
+    today = datetime.now().strftime("%Y-%m-%d")
+    daily = _memory.get("daily_history", {})
+    if today not in daily:
+        daily[today] = {"minutes": 0, "sessions": 0}
+    daily[today]["minutes"] += int(focus_minutes)
+    daily[today]["sessions"] += 1
+    _memory["daily_history"] = daily
+
     _memory["last_session_date"] = datetime.now().isoformat()
     _save_memory()
     print(f"💾 Session recorded: {int(focus_minutes)}min | Total: {_memory['total_sessions']} sessions")
@@ -266,5 +279,87 @@ def get_memory_context(lang: str = "fr") -> str:
         recent = moments[-3:]  # Only the 3 most recent
         moment_texts = [m["text"] if isinstance(m, dict) else str(m) for m in recent]
         ctx += " ★ " + " / ".join(moment_texts)
-
     return ctx
+
+
+# ─── Activity Panel Data ──────────────────────────────────
+
+def _calculate_streak() -> int:
+    """Calculate current consecutive-day streak."""
+    daily = get_memory().get("daily_history", {})
+    if not daily:
+        return 0
+    from datetime import timedelta
+    today = datetime.now().date()
+    streak = 0
+    day = today
+    while True:
+        key = day.strftime("%Y-%m-%d")
+        if key in daily and daily[key].get("minutes", 0) > 0:
+            streak += 1
+            day -= timedelta(days=1)
+        else:
+            break
+    return streak
+
+
+_ACHIEVEMENT_DEFS = [
+    # Streaks
+    {"id": "streak_3",   "name_fr": "Volontaire",  "name_en": "Dedicated",    "desc_fr": "3 jours de suite",       "desc_en": "3 days in a row",       "req": 3,   "icon": "\U0001f525",  "type": "streak"},
+    {"id": "streak_10",  "name_fr": "Sérieux",     "name_en": "Serious",     "desc_fr": "10 jours de suite",      "desc_en": "10 days in a row",      "req": 10,  "icon": "\U0001f525\U0001f525", "type": "streak"},
+    {"id": "streak_30",  "name_fr": "Fiable",      "name_en": "Reliable",    "desc_fr": "30 jours de suite",      "desc_en": "30 days in a row",      "req": 30,  "icon": "\U0001f31f", "type": "streak"},
+    # Volume (per day)
+    {"id": "vol_4h",     "name_fr": "Travailleur", "name_en": "Hard Worker", "desc_fr": "4h en une journée",      "desc_en": "4h in a single day",    "req": 240, "icon": "\U0001f4aa", "type": "daily_vol"},
+    {"id": "vol_8h",     "name_fr": "Besogneux",   "name_en": "Workaholic",  "desc_fr": "8h en une journée",      "desc_en": "8h in a single day",    "req": 480, "icon": "\U0001f4aa\U0001f4aa", "type": "daily_vol"},
+    # Total sessions
+    {"id": "sess_10",    "name_fr": "10 sessions", "name_en": "10 Sessions", "desc_fr": "Compléter 10 sessions",  "desc_en": "Complete 10 sessions",  "req": 10,  "icon": "\u26a1",    "type": "total_sess"},
+    {"id": "sess_25",    "name_fr": "25 sessions", "name_en": "25 Sessions", "desc_fr": "Compléter 25 sessions",  "desc_en": "Complete 25 sessions",  "req": 25,  "icon": "\u26a1\u26a1", "type": "total_sess"},
+    {"id": "sess_50",    "name_fr": "50 sessions", "name_en": "50 Sessions", "desc_fr": "Compléter 50 sessions",  "desc_en": "Complete 50 sessions",  "req": 50,  "icon": "\u26a1\u26a1\u26a1", "type": "total_sess"},
+    {"id": "sess_100",   "name_fr": "Centurion",   "name_en": "Centurion",   "desc_fr": "Compléter 100 sessions", "desc_en": "Complete 100 sessions", "req": 100, "icon": "\U0001f3c6", "type": "total_sess"},
+    # Total focus hours
+    {"id": "focus_10h",  "name_fr": "10h focus",   "name_en": "10h Focus",   "desc_fr": "10 heures de focus",     "desc_en": "10 hours of focus",     "req": 600, "icon": "\u23f0",    "type": "total_min"},
+    {"id": "focus_50h",  "name_fr": "50h focus",   "name_en": "50h Focus",   "desc_fr": "50 heures de focus",     "desc_en": "50 hours of focus",     "req": 3000,"icon": "\u23f0\u23f0", "type": "total_min"},
+    {"id": "focus_100h", "name_fr": "100h focus",  "name_en": "100h Focus",  "desc_fr": "100 heures cumulées",    "desc_en": "100 cumulative hours",  "req": 6000,"icon": "\U0001f451", "type": "total_min"},
+]
+
+
+def get_activity_data(lang: str = "fr") -> dict:
+    """Return all data needed for the Activity panel in Godot."""
+    mem = get_memory()
+    daily = mem.get("daily_history", {})
+    streak = _calculate_streak()
+    total_sessions = mem.get("total_sessions", 0)
+    total_minutes = mem.get("total_focus_minutes", 0)
+    max_daily = max((d.get("minutes", 0) for d in daily.values()), default=0)
+    # Use "en" as fallback for non-fr languages
+    lk = lang if lang == "fr" else "en"
+
+    achievements = []
+    for defn in _ACHIEVEMENT_DEFS:
+        progress = 0
+        if defn["type"] == "streak":
+            progress = streak
+        elif defn["type"] == "daily_vol":
+            progress = max_daily
+        elif defn["type"] == "total_sess":
+            progress = total_sessions
+        elif defn["type"] == "total_min":
+            progress = total_minutes
+        achievements.append({
+            "id": defn["id"],
+            "name": defn.get(f"name_{lk}", defn.get("name_en", "")),
+            "desc": defn.get(f"desc_{lk}", defn.get("desc_en", "")),
+            "icon": defn["icon"],
+            "req": defn["req"],
+            "progress": min(progress, defn["req"]),
+            "unlocked": progress >= defn["req"],
+        })
+
+    return {
+        "daily_history": daily,
+        "streak": streak,
+        "total_sessions": total_sessions,
+        "total_minutes": total_minutes,
+        "achievements": achievements,
+    }
+

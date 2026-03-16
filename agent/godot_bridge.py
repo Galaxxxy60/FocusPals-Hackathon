@@ -57,6 +57,7 @@ def _update_click_through():
     needs_clicks = (
         state.get("radial_shown", False)
         or state.get("_settings_panel_open", False)
+        or state.get("_activity_panel_open", False)
         or state.get("_tweaks_panel_open", False)
         or state.get("_quit_dialog_open", False)
     )
@@ -315,7 +316,7 @@ def mouse_edge_monitor():
         if not near_edge or not in_zone:
             state["_mouse_was_away"] = True
 
-        if near_edge and in_zone and not state["radial_shown"] and state["_mouse_was_away"] and time.time() > state["_radial_cooldown_until"] and not state.get("_settings_panel_open", False) and not state.get("_tweaks_panel_open", False) and state["connected_ws_clients"]:
+        if near_edge and in_zone and not state["radial_shown"] and state["_mouse_was_away"] and time.time() > state["_radial_cooldown_until"] and not state.get("_settings_panel_open", False) and not state.get("_tweaks_panel_open", False) and not state.get("_activity_panel_open", False) and state["connected_ws_clients"]:
             state["radial_shown"] = True
             state["_mouse_was_away"] = False
             radial_shown_time = time.time()
@@ -521,6 +522,20 @@ async def ws_handler(websocket):
                     # Force reconnect so is_first_session() is re-evaluated
                     state["_force_reconnect"] = True
                     print("🗑️ Memory reset via settings panel — forcing reconnect for fresh onboarding")
+                elif cmd == "GET_ACTIVITY":
+                    state["_activity_panel_open"] = True
+                    state["radial_shown"] = False
+                    _update_click_through()
+                    lang = state.get("language", "fr")
+                    activity = tama_memory.get_activity_data(lang)
+                    activity["command"] = "ACTIVITY_DATA"
+                    activity["language"] = lang
+                    await websocket.send(json.dumps(activity))
+                    print(f"🏆 GET_ACTIVITY ({lang}) → {activity['streak']}d streak, {len(activity['achievements'])} achievements")
+                elif cmd == "ACTIVITY_CLOSED":
+                    state["_activity_panel_open"] = False
+                    _update_click_through()
+                    print("🏆 Activity panel closed")
                 elif cmd == "DEBUG_SKIP_TIME":
                     # F10 debug: fast-forward session timer by N seconds
                     skip = int(data.get("skip_seconds", 10))

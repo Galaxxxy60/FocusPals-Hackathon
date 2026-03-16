@@ -250,6 +250,8 @@ var radial_menu = null
 const RadialMenuScript = preload("res://settings_radial.gd")
 var settings_panel = null
 const SettingsPanelScript = preload("res://settings_panel.gd")
+var activity_panel = null
+const ActivityPanelScript = preload("res://activity_panel.gd")
 var debug_tweaks = null
 const DebugTweaksScript = preload("res://debug_tweaks.gd")
 
@@ -924,6 +926,10 @@ func _setup_radial_menu() -> void:
 	settings_panel.mic_toggled.connect(_on_mic_toggled)
 	settings_panel.tama_scale_changed.connect(_on_tama_scale_changed)
 	settings_panel.memory_reset.connect(_on_memory_reset)
+	# Activity panel (calendar + achievements)
+	activity_panel = ActivityPanelScript.new()
+	ui_parent.add_child(activity_panel)
+	activity_panel.panel_closed.connect(_on_activity_panel_closed)
 	# Debug tweaks (hidden, F2)
 	debug_tweaks = DebugTweaksScript.new()
 	ui_parent.add_child(debug_tweaks)
@@ -2276,6 +2282,10 @@ func _on_radial_action(action_id: String) -> void:
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(JSON.stringify({"command": "GET_SETTINGS"}))
 		return
+	if action_id == "activity":
+		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			ws.send_text(JSON.stringify({"command": "GET_ACTIVITY"}))
+		return
 	if action_id == "quit":
 		_show_quit_confirmation()
 		return
@@ -2289,6 +2299,11 @@ func _on_radial_hide() -> void:
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify({"command": "HIDE_RADIAL"}))
 	# _safe_restore_passthrough() already checks all panel states internally
+	_safe_restore_passthrough()
+
+func _on_activity_panel_closed() -> void:
+	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify({"command": "ACTIVITY_CLOSED"}))
 	_safe_restore_passthrough()
 
 
@@ -2623,6 +2638,7 @@ func _safe_restore_passthrough() -> void:
 	var is_ui_active := false
 	if radial_menu and radial_menu.is_open: is_ui_active = true
 	if settings_panel and settings_panel.is_open: is_ui_active = true
+	if activity_panel and activity_panel.is_open: is_ui_active = true
 	if debug_tweaks and debug_tweaks.is_open: is_ui_active = true
 	if _quit_layer: is_ui_active = true
 	if _onboarding_layer: is_ui_active = true
@@ -3401,6 +3417,15 @@ func _handle_message(raw: String) -> void:
 				radial_menu.set_lang(lang)
 			_sync_and_show_ui()
 			settings_panel.show_settings(mics, selected, has_api_key, key_valid, lang, tama_vol, session_duration, api_usage, screen_share, mic_on, tama_scale, key_hint, mem_empty)
+			_safe_restore_passthrough()
+		return
+	elif command == "ACTIVITY_DATA":
+		print("🏆 Activity data received: streak=%s, sessions=%s" % [str(data.get("streak", 0)), str(data.get("total_sessions", 0))])
+		if activity_panel:
+			if radial_menu and radial_menu.is_open:
+				radial_menu.close()
+			_sync_and_show_ui()
+			activity_panel.open(data)
 			_safe_restore_passthrough()
 		return
 	elif command == "API_KEY_UPDATED":
