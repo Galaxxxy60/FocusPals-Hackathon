@@ -1067,7 +1067,8 @@ func _spawn_drone_strike() -> void:
 	# ce qui gèle l'animation 3D ET le SubViewport texte du drone.
 
 	var aim: Vector2i = _strike_target if _strike_target.x > -99990 else DisplayServer.mouse_get_position()
-	
+	aim.x += 150  # Offset droite pour viser le centre/bouton fermer de l'onglet
+
 	# DEBUG: Spawn a red dot at the target
 	_spawn_debug_dot(aim)
 

@@ -1534,17 +1534,24 @@ async def run_gemini_loop(pya):
                             if state["break_reminder_active"] and delta > 0:
                                 delta = 0.0
 
-                            # Confidence system
+                            # Confidence system + Anti-ZigZag
                             C = state.get("_confidence", 1.0)
                             if delta < 0:
                                 time_on_current = time.time() - state.get("active_window_start_time", time.time())
-                                if time_on_current < 30 and state["current_suspicion_index"] > 1:
-                                    C = max(0.2, C - 0.10)
+                                if time_on_current < 15 and state["current_suspicion_index"] > 3:
+                                    C = max(0.0, C - 0.25)  # Chute drastique si change de fenêtre sous haute suspicion
+                                elif time_on_current < 30 and state["current_suspicion_index"] > 1:
+                                    C = max(0.1, C - 0.10)
                                 elif time_on_current >= 60:
                                     C = min(1.0, C + 0.03)
                                 state["_confidence"] = C
+
                                 if ali >= 0.8:
-                                    effective_c = max(C, 0.5)
+                                    # 🛡️ Anti-ZigZag : ne pas pardonner instantanément si suspicion haute
+                                    if state["current_suspicion_index"] >= 5.0:
+                                        effective_c = max(C, 0.1)  # Pardon très lent ! Tama est têtue
+                                    else:
+                                        effective_c = max(C, 0.5)  # Pardon normal
                                 else:
                                     effective_c = C
                                 delta = delta * effective_c
@@ -2132,14 +2139,21 @@ async def run_gemini_loop(pya):
                                                 print(f"  🥊🔥 GEMINI INITIATED STRIKE: {timing}")
 
                                                 # ── Ghost strike guard ──
-                                                # A ghost strike = Gemini re-generated fire_strike after a
-                                                # deferred tool response purge, with no actual strike flow.
-                                                # FIX: check FLOW STATE, not S (which is volatile — reset to
-                                                # 3.0 by close_distracting_tab before fire_strike is processed).
+                                                # If fire_strike arrives without close_distracting_tab,
+                                                # Gemini skipped a step. But Tama already announced the
+                                                # strike verbally — we MUST follow through or it looks broken.
+                                                si_now = state["current_suspicion_index"]
                                                 is_ghost = not state.get("_strike_in_progress") and not state.get("_strike_requested")
                                                 if is_ghost:
-                                                    si_now = state["current_suspicion_index"]
-                                                    print(f"  🥊👻 Ghost strike ignored (S={si_now:.0f}, no strike flow active)")
+                                                    # Auto-trigger the full strike flow
+                                                    print(f"  🥊⚡ fire_strike sans close_distracting_tab (S={si_now:.0f}) → auto-trigger!")
+                                                    state["_strike_in_progress"] = True
+                                                    state["current_suspicion_index"] = 3.0
+                                                    state["suspicion_at_9_start"] = None
+                                                    state["suspicion_above_6_start"] = None
+                                                    state["suspicion_above_3_start"] = None
+                                                    is_ghost = False
+                                                    asyncio.create_task(grace_then_close(session, audio_out_queue, timing or "BAM", None))
                                                 elif state.get("_strike_requested"):
                                                     # ── Anti-doublon: block re-fires during an active strike flow ──
                                                     print("  🥊 Strike already requested — ignoring duplicate fire_strike")

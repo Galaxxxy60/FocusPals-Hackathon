@@ -27,11 +27,12 @@ _classification_history = []     # Rolling history for session summary
 _lite_start_time = 0.0           # Timestamp of first call — warmup delay
 WARMUP_DELAY = 15.0              # Don't call Flash-Lite for first 15s (let Live API stabilize)
 
-PRE_CLASSIFY_PROMPT = """You are a screen classification engine. Analyze this screenshot and classify the user's activity.
+PRE_CLASSIFY_PROMPT = """You are a strict screen classification engine. Analyze this multi-monitor screenshot and classify the user's activity.
 
-CRITICAL: Classify based on what you SEE on screen — the actual visible content, not the window title.
-The screenshot shows ALL monitors. Focus on what occupies the MOST screen space and what the user is clearly interacting with.
-A small foreground window does NOT define the user's activity if 80% of the screen shows something else.
+🛑 CRITICAL VISUAL RULES (TRUST YOUR EYES, NOT THE TEXT):
+1. ZERO TOLERANCE FOR VISIBLE DISTRACTIONS: If an entertainment video (YouTube, Netflix, Twitch, cooking, gaming, etc.), video game, or social media feed is clearly VISIBLE on ANY monitor, the category MUST be BANNIE (Alignment 0.0).
+2. THE "ACTIVE WINDOW" TRICK: Do NOT be fooled by the 'Active window title'. If the user clicks a work app but leaves a distracting video playing on the other screen, they are STILL distracted. Visual distractions OVERRIDE the active window!
+3. Focus on what occupies the MOST pixels. A small active IDE does not negate a huge YouTube video.
 
 Context (secondary hints — use as TIE-BREAKERS, not primary evidence):
 - Active window title: {active_window}
@@ -295,6 +296,8 @@ def clear_classification_history():
 # ─── Task Inference ─────────────────────────────────────────
 
 INFER_TASK_PROMPT = """Look at this screenshot and the open windows. What is the user working on RIGHT NOW?
+
+🛑 CRITICAL: Rely primarily on the VISUAL content of the screenshot. If the user is clearly watching a video or distracted, do NOT just copy the active window title. Trust your eyes!
 
 Active window: {active_window}
 Other windows: {open_windows}
