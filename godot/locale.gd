@@ -34,34 +34,34 @@ func _build_strings() -> void:
 
 		# ── Section headers ──
 		"section_session": {
-			"fr": "⏱️  Session",
-			"en": "⏱️  Session",
-			"ja": "⏱️  セッション",
-			"zh": "⏱️  会话",
+			"fr": "Session",
+			"en": "Session",
+			"ja": "セッション",
+			"zh": "会话",
 		},
 		"section_audio": {
-			"fr": "🎤  Audio",
-			"en": "🎤  Audio",
-			"ja": "🎤  オーディオ",
-			"zh": "🎤  音频",
+			"fr": "Audio",
+			"en": "Audio",
+			"ja": "オーディオ",
+			"zh": "音频",
 		},
 		"section_api": {
-			"fr": "🔑  API",
-			"en": "🔑  API",
-			"ja": "🔑  API",
-			"zh": "🔑  API",
+			"fr": "API",
+			"en": "API",
+			"ja": "API",
+			"zh": "API",
 		},
 		"section_general": {
-			"fr": "🌐  Général",
-			"en": "🌐  General",
-			"ja": "🌐  一般",
-			"zh": "🌐  通用",
+			"fr": "Général",
+			"en": "General",
+			"ja": "一般",
+			"zh": "通用",
 		},
 		"section_permissions": {
-			"fr": "🔒  Permissions",
-			"en": "🔒  Permissions",
-			"ja": "🔒  権限",
-			"zh": "🔒  权限",
+			"fr": "Permissions",
+			"en": "Permissions",
+			"ja": "権限",
+			"zh": "权限",
 		},
 
 		# ── Session ──
@@ -210,10 +210,10 @@ func _build_strings() -> void:
 
 		# ── Data ──
 		"section_data": {
-			"fr": "💾  Mémoire",
-			"en": "💾  Memory",
-			"ja": "💾  メモリ",
-			"zh": "💾  记忆",
+			"fr": "Mémoire",
+			"en": "Memory",
+			"ja": "メモリ",
+			"zh": "记忆",
 		},
 		"reset_memory_desc": {
 			"fr": "Efface la mémoire de Tama (sessions, prénom, souvenirs). Elle repartira comme si c'était la première fois.",

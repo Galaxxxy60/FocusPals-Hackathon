@@ -93,6 +93,8 @@ const RETRO_HOVER    := Color(0.710, 0.816, 0.941)  # #b5d0f0
 const RETRO_SUCCESS  := Color(0.533, 0.784, 0.627)  # #88c8a0
 const RETRO_DANGER   := Color(0.878, 0.533, 0.533)  # #e08888
 
+var _quantico_font: Font = null
+
 func _make_panel_style() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = Color(RETRO_BG.r, RETRO_BG.g, RETRO_BG.b, 0.97)
@@ -294,6 +296,9 @@ func _clear_ui() -> void:
 
 func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: int = 100) -> void:
 	_L.set_lang(lang)
+	# Load Quantico Bold for the retro UI
+	if not _quantico_font and ResourceLoader.exists("res://Quantico-Bold.ttf"):
+		_quantico_font = load("res://Quantico-Bold.ttf") as Font
 	var vp := get_viewport().get_visible_rect().size
 	var max_h := vp.y * MAX_HEIGHT_RATIO
 
@@ -334,6 +339,8 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	title.text = _L.t("settings_title")
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(1, 1, 1))  # White text on dark bar
+	if _quantico_font:
+		title.add_theme_font_override("font", _quantico_font)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_bar.add_child(title)
 
@@ -389,7 +396,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	scroll_margin.add_child(_vbox)
 
 	# ══════ SECTION: Session ══════
-	var sess_section := _make_collapsible_section(_L.t("section_session"), false)
+	var sess_section := _make_collapsible_section(_L.t("section_session"), false, 0xF2F2)  # FA stopwatch
 	_vbox.add_child(sess_section["root"])
 	var sess_content: VBoxContainer = sess_section["content"]
 
@@ -425,7 +432,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	sess_row.add_child(_session_label)
 
 	# ══════ SECTION: Audio (Mic + Volume) ══════
-	var audio_section := _make_collapsible_section(_L.t("section_audio"), false)
+	var audio_section := _make_collapsible_section(_L.t("section_audio"), false, 0xF028)  # FA volume-up
 	_vbox.add_child(audio_section["root"])
 	var audio_content: VBoxContainer = audio_section["content"]
 
@@ -483,7 +490,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	vol_row.add_child(_volume_label)
 
 	# ══════ SECTION: API (Key + Usage) ══════
-	var api_section := _make_collapsible_section(_L.t("section_api"), false)
+	var api_section := _make_collapsible_section(_L.t("section_api"), false, 0xF084)  # FA key
 	_vbox.add_child(api_section["root"])
 	var api_content: VBoxContainer = api_section["content"]
 
@@ -565,7 +572,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	api_content.add_child(note)
 
 	# ══════ SECTION: General (Language + Tama Size) ══════
-	var gen_section := _make_collapsible_section(_L.t("section_general"), false)
+	var gen_section := _make_collapsible_section(_L.t("section_general"), false, 0xF0AC)  # FA globe
 	_vbox.add_child(gen_section["root"])
 	_vbox.move_child(gen_section["root"], 0)  # Move to TOP
 	var gen_content: VBoxContainer = gen_section["content"]
@@ -650,7 +657,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	size_row.add_child(_size_label)
 
 	# ══════ SECTION: Permissions (Screen Share + Mic) ══════
-	var perm_section := _make_collapsible_section(_L.t("section_permissions"), false)
+	var perm_section := _make_collapsible_section(_L.t("section_permissions"), false, 0xF3ED)  # FA shield-alt
 	_vbox.add_child(perm_section["root"])
 	var perm_content: VBoxContainer = perm_section["content"]
 
@@ -715,7 +722,7 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 	mic_row.add_child(_mic_toggle)
 
 	# ══════ SECTION: Danger Zone (Reset) ══════
-	var danger_section := _make_collapsible_section(_L.t("section_data"), false)
+	var danger_section := _make_collapsible_section(_L.t("section_data"), false, 0xF0C7)  # FA save/floppy
 	_vbox.add_child(danger_section["root"])
 	var danger_content: VBoxContainer = danger_section["content"]
 
@@ -814,30 +821,75 @@ func _build_ui(lang: String, volume: float, session_duration: int, tama_scale: i
 
 # ─── Helper: Collapsible Section ──────────────────────────
 
-func _make_collapsible_section(title: String, expanded: bool = true) -> Dictionary:
-	## Creates a collapsible section with a clickable header.
+func _make_collapsible_section(title: String, expanded: bool = true, icon_code: int = 0) -> Dictionary:
+	## Creates a collapsible section with a clickable header + FA icon.
 	## Returns {"root": VBoxContainer, "content": VBoxContainer, "header": Button}
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 2)
+
+	# Header row (icon + button)
+	var header_row := HBoxContainer.new()
+	header_row.add_theme_constant_override("separation", 0)
+	root.add_child(header_row)
+
+	# FA Icon label
+	var icon_lbl: Label = null
+	if icon_code > 0:
+		var fa_font := FontFile.new()
+		fa_font.load_dynamic_font("res://fa-solid-900.ttf")
+		icon_lbl = Label.new()
+		icon_lbl.text = char(icon_code)
+		icon_lbl.add_theme_font_override("font", fa_font)
+		icon_lbl.add_theme_font_size_override("font_size", 16)
+		icon_lbl.add_theme_color_override("font_color", RETRO_BORDER)
+		icon_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		icon_lbl.custom_minimum_size = Vector2(28, 0)
+		icon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		# Style the icon area with matching background
+		var icon_panel := PanelContainer.new()
+		var icon_style := StyleBoxFlat.new()
+		icon_style.bg_color = Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, 0.3)
+		icon_style.border_color = Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.3)
+		icon_style.border_width_left = 1
+		icon_style.border_width_top = 1
+		icon_style.border_width_bottom = 1
+		icon_style.border_width_right = 0
+		icon_style.corner_radius_top_left = 2
+		icon_style.corner_radius_bottom_left = 2
+		icon_style.set_content_margin_all(4)
+		icon_panel.add_theme_stylebox_override("panel", icon_style)
+		icon_panel.add_child(icon_lbl)
+		header_row.add_child(icon_panel)
 
 	# Header button
 	var header := Button.new()
 	var arrow := "▼" if expanded else "▶"
 	header.text = arrow + "  " + title
 	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	header.custom_minimum_size.y = 28
+	header.custom_minimum_size.y = 36
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var header_style := StyleBoxFlat.new()
 	header_style.bg_color = Color(RETRO_SURCONTOUR.r, RETRO_SURCONTOUR.g, RETRO_SURCONTOUR.b, 0.3)
 	header_style.border_color = Color(RETRO_BORDER.r, RETRO_BORDER.g, RETRO_BORDER.b, 0.3)
 	header_style.set_border_width_all(1)
-	header_style.set_corner_radius_all(2)
+	if icon_code > 0:
+		header_style.border_width_left = 0
+		header_style.corner_radius_top_left = 0
+		header_style.corner_radius_bottom_left = 0
+	header_style.corner_radius_top_right = 2
+	header_style.corner_radius_bottom_right = 2
 	header_style.set_content_margin_all(4)
 	header_style.content_margin_left = 8
 	var header_hover := StyleBoxFlat.new()
 	header_hover.bg_color = Color(RETRO_HOVER.r, RETRO_HOVER.g, RETRO_HOVER.b, 0.5)
 	header_hover.border_color = RETRO_BORDER
 	header_hover.set_border_width_all(1)
-	header_hover.set_corner_radius_all(2)
+	if icon_code > 0:
+		header_hover.border_width_left = 0
+		header_hover.corner_radius_top_left = 0
+		header_hover.corner_radius_bottom_left = 0
+	header_hover.corner_radius_top_right = 2
+	header_hover.corner_radius_bottom_right = 2
 	header_hover.set_content_margin_all(4)
 	header_hover.content_margin_left = 8
 	header.add_theme_stylebox_override("normal", header_style)
@@ -846,7 +898,9 @@ func _make_collapsible_section(title: String, expanded: bool = true) -> Dictiona
 	header.add_theme_font_size_override("font_size", 13)
 	header.add_theme_color_override("font_color", RETRO_DARK)
 	header.add_theme_color_override("font_hover_color", RETRO_TEXT)
-	root.add_child(header)
+	if _quantico_font:
+		header.add_theme_font_override("font", _quantico_font)
+	header_row.add_child(header)
 
 	# Content container
 	var content := VBoxContainer.new()

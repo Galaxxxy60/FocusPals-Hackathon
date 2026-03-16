@@ -74,6 +74,8 @@ func _setup_status_indicator() -> void:
 	_status_label.text = ""
 	_status_label.add_theme_font_size_override("font_size", 13)
 	_status_label.add_theme_color_override("font_color", Color(0.345, 0.537, 0.769, 0.9))  # #5889c4
+	if _parent and "_retro_font" in _parent and _parent._retro_font:
+		_status_label.add_theme_font_override("font", _parent._retro_font)
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_status_label.offset_top = -40
@@ -136,7 +138,7 @@ func _draw_break_overlay() -> void:
 	)
 
 	# ── Break timer (above head, same position logic) ──
-	var font := ThemeDB.fallback_font
+	var font: Font = _parent._retro_font if (_parent and "_retro_font" in _parent and _parent._retro_font) else ThemeDB.fallback_font
 	var mins := int(remaining) / 60
 	var secs := int(remaining) % 60
 	var time_str := "☕ %d:%02d" % [mins, secs]

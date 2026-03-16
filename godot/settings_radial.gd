@@ -20,9 +20,9 @@ const RETRO_HOVER    := Color(0.710, 0.816, 0.941)  # #b5d0f0
 const RETRO_GRID     := Color(0.502, 0.682, 0.890, 0.12)  # Grid lines
 
 var ITEMS := [
-	{"icon": "⚙️", "label": "Settings",      "id": "settings", "color": RETRO_BORDER,  "scale": 1.0, "loc_key": "radial_settings"},
-	{"icon": "🛸", "label": "Appeler Tama",   "id": "call_tama",  "color": RETRO_DARK,  "scale": 1.5, "loc_key": "radial_call_tama"},
-	{"icon": "⛔", "label": "Quit",           "id": "quit",     "color": Color(0.878, 0.533, 0.533),  "scale": 1.0, "loc_key": "radial_quit"},
+	{"icon": "cog", "label": "Settings",      "id": "settings", "color": RETRO_BORDER,  "scale": 1.0, "loc_key": "radial_settings"},
+	{"icon": "tama", "label": "Appeler Tama",   "id": "call_tama",  "color": RETRO_DARK,  "scale": 1.5, "loc_key": "radial_call_tama"},
+	{"icon": "quit", "label": "Quit",           "id": "quit",     "color": Color(0.878, 0.533, 0.533),  "scale": 1.0, "loc_key": "radial_quit"},
 ]
 
 const ARC_RADIUS := 110.0
@@ -41,9 +41,15 @@ var _label_alpha := 0.0
 var _label_text := ""
 var _label_color := Color.WHITE
 
+var _fa_font: FontFile
+var _tama_tex: Texture2D
+
 func _ready() -> void:
 	layer = 100
 	visible = false
+	_fa_font = FontFile.new()
+	_fa_font.load_dynamic_font("res://fa-solid-900.ttf")
+	_tama_tex = preload("res://Tama_icon.png")
 	for i in ITEMS.size():
 		_hover_scales.append(0.0)
 	_canvas = Control.new()
@@ -313,10 +319,24 @@ func _draw_item(index: int) -> void:
 	# Inner accent ring (subtle, for depth)
 	_canvas.draw_circle(pos, r - 3, Color(RETRO_PANEL_BG.r, RETRO_PANEL_BG.g, RETRO_PANEL_BG.b, 0.3 * alpha))
 	
-	# Icon
-	var font := ThemeDB.fallback_font
-	var fs := int((20 + hover * 4) * item_scale)
-	var icon_str: String = item["icon"]
-	var ts := font.get_string_size(icon_str, HORIZONTAL_ALIGNMENT_CENTER, -1, fs)
-	_canvas.draw_string(font, pos + Vector2(-ts.x / 2, ts.y * 0.3),
-		icon_str, HORIZONTAL_ALIGNMENT_CENTER, -1, fs, Color(1, 1, 1, alpha))
+	# Draw Icon
+	var icon_id: String = item["icon"]
+	if icon_id == "tama":
+		var tex_size := 32.0 * item_scale * (1.0 + hover * 0.2)
+		var rect := Rect2(pos.x - tex_size / 2, pos.y - tex_size / 2, tex_size, tex_size)
+		_canvas.draw_texture_rect(_tama_tex, rect, false, Color(1, 1, 1, alpha))
+	else:
+		var icon_str := ""
+		var tint := Color(RETRO_TEXT.r, RETRO_TEXT.g, RETRO_TEXT.b, alpha)
+		if icon_id == "cog":
+			icon_str = char(0xF013)
+		elif icon_id == "quit":
+			icon_str = char(0xF011)
+			var danger := Color(0.878, 0.533, 0.533)
+			tint = Color(danger.r, danger.g, danger.b, alpha)
+			
+		var fs := int((20 + hover * 4) * item_scale)
+		if _fa_font:
+			var ts := _fa_font.get_string_size(icon_str, HORIZONTAL_ALIGNMENT_CENTER, -1, fs)
+			_canvas.draw_string(_fa_font, pos + Vector2(-ts.x / 2, ts.y * 0.35),
+				icon_str, HORIZONTAL_ALIGNMENT_CENTER, -1, fs, tint)

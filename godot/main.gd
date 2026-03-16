@@ -4,6 +4,7 @@ extends Node3D
 var ws := WebSocketPeer.new()
 var ws_connected := false
 var reconnect_timer: float = 0.0
+var _retro_font: Font = null  # Quantico Bold — loaded once for all UI
 
 # ─── Tama State (miroir du Python agent) ───────────────────
 var suspicion_index: float = 0.0
@@ -1684,14 +1685,13 @@ func _setup_drone_window() -> void:
 	_drone_screen_vp.add_child(_drone_break_bg)
 
 	# ── Load Quantico Bold font + Font Awesome fallback ──
-	var quantico_font: Font = null
-	if ResourceLoader.exists("res://Quantico-Bold.ttf"):
-		quantico_font = load("res://Quantico-Bold.ttf") as Font
+	if not _retro_font and ResourceLoader.exists("res://Quantico-Bold.ttf"):
+		_retro_font = load("res://Quantico-Bold.ttf") as Font
 		# Add Font Awesome as fallback (for mug-hot icon \uf0f4 etc.)
 		if ResourceLoader.exists("res://fa-solid-900.ttf"):
 			var fa_font = load("res://fa-solid-900.ttf") as Font
 			if fa_font:
-				quantico_font.fallbacks = [fa_font]
+				_retro_font.fallbacks = [fa_font]
 				print("🛸 Quantico-Bold + Font Awesome fallback loaded")
 			else:
 				print("🛸 Quantico-Bold font loaded (FA fallback failed)")
@@ -1707,8 +1707,8 @@ func _setup_drone_window() -> void:
 	_drone_screen_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_drone_screen_label.add_theme_font_size_override("font_size", 36)
 	_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
-	if quantico_font:
-		_drone_screen_label.add_theme_font_override("font", quantico_font)
+	if _retro_font:
+		_drone_screen_label.add_theme_font_override("font", _retro_font)
 	_drone_screen_vp.add_child(_drone_screen_label)
 
 	_drone_window.add_child(_drone_screen_vp)
@@ -2344,6 +2344,8 @@ func _show_quit_confirmation() -> void:
 	title_lbl.text = "Quitter"
 	title_lbl.add_theme_font_size_override("font_size", 12)
 	title_lbl.add_theme_color_override("font_color", Color.WHITE)
+	if _retro_font:
+		title_lbl.add_theme_font_override("font", _retro_font)
 	title_panel.add_child(title_lbl)
 
 	# --- Content Area ---
@@ -2362,6 +2364,8 @@ func _show_quit_confirmation() -> void:
 	lbl.text = "Tu veux vraiment\npartir ? 😿"
 	lbl.add_theme_font_size_override("font_size", 14)
 	lbl.add_theme_color_override("font_color", Color(0.227, 0.353, 0.541))  # #3a5a8a
+	if _retro_font:
+		lbl.add_theme_font_override("font", _retro_font)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(lbl)
 
@@ -2398,6 +2402,8 @@ func _build_styled_button(text: String, bg: Color, hover_bg: Color,
 	h.set_content_margin_all(8)
 	btn.add_theme_stylebox_override("hover", h)
 	btn.add_theme_color_override("font_color", font_color)
+	if _retro_font:
+		btn.add_theme_font_override("font", _retro_font)
 	btn.pressed.connect(callback)
 	return btn
 
@@ -2477,6 +2483,8 @@ func _show_onboarding_dialog(lang: String = "en") -> void:
 	title_lbl.text = "FocusPals"
 	title_lbl.add_theme_font_size_override("font_size", 12)
 	title_lbl.add_theme_color_override("font_color", Color.WHITE)
+	if _retro_font:
+		title_lbl.add_theme_font_override("font", _retro_font)
 	title_panel.add_child(title_lbl)
 
 	# --- Content Area ---
@@ -2499,6 +2507,8 @@ func _show_onboarding_dialog(lang: String = "en") -> void:
 		lbl.text = "Want me to explain\nhow this works? 🎓"
 	lbl.add_theme_font_size_override("font_size", 13)
 	lbl.add_theme_color_override("font_color", Color(0.227, 0.353, 0.541))  # #3a5a8a
+	if _retro_font:
+		lbl.add_theme_font_override("font", _retro_font)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(lbl)
 

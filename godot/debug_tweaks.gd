@@ -145,10 +145,15 @@ func _build_ui() -> void:
 	var title_row := HBoxContainer.new()
 	title_panel.add_child(title_row)
 
+	var main_node = get_parent()
+	var quantico: Font = main_node._retro_font if (main_node and "ws" in main_node) else null
+
 	var title := Label.new()
 	title.text = "🔧 Debug Tweaks"
 	title.add_theme_font_size_override("font_size", 12)
 	title.add_theme_color_override("font_color", Color.WHITE)
+	if quantico:
+		title.add_theme_font_override("font", quantico)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(title)
 
@@ -156,6 +161,8 @@ func _build_ui() -> void:
 	hint.text = "F2"
 	hint.add_theme_font_size_override("font_size", 10)
 	hint.add_theme_color_override("font_color", Color(0.863, 0.910, 0.957, 0.8))  # Light blue
+	if quantico:
+		hint.add_theme_font_override("font", quantico)
 	title_row.add_child(hint)
 
 	# --- Content Area ---

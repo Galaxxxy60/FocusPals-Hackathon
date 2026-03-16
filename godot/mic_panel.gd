@@ -210,7 +210,8 @@ func _draw_panel() -> void:
 	_canvas.draw_rect(pr, Color(0.502, 0.682, 0.890, 0.8 * alpha), false, 2.0)  # #80aee3
 
 	# Title
-	var font := ThemeDB.fallback_font
+	var main_node = get_parent()
+	var font: Font = main_node._retro_font if (main_node and "ws" in main_node and main_node._retro_font) else ThemeDB.fallback_font
 	_canvas.draw_string(font, Vector2(pr.position.x + PADDING, pr.position.y + 22),
 		"🎤  Microphone", HORIZONTAL_ALIGNMENT_LEFT, int(PANEL_WIDTH - PADDING * 2), 15,
 		Color(0.345, 0.537, 0.769, alpha))  # #5889c4
@@ -263,7 +264,8 @@ func _draw_mic_item(index: int, alpha: float) -> void:
 	var mic_name: String = str(mic.get("name", "?"))
 	var is_selected := mic_index == _selected_index
 	var is_hovered := index == _hovered
-	var font := ThemeDB.fallback_font
+	var main_node = get_parent()
+	var font: Font = main_node._retro_font if (main_node and "ws" in main_node and main_node._retro_font) else ThemeDB.fallback_font
 
 	if is_selected:
 		_canvas.draw_rect(rect, Color(0.710, 0.816, 0.941, 0.7 * alpha), true)  # #b5d0f0
