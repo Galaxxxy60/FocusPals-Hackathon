@@ -100,7 +100,7 @@ CURIOUS_DURATION_THRESHOLD = 90         # Seconds on ambiguous app before Tama c
 PROTECTED_WINDOWS = ["code", "cursor", "visual studio", "unreal", "blender", "word", "excel",
                      "figma", "photoshop", "premiere", "davinci", "ableton", "fl studio",
                      "suno", "notion", "obsidian", "terminal", "powershell",
-                     "godot", "foculpal", "focuspals", "tama"]
+                     "godot", "foculpal", "focuspals", "tama", "gemini", "chatgpt", "claude"]
 
 # Browser keywords for close-tab mode detection
 BROWSER_KEYWORDS = ["chrome", "firefox", "edge", "opera", "brave", "vivaldi", "chromium"]

@@ -1709,7 +1709,11 @@ async def run_gemini_loop(pya):
                             _strike_delay = 15.0 * C
                             _ultimatum_delay = 8.0 * C
                             if state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > _strike_delay):
-                                speak_directive = f"STRIKE: User is still distracted. Identify the distracting window from your [EYES] and the open windows list, then call close_distracting_tab with its EXACT title. Do NOT close the active window if it's a work tool."
+                                # 🛑 NO STRIKE FOR ZONE_GRISE OR CREATIVE TOOLS
+                                if cat in ("ZONE_GRISE", "PROCRASTINATION_PRODUCTIVE", "FLUX"):
+                                    speak_directive = f"ULTIMATUM: User has been on a gray-zone app for too long. Scold them severely and tell them to get back to work immediately, but DO NOT call close_distracting_tab."
+                                else:
+                                    speak_directive = f"STRIKE: User is still distracted. Identify the distracting window from your [EYES] and the open windows list, then call close_distracting_tab with its EXACT title. Do NOT close the active window if it's a work tool."
                             elif state["suspicion_at_9_start"] and (time.time() - state["suspicion_at_9_start"] > _ultimatum_delay):
                                 speak_directive = f"ULTIMATUM: Give final warning. Name the ACTUAL distraction you see (from [EYES] and the windows list), not just the active window."
                             elif state["suspicion_above_3_start"]:

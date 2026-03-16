@@ -30,9 +30,14 @@ WARMUP_DELAY = 15.0              # Don't call Flash-Lite for first 15s (let Live
 PRE_CLASSIFY_PROMPT = """You are a strict screen classification engine. Analyze this multi-monitor screenshot and classify the user's activity.
 
 🛑 CRITICAL VISUAL RULES (TRUST YOUR EYES, NOT THE TEXT):
-1. ZERO TOLERANCE FOR VISIBLE DISTRACTIONS: If an entertainment video (YouTube, Netflix, Twitch, cooking, gaming, etc.), video game, or social media feed is clearly VISIBLE on ANY monitor, the category MUST be BANNIE (Alignment 0.0).
-2. THE "ACTIVE WINDOW" TRICK: Do NOT be fooled by the 'Active window title'. If the user clicks a work app but leaves a distracting video playing on the other screen, they are STILL distracted. Visual distractions OVERRIDE the active window!
-3. Focus on what occupies the MOST pixels. A small active IDE does not negate a huge YouTube video.
+1. ZERO TOLERANCE FOR CONFIRMED ENTERTAINMENT: Netflix, Twitch streams, gaming, casual social media feeds = BANNIE (0.0).
+2. YOUTUBE IS NUANCED — classify by WHAT is actually visible:
+   - YouTube TUTORIAL (programming, 3D, Blender, Godot, design, etc.) = SANTE (1.0)
+   - YouTube HOMEPAGE, search page, or recommendations = ZONE_GRISE (0.5) — could lead to a tutorial, give benefit of the doubt but be suspicious
+   - YouTube ENTERTAINMENT (music videos, vlogs, gaming, memes, cooking) = BANNIE (0.0) — only if watching/playing confirmed entertainment content
+3. AI ASSISTANTS ARE WORK: ChatGPT, Claude, and Gemini are SANTE (Alignment 1.0).
+4. MESSAGING APPS MIGHT BE WORK: Messenger, Slack, Discord are ZONE_GRISE (Alignment 0.5) UNLESS it is clearly a work discussion related to the declared task, in which case it is SANTE (Alignment 1.0).
+5. THE "ACTIVE WINDOW" TRICK: Visual distractions OVERRIDE the active window! Focus on what occupies the MOST pixels.
 
 Context (secondary hints — use as TIE-BREAKERS, not primary evidence):
 - Active window title: {active_window}
@@ -44,20 +49,20 @@ Return ONLY a JSON object with these exact fields:
   "category": "SANTE" | "ZONE_GRISE" | "FLUX" | "BANNIE" | "PROCRASTINATION_PRODUCTIVE",
   "alignment": 1.0 | 0.5 | 0.0,
   "reason": "<brief reason in 5 words max>",
-  "description": "<describe SPECIFICALLY what is VISIBLE on screen — include video titles, article headlines, song names, website content, code project name, chat app name, game title, or whatever is visually prominent. Be specific, not generic. Example: 'YouTube: How to play drums in 10 minutes' NOT 'watching a video'. Max 20 words.>"
+  "description": "<describe SPECIFICALLY what is VISIBLE on screen — include video titles, article headlines, song names, website content, code project name, chat app name, AI prompt, or whatever is visually prominent. Be specific, not generic. Example: 'YouTube homepage with recommendations' or 'Gemini: helping with Python code'. Max 20 words.>"
 }}
 
 Categories:
-- SANTE: Work tools (IDE, terminal, creative software, ChatGPT, Blender, Godot)
-- ZONE_GRISE: Communication apps (Messenger, Slack, Discord, WhatsApp)
+- SANTE: Work tools (IDE, terminal, creative software, ChatGPT, Gemini, Blender, Godot, work tutorials, strict work discussions)
+- ZONE_GRISE: Ambiguous apps (Messenger, Discord, WhatsApp, YouTube homepage/search)
 - FLUX: Media/music (Spotify, YouTube Music, Deezer, Suno)
-- BANNIE: Entertainment (Netflix, YouTube non-tutorial, Steam, Reddit, social media)
+- BANNIE: Confirmed entertainment (Netflix, YouTube entertainment video playing, Steam, Reddit, casual social media)
 - PROCRASTINATION_PRODUCTIVE: Productive but not the scheduled task
 
 Alignment:
 - 1.0 = fully aligned with current task
-- 0.5 = ambiguous / could be either
-- 0.0 = clearly misaligned / procrastinating
+- 0.5 = ambiguous / could be either / browsing YouTube homepage
+- 0.0 = clearly misaligned / actively watching entertainment
 
 If no task is set, use: SANTE→1.0, FLUX/ZONE_GRISE→0.5, BANNIE→0.0"""
 
