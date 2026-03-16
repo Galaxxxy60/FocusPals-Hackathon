@@ -3068,8 +3068,14 @@ func _process(delta: float) -> void:
 	if _waiting_for_voice:
 		_voice_timeout_timer -= delta
 		if _voice_timeout_timer <= 0.0:
-			print("⏳ Timeout vocal (10s) : Tama entre silencieusement.")
-			_trigger_entrance()
+			if _drone_state == "ONBOARDING_YN":
+				# During onboarding, do NOT enter silently.
+				# Keep waiting — the API might be slow to cold-start.
+				# The watchdog will reconnect if truly dead.
+				_voice_timeout_timer = 15.0  # Reset and keep waiting
+			else:
+				print("⏳ Timeout vocal (10s) : Tama entre silencieusement.")
+				_trigger_entrance()
 
 	# Sync gaze targets to modifier BEFORE it processes (modifier runs after AnimationPlayer)
 	_sync_gaze_to_modifier()

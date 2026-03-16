@@ -95,6 +95,13 @@ if __name__ == "__main__":
     # 2. Lance le system tray
     setup_tray()
 
+    # 2.1 Initialize Firestore cloud sync (best-effort — app works without it)
+    try:
+        from firestore_sync import init_firestore
+        threading.Thread(target=init_firestore, daemon=True).start()
+    except Exception:
+        pass
+
     # 2.5 Validate existing API key in background (non-blocking)
     import config as _cfg
     if _cfg._api_key_present_at_start:

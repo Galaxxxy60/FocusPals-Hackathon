@@ -662,6 +662,13 @@ def fire_hand_animation():
     action = "Ctrl+W (onglet)" if mode == "browser" else "WM_CLOSE (app)"
     print(f"  🖐️ STRIKE_FIRE! Tab close → '{title}' [{action}]")
 
+    # ── Cloud: Log strike to Firestore ──
+    try:
+        from firestore_sync import log_strike
+        log_strike(title, pending.get("reason", "distraction"), mode)
+    except Exception:
+        pass  # Cloud sync is best-effort
+
 
 async def grace_then_close(session, audio_out_queue, reason, target_window):
     """Execute tab closure immediately without artificial robot delays."""
@@ -1291,12 +1298,14 @@ async def run_gemini_loop(pya):
                         # Concurrent audio + tool_response is the #1 trigger for 1011 crashes
                         if state.get("_api_processing_tool", False):
                             continue  # Drop this chunk silently — tool processing takes priority
-                        # ── Mute mic during onboarding greeting phase ──
-                        # Audio sent while Gemini processes the greeting causes barge-in
-                        # detection → Gemini cancels the greeting → Tama stays silent
-                        if (state.get("_onboarding_active") and not state.get("_onboarding_arrived")
-                                and not state.get("_onboarding_answered")):
-                            continue  # Drop audio until Tama starts speaking
+                        # ── Mute mic during onboarding to prevent barge-in ──
+                        # Phase 1: Before greeting arrives (ambient noise kills greeting)
+                        # Phase 2: After YES click until explanation audio starts (click noise kills explanation)
+                        if state.get("_onboarding_active"):
+                            if not state.get("_onboarding_arrived"):
+                                continue  # Phase 1: waiting for greeting
+                            if state.get("_onboarding_answered") and not state.get("_onboarding_explanation_started"):
+                                continue  # Phase 2: waiting for explanation audio
                         try:
                             await session.send_realtime_input(audio=blob)
                             state["_api_audio_chunks_sent"] += 1
@@ -1492,11 +1501,8 @@ async def run_gemini_loop(pya):
                                 # The 60s global timeout or speech end will deactivate it
                                 state["_onboarding_answered"] = True
                                 state["_onboarding_answer_time"] = time.time()
+                                state["_onboarding_explanation_started"] = False  # Mic stays muted until Tama speaks
                                 state["_api_last_heartbeat"] = time.time()  # Prevent watchdog interrupt while Gemini thinks
-                                # Signal receive_responses to flush deferred tool responses NOW
-                                # so they don't race with our send_client_content
-                                state["_flush_deferred_tools"] = True
-                                await asyncio.sleep(0.3)  # Give receive_responses time to flush
 
                                 try:
                                     if onb_response.upper() == "Y":
@@ -1524,6 +1530,9 @@ async def run_gemini_loop(pya):
                                                 "5) Il peut te parler à tout moment en parlant à haute voix. "
                                                 "Reste fun, moins de 30 secondes. Puis dis-lui de cliquer sur le ▶ du drone pour commencer !"
                                             )
+                                        # 🚀 Revert to client content.
+                                        # Realtime input without VAD or end-of-turn causes Gemini to wait forever
+                                        # because the mic is muted. We MUST signal turn_complete.
                                         await session.send_client_content(
                                             turns=types.Content(role="user", parts=[types.Part(text=txt_msg)]),
                                             turn_complete=True
@@ -1534,6 +1543,7 @@ async def run_gemini_loop(pya):
                                             txt_msg = "[SYSTEM] The user doesn't need the explanation. Just tell them to click the ▶ button on the drone whenever they're ready to start a work session. Be brief and cheerful."
                                         else:
                                             txt_msg = "[SYSTEM] L'utilisateur n'a pas besoin d'explication. Dis-lui simplement de cliquer sur le ▶ du drone quand il est prêt à commencer une session. Sois bref et joyeux."
+                                        # 🚀 Revert to client content
                                         await session.send_client_content(
                                             turns=types.Content(role="user", parts=[types.Part(text=txt_msg)]),
                                             turn_complete=True
@@ -1572,6 +1582,7 @@ async def run_gemini_loop(pya):
                                     and "_onboarding_response" not in state
                                     and state.get("_onboarding_answered")
                                     and state.get("_onboarding_explanation_sent", 0) > 0
+                                    and state.get("_onboarding_explanation_started")  # Proof Tama actually spoke
                                     and state.get("_last_speech_ended", 0) > state.get("_onboarding_explanation_sent", float('inf'))):
                                 state["_onboarding_active"] = False
                                 broadcast_to_godot(json.dumps({"command": "ONBOARDING_DONE"}))
@@ -2170,6 +2181,9 @@ async def run_gemini_loop(pya):
                                                 # Speech gating is handled at the prompt level (MUZZLED/UNMUZZLED).
                                                 is_speaking = True
                                                 state["_tama_is_speaking"] = True
+                                                # Unlock mic: Tama is now speaking the explanation
+                                                if state.get("_onboarding_active") and state.get("_onboarding_answered"):
+                                                    state["_onboarding_explanation_started"] = True
                                                 print("  🗣️ Tama starts speaking")
                                                 # Apply body animation now that speech is confirmed.
                                                 # Race condition fix: report_mood often arrives BEFORE the first
@@ -2461,9 +2475,13 @@ async def run_gemini_loop(pya):
                                                 asyncio.create_task(_jarvis_bg(action_name, target_name))
 
                                         if function_responses_to_send:
-                                            if is_speaking:
+                                            if is_speaking and not state.get("_onboarding_active"):
                                                 # Defer: sending tool_response mid-speech causes
                                                 # Gemini to re-enter generation → duplicate audio
+                                                # EXCEPTION: during onboarding, send immediately.
+                                                # report_mood always arrives after last audio chunk,
+                                                # so no duplication risk. And deferring causes the
+                                                # tool response to race with the YES click.
                                                 deferred_tool_responses.extend(function_responses_to_send)
                                             else:
                                                 await session.send_tool_response(
@@ -2625,12 +2643,19 @@ async def run_gemini_loop(pya):
                         silence = time.time() - last_hb
 
                         # ── Hard timeout: absolute safety net ──
-                        if silence > HARD_TIMEOUT:
+                        # After user clicks YES/NO, give Gemini up to 2 minutes (API can be very slow).
+                        # Before that, use normal timeout so we reconnect if greeting never comes.
+                        _onb_answered = state.get("_onboarding_active") and state.get("_onboarding_answered")
+                        _hard_timeout_limit = 120.0 if _onb_answered else HARD_TIMEOUT
+                        if silence > _hard_timeout_limit:
                             print(f"\n🐕 WATCHDOG: Hard timeout {silence:.0f}s — forcing reconnection!")
                             raise RuntimeError(f"Watchdog: API silent for {silence:.0f}s")
 
-                        # ── Nudge: probe Gemini after 8s of silence ──
-                        if silence > NUDGE_AT and _nudge_sent_at < last_hb:
+                        # ── Nudge: probe Gemini after 20s of silence ──
+                        # Phase 1 (waiting for greeting): nudge is USEFUL to wake up slow cold-starts
+                        # Phase 2 (after YES click): nudge is DANGEROUS (causes barge-in)
+                        _skip_nudge = state.get("_onboarding_active") and state.get("_onboarding_answered")
+                        if silence > NUDGE_AT and _nudge_sent_at < last_hb and not _skip_nudge:
                             # Lightweight probe: send_realtime_input does NOT force a new
                             # conversational turn (unlike send_client_content which interrupts
                             # the AI and triggers deferred tool response desync -> 1011).

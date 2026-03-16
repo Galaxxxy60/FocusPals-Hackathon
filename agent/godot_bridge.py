@@ -620,6 +620,19 @@ async def broadcast_ws_state():
                         if state.get("session_start_time"):
                             focus_min = (time.time() - state["session_start_time"]) / 60.0
                             tama_memory.record_session_end(focus_min)
+                            # ── Cloud: Log session end to Firestore ──
+                            try:
+                                from firestore_sync import log_session_end
+                                cloud_sid = state.pop("_cloud_session_id", None)
+                                log_session_end(
+                                    cloud_sid,
+                                    focus_min,
+                                    state.get("_api_function_calls", 0),
+                                    state.get("_session_summary", "")
+                                )
+                            except Exception:
+                                pass  # Cloud sync is best-effort
+
                         asyncio.create_task(_generate_end_summary())
                     state_data = {
                         "session_active": False,

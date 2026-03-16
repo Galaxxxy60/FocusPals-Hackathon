@@ -99,6 +99,17 @@ def start_session(source="UI"):
         # ── Tama Memory: record session start ──
         tama_memory.load_memory()
         tama_memory.record_session_start()
+        # ── Cloud: Log session start to Firestore ──
+        try:
+            from firestore_sync import log_session_start
+            cloud_session_id = log_session_start(
+                state.get("session_duration_minutes", 50),
+                state.get("language", "en")
+            )
+            state["_cloud_session_id"] = cloud_session_id
+        except Exception:
+            pass  # Cloud sync is best-effort
+
         if was_on_break:
             state["_post_break_restart"] = True
             # Reset stealth counters — the disconnect was intentional (break), not a crash
