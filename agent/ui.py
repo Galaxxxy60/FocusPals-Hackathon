@@ -11,6 +11,10 @@ import threading
 
 from enum import Enum
 
+from PIL import Image, ImageDraw
+import pystray
+from pystray import MenuItem as item
+
 from config import state, BREAK_CHECKPOINTS, get_dynamic_break_checkpoints
 import tama_memory
 
@@ -59,7 +63,20 @@ def clear_screen():
 
 # ─── System Tray Icon ───────────────────────────────────────
 
+# Path to Tama icon (relative to agent/ → up one level → godot/)
+_TAMA_ICON_PATH = os.path.join(os.path.dirname(__file__), "..", "godot", "Tama_icon.png")
+
 def create_tray_image(tama_state: TamaState):
+    """Load Tama_icon.png as the tray icon. Fallback to colored circle if missing."""
+    try:
+        icon_path = os.path.normpath(_TAMA_ICON_PATH)
+        if os.path.exists(icon_path):
+            img = Image.open(icon_path).convert("RGBA")
+            img = img.resize((64, 64), Image.LANCZOS)
+            return img
+    except Exception:
+        pass
+    # Fallback: colored circle
     image = Image.new('RGB', (64, 64), color=(30, 30, 30))
     dc = ImageDraw.Draw(image)
     if tama_state == TamaState.CALM:

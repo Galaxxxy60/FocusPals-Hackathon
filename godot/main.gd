@@ -678,9 +678,11 @@ func _setup_tama_window() -> void:
 
 	# Hide main window — Tama renders in _tama_window now
 	# Main window stays alive for script processing but is invisible
+	# FLAG_NO_FOCUS + POPUP mode = no taskbar icon on Windows
 	DisplayServer.window_set_size(Vector2i(1, 1))
 	DisplayServer.window_set_position(Vector2i(-100, -100))
-	print("🪟 Tama window created — main window hidden")
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
+	print("🪟 Tama window created — main window hidden (no taskbar icon)")
 
 func _sync_tama_camera() -> void:
 	"""Sync tama camera with main camera settings. Called deferred after _setup_gaze."""
@@ -1985,12 +1987,13 @@ func _setup_confetti_window() -> void:
 	if shader:
 		var mat = ShaderMaterial.new()
 		mat.shader = shader
+		mat.set_shader_parameter("resolution", Vector2(500.0, 500.0))
 		_confetti_rect.material = mat
 	_confetti_window.add_child(_confetti_rect)
 	# Add to tree FIRST — then set display-server-dependent properties
 	add_child(_confetti_window)
 	_confetti_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
-	_confetti_window.size = Vector2i(350, 350)  # Zone limitée autour du drone
+	_confetti_window.size = Vector2i(500, 500)  # Larger zone — vignette fades edges smoothly
 	_confetti_window.visible = false
 	print("🎊 Confetti window setup complete")
 
@@ -2132,6 +2135,12 @@ func _update_drone_timer() -> void:
 		if _drone_state != "BREAK_TIMER" and current_pos.distance_to(Vector2(target_x, target_y)) > 600:
 			new_pos = Vector2(target_x, target_y)
 		_drone_window.position = Vector2i(new_pos)
+
+		# ── Synchro confettis avec le centre du drone ──
+		if _confetti_window and is_instance_valid(_confetti_window) and _confetti_window.visible:
+			var drone_center = Vector2(_drone_window.position) + (Vector2(_drone_window.size) / 2.0)
+			var conf_pos = drone_center - (Vector2(_confetti_window.size) / 2.0)
+			_confetti_window.position = Vector2i(conf_pos)
 
 	# ── Mise à jour du Texte ──
 	if _drone_state == "TIMER":
@@ -5748,15 +5757,27 @@ func _show_break_popup() -> void:
 
 	# Confetti retardé de 1s pour sync avec le burst audio
 	if _confetti_window and is_instance_valid(_confetti_window):
-		_confetti_window.position = Vector2i(dx + 120 - 175, dy + 90 - 175)  # Centré sur le drone
+		# Position is now synced every frame in _update_drone_timer — no static assignment needed
 		var confetti_tw = create_tween()
 		confetti_tw.tween_interval(1.0)
 		confetti_tw.tween_callback(func():
 			if _confetti_window and is_instance_valid(_confetti_window):
+				# Pre-position on drone center before showing (avoid 1-frame flash at wrong pos)
+				if _drone_window and is_instance_valid(_drone_window):
+					var dc = Vector2(_drone_window.position) + (Vector2(_drone_window.size) / 2.0)
+					var cp = dc - (Vector2(_confetti_window.size) / 2.0)
+					_confetti_window.position = Vector2i(cp)
 				_confetti_window.visible = true
+				_confetti_window.move_to_foreground()
+		)
+		# Auto-hide confetti after 6s (celebration is over)
+		confetti_tw.tween_interval(6.0)
+		confetti_tw.tween_callback(func():
+			if _confetti_window and is_instance_valid(_confetti_window):
+				_confetti_window.visible = false
 		)
 
-	print("🎉 Célébration ! Son + Confetti (1s delay)")
+	print("🎉 Célébration ! Son + Confetti (1s delay, 6s duration)")
 
 
 func _hide_break_popup() -> void:

@@ -4,15 +4,15 @@ shader_type canvas_item;
 // 1. Append a ColorRect (Full size)
 // 2. Add this Shader to the ColorRect
 
-const int PARTICLE_COUNT = 120;
+const int PARTICLE_COUNT = 80;
 
-uniform float   speed         : hint_range(20.0, 500.0)  = 120.0;
-uniform float   sway_strength : hint_range(0.0,  200.0)  = 60.0;
+uniform float   speed         : hint_range(20.0, 500.0)  = 100.0;
+uniform float   sway_strength : hint_range(0.0,  200.0)  = 40.0;
 uniform float   sway_speed    : hint_range(0.1,  5.0)    = 1.4;
 uniform float   spin_speed    : hint_range(0.0,  10.0)   = 3.5;
-uniform float   piece_size    : hint_range(2.0,  30.0)   = 10.0;
+uniform float   piece_size    : hint_range(2.0,  30.0)   = 8.0;
 uniform float   aspect_ratio  : hint_range(0.2,  3.0)    = 2.0;
-uniform vec2    resolution    = vec2(1920.0, 1080.0);
+uniform vec2    resolution    = vec2(500.0, 500.0);
 
 uniform vec4    col0 : source_color = vec4(1.00, 0.20, 0.20, 1.0);
 uniform vec4    col1 : source_color = vec4(1.00, 0.75, 0.10, 1.0);
@@ -66,15 +66,14 @@ void fragment() {
         float my_size       = piece_size    * (0.5 + rand(fi * 0.123) * 1.0);
         float my_ar         = aspect_ratio  * (0.7 + rand(fi * 0.456) * 0.6);
 
-        float t     = mod(TIME + t_offset, (resolution.y + my_size * 2.0) / my_speed);
+        float cycle_len = (resolution.y + my_size * 4.0) / my_speed;
+        float t     = mod(TIME + t_offset, cycle_len);
         float cy    = start_y + t * my_speed;
-        float cy_wrapped = mod(cy, resolution.y); // Wraps confetti continuously
+        float cy_wrapped = mod(cy + my_size * 2.0, resolution.y + my_size * 4.0) - my_size * 2.0;
         float cx    = start_x + my_sway_str * sin(t * my_sway_spd + my_sway_phase);
         float angle = t * my_spin;
 
-        vec2 delta = px - vec2(cx, cy); // Not wrapping vertically yet
-        // If we want endless rain:
-        // vec2 delta = px - vec2(cx, mod(cy, resolution.y + my_size) - my_size/2.0);
+        vec2 delta = px - vec2(cx, cy_wrapped);
 
         delta = rotate2d(delta, -angle);
         vec2 local = delta / vec2(my_size * my_ar, my_size);
@@ -89,5 +88,12 @@ void fragment() {
             out_color = mix(out_color, lit_col, inside);
         }
     }
+
+    // ── Radial vignette fade: confetti fades smoothly toward window edges ──
+    vec2 center_uv = UV - vec2(0.5);
+    float dist = length(center_uv) * 2.0;  // 0 at center, 1 at edge
+    float vignette = 1.0 - smoothstep(0.5, 1.0, dist);  // Fade starts at 50% radius
+    out_color.a *= vignette;
+
     COLOR = out_color;
 }
