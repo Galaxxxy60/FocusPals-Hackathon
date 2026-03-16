@@ -36,7 +36,6 @@ from ui import TamaState, update_display, send_anim_to_godot, send_mood_to_godot
 from mood_engine import get_mood_context, track_infraction, track_compliance
 from flash_lite import pre_classify, clear_classification_history, generate_session_summary, infer_task
 from app_control import execute_action as jarvis_execute
-from offline_voices import play_offline_phrase
 
 
 # ─── Screen Capture & Window Cache ──────────────────────────
@@ -958,12 +957,9 @@ async def run_gemini_loop(pya):
                     broadcast_to_godot(json.dumps({"command": "TAMA_MOOD", "mood": "calm", "intensity": 0.3}))
                     print("  🎭 Mood reset → calm (stealth reconnect)")
 
-                # 🔊 Offline voice: "I'm back!" after visible reconnection
+                # 🛸 Drone: welcome back expression (visible reconnect)
                 if _consecutive_failures > 5:
-                    try:
-                        await play_offline_phrase("back_online", broadcast_visemes=False)
-                    except Exception:
-                        pass
+                    broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "welcome_back"}))
 
                 # (Circuit breaker no longer needed — images are never sent to Live API)
 
@@ -974,12 +970,12 @@ async def run_gemini_loop(pya):
                     # ── Onboarding: situation context, not instructions ──
                     greeting_text = (
                         "L'utilisateur vient de t'appeler. La session de travail n'a pas encore commencé. "
-                        "Il réglera ses affaires puis appuiera sur le bouton Start sur le drone quand il sera prêt. "
-                        "Contente-toi de le saluer chaleureusement et naturellement, sans lui donner d'ordres."
+                        "Salue-le chaleureusement, et dis-lui qu'il peut cliquer sur le bouton du drone au-dessus de ta tête "
+                        "s'il veut commencer une session de travail. Sois naturelle et détendue."
                         if state.get("language") != "en" else
                         "The user just called you. The work session hasn't started yet. "
-                        "They will hit the Start button on the drone when they are ready. "
-                        "Just greet them warmly and naturally, don't give them any orders."
+                        "Greet them warmly, and let them know they can click the button on the drone above your head "
+                        "if they want to start a work session. Be natural and relaxed."
                     )
                     try:
                         await session.send_client_content(
@@ -2563,12 +2559,9 @@ async def run_gemini_loop(pya):
                         await ws_client.send(_conn_msg)
                     except Exception:
                         pass
-                # 🔊 Offline voice: tell user we're reconnecting (only on first visible failure)
+                # 🛸 Drone: loading expression (reconnecting)
                 if _consecutive_failures <= 6:
-                    try:
-                        await play_offline_phrase("reconnecting", broadcast_visemes=False)
-                    except Exception:
-                        pass
+                    broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "loading"}))
             # ── Spare Tire: keep watching during reconnection ──
             # Flash-Lite is HTTP (not WebSocket) — works while Live API is dead
             # If user is procrastinating during a crash, we still catch them
@@ -2594,78 +2587,51 @@ async def run_gemini_loop(pya):
                             new_s = max(0, min(10, state["current_suspicion_index"] + delta))
                             state["current_suspicion_index"] = new_s
                             print(f"  🛞 Spare tire: S:{new_s:.0f} A:{ali} Cat:{cat} — {lite_result.get('reason', '')}")
-                            # 🔊 Offline voice — ONE phrase per cycle, 12s cooldown
-                            # Priority: strike_warning > distraction_spotted > focus_warning > focus_reminder
-                            _offline_cooldown = 12.0  # seconds between any offline phrase
-                            _last_offline = state.get("_offline_voice_last_time", 0)
-                            _can_speak = (time.time() - _last_offline) > _offline_cooldown
-                            # Reset spoke flags when user returns to work
+                            # 🛸 Drone Spare Mode — update expression based on suspicion
+                            # (drone is already in SPARE mode via broadcast, this sends explicit expression)
                             if new_s < 3:
+                                broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "neutral"}))
                                 state["_spare_tire_spoke"] = False
                                 state["_spare_tire_distraction_spoke"] = False
-                            # Auto-strike if critical suspicion — even without Gemini
+                            elif new_s < 5:
+                                broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "suspicious"}))
+                            elif new_s < 7:
+                                broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "alert"}))
+                            elif new_s < 9:
+                                broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "angry"}))
+                            # Auto-strike if critical suspicion — drone strikes alone
                             if new_s >= 9 and not state.get("_strike_in_progress"):
-                                # 🔊 Strike warning (always plays — overrides cooldown for urgency)
-                                if not state.get("_spare_tire_strike_spoke"):
-                                    state["_spare_tire_strike_spoke"] = True
-                                    try:
-                                        await play_offline_phrase("strike_warning", broadcast_visemes=False)
-                                        state["_offline_voice_last_time"] = time.time()
-                                    except Exception:
-                                        pass
+                                broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "strike"}))
                                 result = await asyncio.to_thread(prepare_close_tab, "Procrastination detected during API outage", None)
                                 if result.get("status") == "success":
-                                    print(f"  🛞⚡ SPARE TIRE STRIKE! Closing tab without Gemini")
+                                    print(f"  🛞⚡ DRONE SPARE STRIKE! Closing tab without Gemini")
                                     state["_strike_in_progress"] = True
                                     pending = state.get("_pending_strike", {})
-                                    strike_msg = json.dumps({"command": "STRIKE_TARGET", "x": pending.get("target_x", 960), "y": pending.get("target_y", 540), "title": pending.get("title", "")})
+                                    # Send DRONE_STRIKE (not STRIKE_TARGET) — drone handles it alone
+                                    strike_msg = json.dumps({
+                                        "command": "DRONE_STRIKE",
+                                        "x": pending.get("target_x", 960),
+                                        "y": pending.get("target_y", 540),
+                                        "title": pending.get("title", "")
+                                    })
                                     broadcast_to_godot(strike_msg)
-                                    send_anim_to_godot("Strike", False)
-                                    # FIX: STRIKE_FIRE timeout — same as grace_then_close.
-                                    # Without this, _strike_in_progress stays True forever
-                                    # and blocks ALL future strikes when the API reconnects.
+                                    # Timeout task to clean up flags
                                     async def spare_tire_fire_timeout():
                                         TIMEOUT = 30.0
                                         t0 = time.time()
                                         while state.get("_pending_strike") is not None:
                                             if time.time() - t0 > TIMEOUT:
                                                 print("  🛞⏰ Spare tire strike abandoned (30s) — drone never impacted. Tab NOT closed.")
-                                                state.pop("_pending_strike", None)  # Clean up without closing
+                                                state.pop("_pending_strike", None)
                                                 break
                                             await asyncio.sleep(0.1)
-                                        # Always reset — even if STRIKE_FIRE came from Godot
                                         state["_strike_in_progress"] = False
                                         state["_strike_requested"] = False
-                                        state["_spare_tire_strike_spoke"] = False  # Allow re-strike
                                         await asyncio.to_thread(refresh_window_cache)
                                         print("  🛞✅ Spare tire strike complete — flags reset")
+                                        # Return to neutral after strike
+                                        broadcast_to_godot(json.dumps({"command": "DRONE_EXPRESSION", "expression": "happy"}))
                                     asyncio.create_task(spare_tire_fire_timeout())
-                                    # No distraction_closed — Gemini will speak when it reconnects
-                            elif _can_speak:
-                                # Distraction spotted (mid priority)
-                                if cat in ("PURE_DISTRACTION", "PROCRASTINATION", "BANNIE") and not state.get("_spare_tire_distraction_spoke"):
-                                    state["_spare_tire_distraction_spoke"] = True
-                                    state["_offline_voice_last_time"] = time.time()
-                                    try:
-                                        await play_offline_phrase("distraction_spotted", broadcast_visemes=False)
-                                    except Exception:
-                                        pass
-                                # Focus warning (low-mid priority, only if didn't already speak)
-                                elif new_s >= 7 and not state.get("_spare_tire_spoke"):
-                                    state["_spare_tire_spoke"] = True
-                                    state["_offline_voice_last_time"] = time.time()
-                                    try:
-                                        await play_offline_phrase("focus_warning", broadcast_visemes=False)
-                                    except Exception:
-                                        pass
-                                # Focus reminder (lowest priority)
-                                elif new_s >= 4 and not state.get("_spare_tire_spoke"):
-                                    state["_spare_tire_spoke"] = True
-                                    state["_offline_voice_last_time"] = time.time()
-                                    try:
-                                        await play_offline_phrase("focus_reminder", broadcast_visemes=False)
-                                    except Exception:
-                                        pass
                     except asyncio.TimeoutError:
                         print("  🛞⚠️ Spare tire Flash-Lite timeout (>8s)")
                     except Exception as e:

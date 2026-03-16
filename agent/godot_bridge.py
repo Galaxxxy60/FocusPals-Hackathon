@@ -501,6 +501,15 @@ async def ws_handler(websocket):
                     # User hasn't clicked Start — flag for Gemini to nudge organically
                     state["_onboarding_nudge_pending"] = True
                     print("⏰ ONBOARDING_NUDGE — user hasn't clicked Start")
+                elif cmd == "DEBUG_SKIP_TIME":
+                    # F10 debug: fast-forward session timer by N seconds
+                    skip = int(data.get("skip_seconds", 10))
+                    if state["session_start_time"]:
+                        state["session_start_time"] -= skip
+                        elapsed = int(time.time() - state["session_start_time"])
+                        total = state.get("session_duration_minutes", 50) * 60
+                        remaining = max(total - elapsed, 0)
+                        print(f"⏩ DEBUG_SKIP_TIME +{skip}s | elapsed={elapsed}s | remaining={remaining}s")
             except Exception as e:
                 print(f"⚠️ [WS] Erreur commande: {e}")
                 import traceback; traceback.print_exc()

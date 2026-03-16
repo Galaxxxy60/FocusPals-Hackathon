@@ -430,12 +430,66 @@ var _drone_mesh: MeshInstance3D = null # Wings 3D model
 var _drone_model: Node3D = null       # Reference to the Wings 3D root (for scale tweening)
 var _drone_screen_mat: StandardMaterial3D = null  # Screen material (slot 1)
 var _drone_screen_vp: SubViewport = null          # SubViewport for screen text
+var _drone_break_bg: ColorRect = null              # Light overlay for break mode (#ECEBF5)
 var _drone_screen_label: Label = null             # Dynamic text on the screen
 var _drone_anim: AnimationPlayer = null           # Wings AnimationPlayer (idle/dash/strike)
 var _drone_anim_names: Dictionary = {}            # Resolved anim names
 var _drone_glitch_mat: ShaderMaterial = null       # Glitch effect shader material
 var _drone_glitch_quad: MeshInstance3D = null       # Glitch quad reference
 var _celebration_sfx: AudioStreamPlayer = null      # celebration.ogg player
+
+# ─── Drone Spare Mode (backup agent when Tama is offline) ──────
+var _drone_spare_active: bool = false              # True when drone is the active agent
+var _drone_spare_expression: String = "neutral"    # Current kaomoji expression key
+var _drone_spare_expr_timer: float = 0.0           # Animation timer for expression transitions
+var _drone_spare_blink_timer: float = 0.0          # Blink timer for the drone's "eyes"
+var _drone_spare_suspicion_local: float = 0.0      # Local copy synced from Python broadcasts
+
+# Kaomoji expressions for the drone screen
+const DRONE_EXPRESSIONS = {
+	"neutral": "•_•",
+	"watching": "•.•",
+	"suspicious": ">.>",
+	"alert": ">.<",
+	"angry": "Ò_Ó",
+	"strike": "Ò_Ó",
+	"happy": "^_^",
+	"relieved": "◠‿◠",
+	"loading": "•••",
+	"welcome_back": "\\o/",
+	"blink": "•‿•",
+	"confused": "°_°",
+	"sleepy": "-_-",
+}
+
+# Suspicion → expression mapping for auto-update
+const DRONE_SUSPICION_EXPR = {
+	0.0: "neutral",    # S < 3
+	3.0: "suspicious",  # S 3-5
+	5.0: "alert",       # S 5-7
+	7.0: "angry",       # S 7+
+}
+
+# Drone shape key indices (resolved at setup)
+var _drone_bs_big: int = -1      # "Big" shape key — puff up (alert, angry, strike)
+var _drone_bs_small: int = -1    # "Small" shape key — shrink (scared, loading, blink)
+
+# Expression → shape key animation mapping {expression: [big_target, small_target]}
+const DRONE_SHAPE_TARGETS = {
+	"neutral":      [0.0, 0.0],
+	"watching":     [0.1, 0.0],
+	"suspicious":   [0.25, 0.0],
+	"alert":        [0.45, 0.0],
+	"angry":        [0.7, 0.0],
+	"strike":       [1.0, 0.0],
+	"happy":        [0.3, 0.0],
+	"relieved":     [0.0, 0.1],
+	"loading":      [0.0, 0.4],
+	"welcome_back": [0.5, 0.0],
+	"blink":        [0.0, 0.25],
+	"confused":     [0.15, 0.15],
+	"sleepy":       [0.0, 0.3],
+}
 
 # ─── Jarvis Hand (Gentle Tap Animation) ─────────────────────
 var _jarvis_hand: Window = null
@@ -943,28 +997,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
 		print("🎉 [DEBUG] F9 → Triggering Celebration / Confetti!")
 		_show_break_popup() # Simulate break
-	# F10 = Force pause Pomodoro (même effet que cliquer sur le drone ☕)
+	# F10 = Debug: Fast-forward session timer +10s (spam to reach break naturally)
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F10:
-		print("⏸️ F10 → Pause Pomodoro manuelle !")
-		# Activer le drone en mode BREAK_TIMER (feedback visuel immédiat)
-		if _drone_window and is_instance_valid(_drone_window):
-			_drone_state = "BREAK_TIMER"
-			_break_timer_start = Time.get_unix_time_from_system()
-			_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, false)
-			_drone_window.size = Vector2i(180, 140)
-			_drone_window.visible = true
-			if _drone_screen_label:
-				_drone_screen_label.add_theme_font_size_override("font_size", 48)
-				_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
-			if _drone_screen_mat:
-				_drone_screen_mat.emission = Color(0.208, 0.165, 0.310)  # #352A4F
-				_drone_screen_mat.emission_energy_multiplier = 2.0
-			_drone_play("idle")
-		if _confetti_window:
-			_confetti_window.visible = false
-		
+		session_elapsed_secs += 10
+		var remaining = max(session_duration_secs - session_elapsed_secs, 0)
+		print("⏩ F10 → +10s | elapsed=%ds | remaining=%ds" % [session_elapsed_secs, remaining])
+		_show_status_indicator("⏩ +10s (%02d:%02d left)" % [remaining / 60, remaining % 60], Color(1, 0.8, 0.2))
+		# Sync to Python so both sides agree on elapsed time
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-			ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "prepare_break"}))
+			ws.send_text(JSON.stringify({"command": "DEBUG_SKIP_TIME", "skip_seconds": 10}))
 		return
 
 	# F11 = Debug: Force Teleport Tama to Screen #0 (usually right)
@@ -1210,6 +1251,9 @@ func _spawn_drone_strike() -> void:
 
 func _reset_drone_style() -> void:
 	"""Reset drone screen to purple theme + idle anim."""
+	# Hide break overlay (back to dark gradient)
+	if _drone_break_bg:
+		_drone_break_bg.visible = false
 	if _drone_screen_label:
 		_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
 		if _drone_state == "TIMER":
@@ -1225,6 +1269,213 @@ func _reset_drone_style() -> void:
 			style.border_color = Color(0.208, 0.165, 0.310, 0.8)  # #352A4F
 			style.shadow_color = Color(0.145, 0.114, 0.212, 0.3)  # #251D36
 	_drone_play("idle")
+	# Reset shape keys to neutral
+	if _drone_mesh and _drone_bs_big >= 0 and _drone_bs_small >= 0:
+		var tw := create_tween().bind_node(self)
+		tw.set_parallel(true)
+		tw.tween_method(func(v: float):
+			_drone_mesh.set_blend_shape_value(_drone_bs_big, v)
+		, _drone_mesh.get_blend_shape_value(_drone_bs_big), 0.0, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+		tw.tween_method(func(v: float):
+			_drone_mesh.set_blend_shape_value(_drone_bs_small, v)
+		, _drone_mesh.get_blend_shape_value(_drone_bs_small), 0.0, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+
+# ─── Drone Spare Mode Functions ────────────────────────────
+
+func _enter_drone_spare_mode() -> void:
+	"""Drone takes over as active agent — Tama is offline."""
+	if _drone_spare_active:
+		return
+	_drone_spare_active = true
+	_drone_spare_expression = "loading"
+	_drone_spare_blink_timer = randf_range(3.0, 6.0)
+	print("🛸 DRONE SPARE MODE — Drone prend le relai !")
+
+	# Show drone if not already visible
+	if not _drone_window or not is_instance_valid(_drone_window):
+		return
+
+	# Keep current drone state context (if TIMER, upgrade to SPARE; if HIDDEN, just appear)
+	var was_timer: bool = (_drone_state == "TIMER")
+	_drone_state = "SPARE"
+
+	# Grow drone to main agent size
+	_drone_window.size = Vector2i(240, 180)
+	_drone_window.set_flag(Window.FLAG_MOUSE_PASSTHROUGH, true)
+	_drone_window.visible = true
+	_drone_window.always_on_top = true
+	_drone_window.move_to_foreground()
+
+	# Purple theme (normal drone look)
+	if _drone_break_bg:
+		_drone_break_bg.visible = false
+	if _drone_screen_mat:
+		_drone_screen_mat.emission = Color(0.208, 0.165, 0.310)  # #352A4F
+		_drone_screen_mat.emission_energy_multiplier = 2.5  # Slightly brighter = "alert"
+
+	# Entrance glitch
+	_drone_entrance_glitch()
+
+	# Set initial expression
+	_drone_set_expression("loading")
+
+	# After 1.5s, switch to neutral (loading → neutral)
+	var tw := create_tween().bind_node(self)
+	tw.tween_interval(1.5)
+	tw.tween_callback(func():
+		if _drone_spare_active:
+			_drone_set_expression("neutral")
+	)
+	_drone_play("idle")
+
+func _exit_drone_spare_mode() -> void:
+	"""Tama is back online — drone returns to passive mode."""
+	if not _drone_spare_active:
+		return
+	_drone_spare_active = false
+	print("🛸 DRONE SPARE OFF — Tama revient !")
+
+	# Show welcome back animation
+	_drone_set_expression("welcome_back")
+
+	# After 2s, shrink back to timer or hide
+	var tw := create_tween().bind_node(self)
+	tw.tween_interval(2.0)
+	tw.tween_callback(func():
+		if session_active:
+			_show_drone_timer_mode()
+		else:
+			_drone_state = "HIDDEN"
+			_reset_drone_style()
+			_drone_exit_glitch()
+	)
+
+func _drone_set_expression(expr_key: String) -> void:
+	"""Set the drone's screen to a kaomoji expression."""
+	_drone_spare_expression = expr_key
+	var face: String = DRONE_EXPRESSIONS.get(expr_key, "•_•")
+	if _drone_screen_label:
+		_drone_screen_label.text = face
+		# Larger font for expressions (they're the main visual)
+		_drone_screen_label.add_theme_font_size_override("font_size", 52)
+		_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
+
+	# Emission color changes with mood
+	if _drone_screen_mat:
+		match expr_key:
+			"angry", "strike":
+				_drone_screen_mat.emission = Color(0.35, 0.08, 0.12)  # Dark red-purple
+				_drone_screen_mat.emission_energy_multiplier = 3.0
+			"alert":
+				_drone_screen_mat.emission = Color(0.35, 0.15, 0.20)  # Warm alert
+				_drone_screen_mat.emission_energy_multiplier = 2.5
+			"suspicious":
+				_drone_screen_mat.emission = Color(0.25, 0.18, 0.35)  # Purple-shifted
+				_drone_screen_mat.emission_energy_multiplier = 2.2
+			"happy", "relieved", "welcome_back":
+				_drone_screen_mat.emission = Color(0.15, 0.25, 0.20)  # Warm green tint
+				_drone_screen_mat.emission_energy_multiplier = 2.0
+			_:
+				_drone_screen_mat.emission = Color(0.208, 0.165, 0.310)  # Default purple
+				_drone_screen_mat.emission_energy_multiplier = 2.0
+
+	# ── Bouncy shape key animation ──
+	if _drone_mesh and _drone_bs_big >= 0 and _drone_bs_small >= 0:
+		var targets: Array = DRONE_SHAPE_TARGETS.get(expr_key, [0.0, 0.0])
+		var big_target: float = targets[0]
+		var small_target: float = targets[1]
+		var overshoot: float = 1.3  # 30% overshoot for bounce
+		var is_fast: bool = expr_key in ["strike", "blink", "alert"]
+		var duration: float = 0.15 if is_fast else 0.25
+
+		# Kill any existing shape key tween
+		if _drone_spare_expr_timer > 0:
+			pass  # Timer handled by tween below
+
+		var tw := create_tween().bind_node(self)
+		tw.set_parallel(true)
+
+		# Big shape key: overshoot → settle
+		var big_peak: float = big_target * overshoot
+		tw.tween_method(func(v: float):
+			_drone_mesh.set_blend_shape_value(_drone_bs_big, v)
+		, _drone_mesh.get_blend_shape_value(_drone_bs_big), big_peak, duration).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+		tw.chain().tween_method(func(v: float):
+			_drone_mesh.set_blend_shape_value(_drone_bs_big, v)
+		, big_peak, big_target, duration * 0.7).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_ELASTIC)
+
+		# Small shape key: overshoot → settle
+		var small_peak: float = small_target * overshoot
+		tw.tween_method(func(v: float):
+			_drone_mesh.set_blend_shape_value(_drone_bs_small, v)
+		, _drone_mesh.get_blend_shape_value(_drone_bs_small), small_peak, duration).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+		tw.chain().tween_method(func(v: float):
+			_drone_mesh.set_blend_shape_value(_drone_bs_small, v)
+		, small_peak, small_target, duration * 0.7).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_ELASTIC)
+
+func _update_drone_spare(delta: float) -> void:
+	"""Update drone spare mode — blink, expression changes, suspicion tracking."""
+	if not _drone_spare_active:
+		return
+
+	# ── Blink system (drone "eyes" blink via kaomoji swap) ──
+	_drone_spare_blink_timer -= delta
+	if _drone_spare_blink_timer <= 0:
+		_drone_spare_blink_timer = randf_range(3.0, 7.0)
+		# Only blink during neutral/watching states
+		if _drone_spare_expression in ["neutral", "watching"]:
+			var prev_expr = _drone_spare_expression
+			_drone_set_expression("blink")
+			# Return to previous expression after blink
+			var tw := create_tween().bind_node(self)
+			tw.tween_interval(0.15)
+			tw.tween_callback(func():
+				if _drone_spare_active:
+					_drone_set_expression(prev_expr)
+			)
+
+	# ── Auto-expression from suspicion (when Python sends broadcasts) ──
+	if session_active:
+		var target_expr: String = "neutral"
+		for threshold in [7.0, 5.0, 3.0, 0.0]:
+			if _drone_spare_suspicion_local >= threshold:
+				target_expr = DRONE_SUSPICION_EXPR[threshold]
+				break
+		# Only update if expression changed (don't interrupt strike/loading/etc)
+		if target_expr != _drone_spare_expression and _drone_spare_expression not in ["strike", "loading", "welcome_back", "blink"]:
+			_drone_set_expression(target_expr)
+
+func _drone_spare_strike() -> void:
+	"""Autonomous strike — drone strikes without Tama's animation."""
+	if not _drone_spare_active:
+		return
+	if _drone_state == "STRIKING":
+		return
+
+	print("🛸 DRONE SPARE STRIKE — Autonomous strike !")
+	_drone_set_expression("strike")
+
+	# Small delay for the expression to register, then launch strike
+	var tw := create_tween().bind_node(self)
+	tw.tween_interval(0.3)
+	tw.tween_callback(func():
+		_spawn_drone_strike()
+	)
+	# After strike completes, return to spare idle
+	tw.tween_interval(4.0)  # ~strike duration
+	tw.tween_callback(func():
+		if _drone_spare_active:
+			_drone_state = "SPARE"
+			_drone_set_expression("happy")
+			# Back to neutral after celebration
+			var tw2 := create_tween().bind_node(self)
+			tw2.tween_interval(2.0)
+			tw2.tween_callback(func():
+				if _drone_spare_active:
+					_drone_set_expression("neutral")
+			)
+	)
+
 
 func _setup_drone_window() -> void:
 	"""Create the Sentinel Drone widget — 3D Wings model with SubViewport screen."""
@@ -1361,6 +1612,18 @@ func _setup_drone_window() -> void:
 			_drone_mesh.set_surface_override_material(1, _drone_screen_mat)
 		else:
 			print("⚠️ Only %d surface(s) — expected 2+" % surface_count)
+
+		# ── Discover shape keys (Big / Small) ──
+		var arr_mesh = _drone_mesh.mesh as ArrayMesh
+		if arr_mesh:
+			var bs_count = arr_mesh.get_blend_shape_count()
+			for i in range(bs_count):
+				var bs_name = arr_mesh.get_blend_shape_name(i)
+				if bs_name == "Big":
+					_drone_bs_big = i
+				elif bs_name == "Small":
+					_drone_bs_small = i
+			print("🛸 Drone shape keys: Big=%d Small=%d (total=%d)" % [_drone_bs_big, _drone_bs_small, bs_count])
 	else:
 		print("⚠️ Wings mesh NOT found!")
 
@@ -1389,11 +1652,27 @@ func _setup_drone_window() -> void:
 	screen_bg.stretch_mode = TextureRect.STRETCH_SCALE
 	_drone_screen_vp.add_child(screen_bg)
 
-	# ── Load Quantico Bold font ──
+	# ── Break mode light overlay (#ECEBF5) — hidden by default ──
+	_drone_break_bg = ColorRect.new()
+	_drone_break_bg.color = Color(0.925, 0.922, 0.961, 1.0)  # #ECEBF5
+	_drone_break_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_drone_break_bg.visible = false
+	_drone_screen_vp.add_child(_drone_break_bg)
+
+	# ── Load Quantico Bold font + Font Awesome fallback ──
 	var quantico_font: Font = null
 	if ResourceLoader.exists("res://Quantico-Bold.ttf"):
 		quantico_font = load("res://Quantico-Bold.ttf") as Font
-		print("🛸 Quantico-Bold font loaded")
+		# Add Font Awesome as fallback (for mug-hot icon \uf0f4 etc.)
+		if ResourceLoader.exists("res://fa-solid-900.ttf"):
+			var fa_font = load("res://fa-solid-900.ttf") as Font
+			if fa_font:
+				quantico_font.fallbacks = [fa_font]
+				print("🛸 Quantico-Bold + Font Awesome fallback loaded")
+			else:
+				print("🛸 Quantico-Bold font loaded (FA fallback failed)")
+		else:
+			print("🛸 Quantico-Bold font loaded (no FA fallback)")
 	else:
 		push_warning("⚠️ Quantico-Bold.ttf not found — using default font")
 
@@ -1649,11 +1928,9 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 				ws.send_text(JSON.stringify({"command": "MENU_ACTION", "action": "start_session"}))
 
-			# ── Organic reaction: Tama looks at user + releases arm ──
+			# ── Organic reaction: Tama looks at user ──
 			set_gaze(GazeTarget.USER, GAZE_SPEED_QUICK)
 			_eye_follow_active = false
-			if _gaze_modifier:
-				_gaze_modifier.arm_ik_blend_target = 0.0
 
 			# Switch to timer mode via new function
 			_show_drone_timer_mode()
@@ -1671,13 +1948,15 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 			_drone_window.size = Vector2i(180, 140)  # Familier visible
 			if _confetti_window:
 				_confetti_window.visible = false
-			# Style pause (purple theme)
+			# Style pause: fond clair #ECEBF5, texte sombre #171222
 			if _drone_screen_label:
 				_drone_screen_label.add_theme_font_size_override("font_size", 48)
-				_drone_screen_label.add_theme_color_override("font_color", Color(0.914, 0.878, 0.961))  # #E9E0F5
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.09, 0.07, 0.13))  # #171222
+			if _drone_break_bg:
+				_drone_break_bg.visible = true
 			if _drone_screen_mat:
-				_drone_screen_mat.emission = Color(0.208, 0.165, 0.310)  # #352A4F
-				_drone_screen_mat.emission_energy_multiplier = 2.0
+				_drone_screen_mat.emission = Color(0.925, 0.922, 0.961)  # #ECEBF5
+				_drone_screen_mat.emission_energy_multiplier = 1.5
 			# 🍅 Tama va dire au revoir AVANT de disparaître
 			# Python enverra BREAK_STARTED quand elle aura fini
 			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
@@ -1686,7 +1965,7 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 
 func _update_drone_timer() -> void:
 	"""Flottaison organique du drone (suit Tama) et affichage du Timer/Break."""
-	if _drone_state not in ["WAITING_START", "TIMER", "WAITING_BREAK", "BREAK_TIMER", "STRIKING"]:
+	if _drone_state not in ["WAITING_START", "TIMER", "WAITING_BREAK", "BREAK_TIMER", "STRIKING", "SPARE"]:
 		return
 	if not _drone_window or not is_instance_valid(_drone_window):
 		return
@@ -1772,11 +2051,9 @@ func _update_drone_timer() -> void:
 		var mins = int(remaining_f) / 60
 		var secs = int(remaining_f) % 60
 		if _drone_screen_label:
-			_drone_screen_label.text = "☕ %02d:%02d" % [mins, secs]
-			# Couleur violette qui évolue
-			var progress = clampf(elapsed / _break_timer_duration, 0.0, 1.0)
-			var col = Color(0.914, 0.878, 0.961).lerp(Color(0.7, 0.6, 0.9), progress)  # #E9E0F5 → lavender
-			_drone_screen_label.add_theme_color_override("font_color", col)
+			_drone_screen_label.text = "\uf0f4 %02d:%02d" % [mins, secs]
+			# Texte sombre #171222 sur fond clair pendant la pause
+			_drone_screen_label.add_theme_color_override("font_color", Color(0.09, 0.07, 0.13))  # #171222
 
 func _hide_drone_timer() -> void:
 	"""Masque le drone avec glitch de sortie (fin de session)."""
@@ -2567,6 +2844,9 @@ func _process(delta: float) -> void:
 	# ─── Drone Timer ──────────────────────────────────────────
 	_update_drone_timer()
 
+	# ─── Drone Spare Mode (backup agent) ──────────────────────
+	_update_drone_spare(delta)
+
 	# ─── Debug: Drone follows mouse (F8) ──────────────────────
 	if _debug_drone_follow and _drone_window and is_instance_valid(_drone_window):
 		var mouse_pos := DisplayServer.mouse_get_position()
@@ -2884,6 +3164,26 @@ func _handle_message(raw: String) -> void:
 				"book": set_gaze(GazeTarget.BOOK, spd)
 				"away": set_gaze(GazeTarget.AWAY, spd)
 				"neutral": set_gaze(GazeTarget.NEUTRAL, spd)
+		return
+	# ── Drone Spare Mode Commands ──
+	elif command == "DRONE_SPARE_ON":
+		_enter_drone_spare_mode()
+		return
+	elif command == "DRONE_SPARE_OFF":
+		_exit_drone_spare_mode()
+		return
+	elif command == "DRONE_EXPRESSION":
+		var expr: String = data.get("expression", "neutral")
+		_drone_set_expression(expr)
+		return
+	elif command == "DRONE_STRIKE":
+		# Autonomous strike — drone handles it alone
+		var tx := int(data.get("x", -99999))
+		var ty := int(data.get("y", -99999))
+		var strike_title := str(data.get("title", ""))
+		_strike_target = Vector2i(tx, ty)
+		print("🛸 DRONE_STRIKE: (%d, %d) title='%s'" % [tx, ty, strike_title.left(40)])
+		_drone_spare_strike()
 		return
 	elif command == "APPROACH_TARGET" or command == "STRIKE_TARGET":
 		# Python sends target coordinates (tab/window close button) + window title
@@ -3215,6 +3515,13 @@ func _handle_message(raw: String) -> void:
 			_set_glitch_active(false)
 			_hide_status_indicator()
 			_set_headphones_visible(false)
+		# ── Drone Spare Mode: auto-activate/deactivate based on Gemini status ──
+		if not gc and session_active and not _drone_spare_active:
+			# API went down during session → Tama glitches, drone takes over
+			_enter_drone_spare_mode()
+		elif gc and _drone_spare_active:
+			# API back → Tama returns, drone stands down
+			_exit_drone_spare_mode()
 
 	# ── Mode Libre : on ignore les données de surveillance ──
 	if not data.get("session_active", false):
@@ -3229,6 +3536,9 @@ func _handle_message(raw: String) -> void:
 	active_duration = data.get("active_duration", 0)
 	session_elapsed_secs = data.get("session_elapsed_secs", 0)
 	session_duration_secs = data.get("session_duration_secs", 3000)
+
+	# ── Sync suspicion to drone spare mode ──
+	_drone_spare_suspicion_local = suspicion_index
 
 	# ── Session ding + break popup when timer hits zero ──
 	var break_reminder: bool = data.get("break_reminder", false)
@@ -3273,10 +3583,12 @@ func _handle_message(raw: String) -> void:
 				_confetti_window.visible = false
 			if _drone_screen_label:
 				_drone_screen_label.add_theme_font_size_override("font_size", 48)
-				_drone_screen_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.7))
+				_drone_screen_label.add_theme_color_override("font_color", Color(0.09, 0.07, 0.13))  # #171222
+			if _drone_break_bg:
+				_drone_break_bg.visible = true
 			if _drone_screen_mat:
-				_drone_screen_mat.emission = Color(0.1, 0.5, 0.3)
-				_drone_screen_mat.emission_energy_multiplier = 1.2
+				_drone_screen_mat.emission = Color(0.925, 0.922, 0.961)  # #ECEBF5
+				_drone_screen_mat.emission_energy_multiplier = 1.5
 			_drone_play("idle")
 			
 		if _session_ding_player and _session_ding_player.stream:
@@ -4144,15 +4456,9 @@ func _materialize_from_ghost() -> void:
 			_look_at_world_point(_screen_to_world(sx, sy), GAZE_SPEED_NATURAL)
 			_gaze_blend_target = 0.8
 
-			# Arm IK → point at drone (same conversion as strikes)
-			if _gaze_modifier:
-				_gaze_modifier.arm_ik_target = _screen_to_arm_target(sx, sy)
-				_gaze_modifier.arm_ik_active = true
-				_gaze_modifier.arm_ik_blend_target = 0.7
-
 			# Eyes → drone
 			_look_eyes_at_screen_point(sx, sy)
-			print("☝️ Tama montre le drone (screen→3D)")
+			print("☝️ Tama regarde le drone")
 		)
 		# Gaze drifts back to user — arm stays up until click
 		tw.tween_interval(3.0)
@@ -5047,13 +5353,15 @@ func _show_break_popup() -> void:
 	else:
 		_break_timer_duration = 20.0 * 60.0
 
-	# Look amical orange/doré
+	# Look pause: fond clair #ECEBF5, texte sombre #171222
+	if _drone_break_bg:
+		_drone_break_bg.visible = true
 	if _drone_screen_label:
-		_drone_screen_label.text = "☕ PAUSE"
+		_drone_screen_label.text = "\uf0f4 PAUSE"
 		_drone_screen_label.add_theme_font_size_override("font_size", 36)
-		_drone_screen_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.4))
+		_drone_screen_label.add_theme_color_override("font_color", Color(0.09, 0.07, 0.13))  # #171222
 	if _drone_screen_mat:
-		_drone_screen_mat.emission = Color(0.8, 0.5, 0.1)
+		_drone_screen_mat.emission = Color(0.925, 0.922, 0.961)  # #ECEBF5
 		_drone_screen_mat.emission_energy_multiplier = 1.5
 
 	# Positionner au-dessus de la tête de Tama
