@@ -1323,8 +1323,9 @@ func _enter_drone_spare_mode() -> void:
 	if _drone_spare_active:
 		return
 	# 🍅 Don't activate spare mode during break — Gemini disconnect is intentional
-	if _was_on_break or _drone_state == "BREAK_TIMER" or _drone_state == "WAITING_BREAK":
-		print("🛸 Spare mode blocked — on break")
+	# 🍅 Also block when drone shows actionable buttons (WAITING_START / WAITING_BREAK)
+	if _was_on_break or _drone_state in ["BREAK_TIMER", "WAITING_BREAK", "WAITING_START"]:
+		print("🛸 Spare mode blocked — state: %s" % _drone_state)
 		return
 	_drone_spare_active = true
 	_drone_spare_expression = "loading"
@@ -2024,6 +2025,13 @@ func _on_drone_gui_input(event: InputEvent) -> void:
 	"""Handle clicks on the drone widget."""
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if _drone_state == "WAITING_START":
+			# 🛑 Block click if Tama hasn't arrived yet (prevents buggy early start)
+			if not _started:
+				print("⏳ Start ignoré — Tama pas encore arrivée")
+				return
+			if _anim_tree_module and (_anim_tree_module.is_off_screen() or _anim_tree_module.is_transitioning()):
+				print("⏳ Start ignoré — Tama en transition")
+				return
 			print("▶️ Drone cliqué ! Démarrage de la session...")
 
 			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
