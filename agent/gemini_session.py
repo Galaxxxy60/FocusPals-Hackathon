@@ -1458,6 +1458,9 @@ async def run_gemini_loop(pya):
                                 state["just_started_session"] = False
                                 state["current_mode"] = "deep_work"
                                 state["force_speech"] = True  # Let Gemini acknowledge the session start
+                                # 🎤 CRITICAL: clear onboarding — otherwise mic stays PERMANENTLY muted!
+                                # The audio send loop drops ALL chunks when _onboarding_active is True
+                                state["_onboarding_active"] = False
                                 session_min = state.get("session_duration_minutes", 50)
                                 try:
                                     if state.get("language") == "en":
@@ -1883,7 +1886,11 @@ async def run_gemini_loop(pya):
                             break_dur = _dyn_dur[min(break_idx, len(_dyn_dur) - 1)] if _dyn_dur else 5
                             speak_directive = f"UNMUZZLED: C'est l'heure de la pause ! L'utilisateur a travaillé {session_min} minutes. Encourage-le à prendre {break_dur} minutes de pause. Sois chaleureuse et naturelle."
                         elif user_spoke_recently:
-                            speak_directive = "UNMUZZLED: User is talking. Respond naturally."
+                            # DON'T send a text pulse while Gemini is processing user voice!
+                            # send_realtime_input(text=...) competes with the audio pipeline
+                            # and causes Gemini to respond to our text instead of the user's words.
+                            # Gemini's proactive_audio handles voice conversations natively.
+                            speak_directive = "SKIP_PULSE"  # Signal to skip the entire pulse
                         else:
                             ali = state["current_alignment"]
                             cat = state["current_category"]
@@ -1980,7 +1987,9 @@ async def run_gemini_loop(pya):
                             speak_directive = "MUZZLED"  # Suppress non-urgent directive during cooldown
                         speech_cooldown_ok = (time.time() - state.get("_last_speech_ended", 0)) > 4.0
                         _gate_blocked_reason = ""
-                        if tama_state != TamaState.CALM:
+                        if speak_directive == "SKIP_PULSE":
+                            _gate_blocked_reason = "user_speaking (no text pulse during voice)"
+                        elif tama_state != TamaState.CALM:
                             _gate_blocked_reason = f"tama_state={tama_state}"
                         elif not audio_out_queue.empty():
                             _gate_blocked_reason = "audio_queue_not_empty"
@@ -2185,6 +2194,10 @@ async def run_gemini_loop(pya):
                                                 # Speech gating is handled at the prompt level (MUZZLED/UNMUZZLED).
                                                 is_speaking = True
                                                 state["_tama_is_speaking"] = True
+                                                # Reset force_speech after first speech — she got her chance
+                                                # Without this, UNMUZZLED stays forever and Tama talks non-stop
+                                                # (pulses override user voice responses)
+                                                state["force_speech"] = False
                                                 # Unlock mic: Tama is now speaking the explanation
                                                 if state.get("_onboarding_active") and state.get("_onboarding_answered"):
                                                     state["_onboarding_explanation_started"] = True
